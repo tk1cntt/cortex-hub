@@ -1,5 +1,6 @@
 # Cortex Hub — Docker Compose Stack
-# Services: Qdrant, Neo4j Community, mem0, Dashboard API
+# Services: LLM Proxy (CLIProxyAPI), Qdrant, Neo4j Community, mem0, Dashboard API
+# LLM Proxy provides OpenAI-compatible endpoint via OAuth — no API key required
 # GitNexus runs natively (not Dockerized) — requires system-level git access
 
 services:
@@ -59,7 +60,39 @@ services:
       start_period: 30s
 
   # ─────────────────────────────────────────────
+  # LiteLLM Proxy — Unified LLM Gateway
+  # Web UI: http://localhost:4003 (SSO login)
+  # API:    http://localhost:4001/v1 (OpenAI-compatible)
+  # Supports 100+ providers via virtual keys
+  # ─────────────────────────────────────────────
+  llm-proxy:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: cortex-llm-proxy
+    restart: unless-stopped
+    ports:
+      - "4001:4000"   # OpenAI-compatible API
+      - "4003:4000"   # Web UI (same port, different host mapping)
+    volumes:
+      - llm-proxy-data:/app/data
+      - ./litellm-config.yaml:/app/config.yaml
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-cortex-master-2026}
+      LITELLM_LOG: "INFO"
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ─────────────────────────────────────────────
   # mem0 — Agent Memory Service
+  # Routes AI calls through CLIProxyAPI
   # ─────────────────────────────────────────────
   mem0:
     image: mem0/mem0:latest
@@ -69,7 +102,8 @@ services:
       - "8050:8050"
     environment:
       MEM0_API_KEY: ${MEM0_API_KEY:-local}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-proxy-key}
+      OPENAI_API_BASE: http://llm-proxy:4000/v1
       MEM0_VECTOR_STORE: qdrant
       MEM0_QDRANT_HOST: qdrant
       MEM0_QDRANT_PORT: 6333
@@ -83,6 +117,8 @@ services:
       qdrant:
         condition: service_healthy
       neo4j:
+        condition: service_healthy
+      llm-proxy:
         condition: service_healthy
     deploy:
       resources:
@@ -117,7 +153,9 @@ services:
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-cortex2026}
       MEM0_URL: http://mem0:8050
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-proxy-key}
+      OPENAI_API_BASE: http://llm-proxy:4000/v1
+      LLM_PROXY_URL: http://llm-proxy:4000
     depends_on:
       qdrant:
         condition: service_healthy
@@ -161,3 +199,5 @@ volumes:
     name: cortex-neo4j-logs
   api-data:
     name: cortex-api-data
+  llm-proxy-data:
+    name: cortex-llm-proxy-data
