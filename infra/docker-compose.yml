@@ -1,6 +1,6 @@
 # Cortex Hub — Docker Compose Stack
-# Services: LLM Proxy (CLIProxyAPI), Qdrant, Neo4j Community, mem0, Dashboard API
-# LLM Proxy provides OpenAI-compatible endpoint via OAuth — no API key required
+# Services: CLIProxy (LLM Gateway), Qdrant, Neo4j, mem0, Dashboard API
+# CLIProxy provides OpenAI-compatible API via OAuth — no API key required
 # GitNexus runs natively (not Dockerized) — requires system-level git access
 
 services:
@@ -60,35 +60,32 @@ services:
       start_period: 30s
 
   # ─────────────────────────────────────────────
-  # LiteLLM Proxy — Unified LLM Gateway
-  # Web UI: http://localhost:4003 (SSO login)
-  # API:    http://localhost:4001/v1 (OpenAI-compatible)
-  # Supports 100+ providers via virtual keys
+  # CLIProxy — LLM Gateway (OAuth-based)
+  # API:  http://localhost:8317/v1 (OpenAI-compatible)
+  # Zero SQL, zero Redis — just config + OAuth tokens
   # ─────────────────────────────────────────────
   llm-proxy:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: eceasy/cli-proxy-api:latest
     container_name: cortex-llm-proxy
     restart: unless-stopped
     ports:
-      - "4001:4000"   # OpenAI-compatible API
-      - "4003:4000"   # Web UI (same port, different host mapping)
+      - "8317:8317"   # OpenAI-compatible API
     volumes:
-      - llm-proxy-data:/app/data
-      - ./litellm-config.yaml:/app/config.yaml
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+      - cliproxy-auth:/CLIProxyAPI/auth
+      - ./cliproxy-config.yaml:/CLIProxyAPI/config.yaml
     environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-cortex-master-2026}
-      LITELLM_LOG: "INFO"
+      TZ: Asia/Ho_Chi_Minh
+      MANAGEMENT_PASSWORD: ${MANAGEMENT_PASSWORD:-cortex2026}
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 256M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health/liveliness"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8317/"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 10s
 
   # ─────────────────────────────────────────────
   # mem0 — Agent Memory Service
@@ -103,7 +100,7 @@ services:
     environment:
       MEM0_API_KEY: ${MEM0_API_KEY:-local}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-proxy-key}
-      OPENAI_API_BASE: http://llm-proxy:4000/v1
+      OPENAI_API_BASE: http://llm-proxy:8317/v1
       MEM0_VECTOR_STORE: qdrant
       MEM0_QDRANT_HOST: qdrant
       MEM0_QDRANT_PORT: 6333
@@ -154,8 +151,8 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-cortex2026}
       MEM0_URL: http://mem0:8050
       OPENAI_API_KEY: ${OPENAI_API_KEY:-proxy-key}
-      OPENAI_API_BASE: http://llm-proxy:4000/v1
-      LLM_PROXY_URL: http://llm-proxy:4000
+      OPENAI_API_BASE: http://llm-proxy:8317/v1
+      LLM_PROXY_URL: http://llm-proxy:8317
     depends_on:
       qdrant:
         condition: service_healthy
@@ -199,5 +196,5 @@ volumes:
     name: cortex-neo4j-logs
   api-data:
     name: cortex-api-data
-  llm-proxy-data:
-    name: cortex-llm-proxy-data
+  cliproxy-auth:
+    name: cortex-cliproxy-auth

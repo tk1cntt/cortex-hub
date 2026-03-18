@@ -1,50 +1,121 @@
 # Onboarding Guide — Cortex Hub
 
-> Get started with Cortex Hub in under 5 minutes.
+> Get started with Cortex Hub in under 5 minutes. Zero API keys needed.
 
 ---
 
-## Step 1: Access the LLM Proxy Dashboard
+## How It Works
 
-Open **https://llm.hub.jackle.dev** (or `http://<server-ip>:9090`) in your browser.
+Cortex Hub uses **CLIProxy** as the LLM gateway. CLIProxy wraps your existing AI subscriptions (ChatGPT Plus, Gemini, Claude) via OAuth — **no API key required**. All services (mem0, dashboard, MCP) route through this proxy automatically.
 
-This is the CLIProxyAPI management UI — it provides an OpenAI-compatible API endpoint without requiring any API keys.
-
-## Step 2: Authenticate with Your AI Provider
-
-Click **Login** and choose one of the supported OAuth providers:
-
-| Provider | Auth Method | Models Available |
-|----------|-------------|-----------------|
-| **OpenAI Codex** | OAuth (ChatGPT Plus account) | GPT-4o, GPT-4.1, o3, o4-mini |
-| **Gemini CLI** | Google OAuth | Gemini 2.5 Pro/Flash |
-| **Claude Code** | Anthropic OAuth | Claude 4 Sonnet/Opus |
-| **Custom** | API Key | Any OpenAI-compatible endpoint |
-
-> **No API key needed** for OpenAI, Gemini, and Claude — just use your existing subscription!
-
-## Step 3: Verify Connection
-
-After OAuth login, the proxy automatically configures itself. Test it:
-
-```bash
-curl http://localhost:8080/v1/models
+```
+Your Browser → OAuth Login → CLIProxy → OpenAI/Gemini/Claude
+                                ↓
+                         mem0, Dashboard API, MCP Server
+                         (all route through CLIProxy)
 ```
 
-You should see a list of available models from your authenticated providers.
+---
 
-## Step 4: Access Cortex Hub Dashboard
+## First-Time Setup
 
-Open **https://hub.jackle.dev** — the Dashboard Web UI.
+### 1. Open Cortex Hub
 
-From here you can:
-- **Settings → AI Provider**: View and manage your proxy configuration
-- **API Keys**: Generate `cortex_*` keys for your AI agents
-- **Services**: Monitor Qdrant, Neo4j, mem0 health in real-time
+Navigate to **https://hub.jackle.dev**
 
-## Step 5: Connect Your AI Agent
+On first visit, the **Setup Wizard** launches automatically:
 
-Configure your AI agent (Antigravity, GoClaw, etc.) to use the Cortex Hub MCP Server:
+```
+┌─────────────────────────────────────────┐
+│         Welcome to Cortex Hub           │
+│                                         │
+│  Let's connect your AI provider.        │
+│                                         │
+│  ┌─────────────────────────────────┐    │
+│  │ ● OpenAI (ChatGPT Plus)        │    │
+│  │ ○ Google Gemini                 │    │
+│  │ ○ Claude (Anthropic)           │    │
+│  │ ○ Custom OpenAI-compatible     │    │
+│  └─────────────────────────────────┘    │
+│                                         │
+│              [ Connect → ]              │
+└─────────────────────────────────────────┘
+```
+
+### 2. OAuth Authentication
+
+Click **Connect** — you'll be redirected to your provider's login page. Sign in with your existing subscription. No API key to copy-paste.
+
+| Provider | Auth | What You Need |
+|----------|------|---------------|
+| **OpenAI** | OAuth | ChatGPT Plus subscription |
+| **Gemini** | Google OAuth | Google account |
+| **Claude** | Anthropic OAuth | Claude subscription |
+| **Custom** | API Key | Any OpenAI-compatible endpoint |
+
+### 3. Select & Test Models
+
+After OAuth, the wizard shows available models. Select which ones to enable and test the connection:
+
+```
+┌─────────────────────────────────────────┐
+│  ✓ Connected to OpenAI                  │
+│                                         │
+│  Available Models:                      │
+│  ☑ GPT-4o          ☑ GPT-4o-mini       │
+│  ☑ o3              ☐ o4-mini           │
+│  ☑ text-embedding-3-small              │
+│                                         │
+│  Test: "Hello" → "Hi! How can I help?" │
+│  ✓ Connection verified                  │
+│                                         │
+│          [ Enter Dashboard → ]          │
+└─────────────────────────────────────────┘
+```
+
+### 4. Create Organization & Projects
+
+Once inside, create your organization structure:
+
+```
+┌─────────────────────────────────────────┐
+│  Organization: Yulgang                  │
+│  ├── Project: yulgang-bot               │
+│  ├── Project: yulgang-analytics         │
+│  └── Project: yulgang-docs              │
+│                                         │
+│  Organization: Personal                 │
+│  └── Project: cortex-hub                │
+└─────────────────────────────────────────┘
+```
+
+### 5. Generate Scoped API Keys
+
+Create API keys with granular permissions:
+
+```
+┌─────────────────────────────────────────┐
+│  New API Key                            │
+│                                         │
+│  Name: agent-yulgang-prod               │
+│  Scope: ○ All projects                  │
+│         ● Organization: Yulgang/*       │
+│         ○ Single project                │
+│                                         │
+│  Permissions:                           │
+│  ☑ code.search    ☑ memory.store        │
+│  ☑ knowledge.get  ☐ admin.*             │
+│                                         │
+│  Expires: ○ Never  ● 90 days           │
+│                                         │
+│          [ Generate Key → ]             │
+│                                         │
+│  cortex_sk_Yg7x...Kp2m                  │
+│  ⚠ Copy now — won't be shown again     │
+└─────────────────────────────────────────┘
+```
+
+### 6. Connect Your AI Agent
 
 ```json
 {
@@ -52,7 +123,7 @@ Configure your AI agent (Antigravity, GoClaw, etc.) to use the Cortex Hub MCP Se
     "cortex-hub": {
       "url": "https://mcp.hub.jackle.dev",
       "headers": {
-        "Authorization": "Bearer cortex_YOUR_API_KEY"
+        "Authorization": "Bearer cortex_sk_Yg7x...Kp2m"
       }
     }
   }
@@ -61,30 +132,20 @@ Configure your AI agent (Antigravity, GoClaw, etc.) to use the Cortex Hub MCP Se
 
 ---
 
-## Architecture Overview
+## Infrastructure Endpoints
 
-```
-┌─────────────────────────────────────────────┐
-│  Your AI Agent (Antigravity, GoClaw, etc.)  │
-│  MCP Client → hub.jackle.dev               │
-└──────────────────┬──────────────────────────┘
-                   │
-    ┌──────────────▼──────────────┐
-    │   Cortex Hub MCP Server     │
-    │   (Cloudflare Worker)       │
-    └──┬──────┬──────┬──────┬─────┘
-       │      │      │      │
-   ┌───▼──┐ ┌─▼──┐ ┌▼───┐ ┌▼────────┐
-   │Qdrant│ │Neo4j│ │mem0│ │LLM Proxy│
-   │Vector│ │Graph│ │    │ │(OAuth)  │
-   └──────┘ └────┘ └────┘ └─────────┘
-```
+| Service | URL | Port |
+|---------|-----|------|
+| Dashboard | https://hub.jackle.dev | 3000 |
+| API | https://api.hub.jackle.dev | 4000 |
+| MCP Server | https://mcp.hub.jackle.dev | 8787 |
+| LLM Proxy | https://llm.hub.jackle.dev | 8317 |
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| `502 Bad Gateway` at hub.jackle.dev | Services not started — run `docker compose up -d` |
-| mem0 won't start | Authenticate at the LLM Proxy UI first (port 9090) |
-| API key rejected | Check key is active in Dashboard → API Keys |
-| Slow embeddings | Switch to local Ollama model in proxy settings |
+| `502 Bad Gateway` | Services not started — `docker compose up -d` |
+| OAuth login fails | Check CLIProxy logs: `docker logs cortex-llm-proxy` |
+| API key rejected | Verify key scope includes the target project |
+| Models not available | Re-authenticate at LLM Proxy management |
