@@ -1,5 +1,5 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://api.hub.jackle.dev'
-const MCP_BASE = process.env.NEXT_PUBLIC_MCP_URL ?? 'https://mcp.hub.jackle.dev'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://cortex-api.jackle.dev'
+const MCP_BASE = process.env.NEXT_PUBLIC_MCP_URL ?? 'https://cortex-mcp.jackle.dev'
 
 export const config = {
   api: {
@@ -12,7 +12,7 @@ export const config = {
       health: `${MCP_BASE}/health`,
     },
     llmProxy: {
-      models: `${process.env.NEXT_PUBLIC_CLIPROXY_URL || 'http://localhost:8317'}/v1/models`,
+      models: `${process.env.NEXT_PUBLIC_CLIPROXY_URL || 'https://cortex-llm.jackle.dev'}/v1/models`,
     }
   },
   mcp: {
@@ -21,7 +21,7 @@ export const config = {
     health: `${MCP_BASE}/health`,
   },
   services: {
-    cliproxy: process.env.NEXT_PUBLIC_CLIPROXY_URL ?? 'https://llm.hub.jackle.dev',
+    cliproxy: process.env.NEXT_PUBLIC_CLIPROXY_URL ?? 'https://cortex-llm.jackle.dev',
     qdrant: process.env.NEXT_PUBLIC_QDRANT_URL ?? 'https://qdrant.hub.jackle.dev',
   },
 }
