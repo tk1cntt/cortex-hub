@@ -192,13 +192,175 @@
   line-height: 1.7;
 }
 
+/* ── System Resources ── */
+.gaugesGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.gaugeCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all 0.3s ease;
+}
+
+.gaugeCard:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.gaugeContainer {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  margin-bottom: var(--space-3);
+}
+
+.gaugeSvg {
+  width: 100%;
+  height: 100%;
+}
+
+.gaugeRing {
+  transition: stroke-dashoffset 1.2s ease-out, stroke 0.5s ease;
+}
+
+.gaugeCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.gaugeIcon {
+  font-size: 1.25rem;
+}
+
+.gaugeValue {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.gaugeLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.gaugeSub {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Server Info Bar ── */
+.serverInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  background: var(--bg-secondary);
+  padding: var(--space-1) var(--space-3);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+/* ── Containers Table ── */
+.containersCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.containersHeader {
+  display: grid;
+  grid-template-columns: 2fr 1fr 2fr 2fr;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.containerRow {
+  display: grid;
+  grid-template-columns: 2fr 1fr 2fr 2fr;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  align-items: center;
+  font-size: 0.8125rem;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s ease;
+}
+
+.containerRow:last-child {
+  border-bottom: none;
+}
+
+.containerRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.containerInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.containerName {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.containerCpu {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.containerMem {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.containerUptime {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   .statsGrid { grid-template-columns: repeat(2, 1fr); }
   .servicesGrid { grid-template-columns: 1fr; }
+  .gaugesGrid { grid-template-columns: repeat(3, 1fr); }
+  .serverInfo { display: none; }
 }
 
 @media (max-width: 640px) {
   .statsGrid { grid-template-columns: 1fr; }
+  .gaugesGrid { grid-template-columns: 1fr; }
+  .containersHeader,
+  .containerRow { grid-template-columns: 2fr 1fr 2fr; }
+  .containerUptime { display: none; }
 }
 

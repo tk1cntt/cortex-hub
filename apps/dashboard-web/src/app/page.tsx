@@ -2,7 +2,7 @@
 
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
-import { checkHealth, getDashboardStats, getActivityFeed, type ActivityEvent } from '@/lib/api'
+import { checkHealth, getDashboardStats, getActivityFeed, getSystemMetrics, type ActivityEvent, type SystemMetrics } from '@/lib/api'
 import styles from './page.module.css'
 
 interface ServiceCardProps {
@@ -65,6 +65,73 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
   )
 }
 
+function GaugeChart({ value, label, subtitle, color, icon }: {
+  value: number
+  label: string
+  subtitle: string
+  color: string
+  icon: string
+}) {
+  const radius = 54
+  const circumference = 2 * Math.PI * radius
+  const offset = circumference - (value / 100) * circumference
+  const statusColor = value > 90 ? '#e74c3c' : value > 70 ? '#f5a623' : color
+
+  return (
+    <div className={styles.gaugeCard}>
+      <div className={styles.gaugeContainer}>
+        <svg viewBox="0 0 128 128" className={styles.gaugeSvg}>
+          {/* Background ring */}
+          <circle
+            cx="64" cy="64" r={radius}
+            fill="none"
+            stroke="var(--border)"
+            strokeWidth="8"
+            opacity="0.3"
+          />
+          {/* Animated value ring */}
+          <circle
+            cx="64" cy="64" r={radius}
+            fill="none"
+            stroke={statusColor}
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            transform="rotate(-90 64 64)"
+            className={styles.gaugeRing}
+            style={{
+              filter: `drop-shadow(0 0 6px ${statusColor}40)`,
+            }}
+          />
+        </svg>
+        <div className={styles.gaugeCenter}>
+          <span className={styles.gaugeIcon}>{icon}</span>
+          <span className={styles.gaugeValue}>{value}%</span>
+        </div>
+      </div>
+      <div className={styles.gaugeLabel}>{label}</div>
+      <div className={styles.gaugeSub}>{subtitle}</div>
+    </div>
+  )
+}
+
+function ContainerRow({ container }: { container: SystemMetrics['containers'][0] }) {
+  const isRunning = container.status === 'running'
+  const statusClass = isRunning ? 'healthy' : container.status === 'exited' ? 'error' : 'warning'
+  return (
+    <div className={styles.containerRow}>
+      <div className={styles.containerInfo}>
+        <span className={`status-dot ${statusClass}`} />
+        <span className={styles.containerName}>{container.name.replace('cortex-', '')}</span>
+      </div>
+      <span className={styles.containerCpu}>{isRunning ? container.cpu : '—'}</span>
+      <span className={styles.containerMem}>{isRunning ? container.memory : '—'}</span>
+      <span className={styles.containerUptime}>{container.uptime}</span>
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const { data: healthData, error, mutate, isLoading } = useSWR('health', checkHealth, {
     refreshInterval: 30000,
@@ -74,6 +141,9 @@ export default function DashboardPage() {
   })
   const { data: activityData } = useSWR('activity', () => getActivityFeed(20), {
     refreshInterval: 15000,
+  })
+  const { data: systemData } = useSWR('system-metrics', getSystemMetrics, {
+    refreshInterval: 5000,
   })
 
   const services: ServiceCardProps[] = [
@@ -157,6 +227,64 @@ export default function DashboardPage() {
             <ServiceCard key={service.name} {...service} />
           ))}
         </div>
+      </section>
+
+      {/* System Resources */}
+      <section className={styles.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+          <h2 className={styles.sectionTitle} style={{ margin: 0 }}>System Resources</h2>
+          {systemData && (
+            <div className={styles.serverInfo}>
+              <span>🖥️ {systemData.hostname}</span>
+              <span>·</span>
+              <span>{systemData.cpu.cores} cores</span>
+              <span>·</span>
+              <span>{systemData.ip}</span>
+              <span>·</span>
+              <span>⏱️ {Math.floor(systemData.uptime / 3600)}h {Math.floor((systemData.uptime % 3600) / 60)}m</span>
+            </div>
+          )}
+        </div>
+
+        {/* Gauge Charts */}
+        <div className={styles.gaugesGrid}>
+          <GaugeChart
+            value={systemData?.cpu.percent ?? 0}
+            label="CPU"
+            subtitle={systemData ? `Load: ${systemData.cpu.loadAvg.join(' / ')}` : 'Loading...'}
+            color="#4a90d9"
+            icon="⚡"
+          />
+          <GaugeChart
+            value={systemData?.memory.percent ?? 0}
+            label="Memory"
+            subtitle={systemData ? `${systemData.memory.usedHuman} / ${systemData.memory.totalHuman}` : 'Loading...'}
+            color="#9b59b6"
+            icon="🧠"
+          />
+          <GaugeChart
+            value={systemData?.disk[0]?.usedPercent ?? 0}
+            label="Disk"
+            subtitle={systemData?.disk[0] ? `${systemData.disk[0].used} / ${systemData.disk[0].size}` : 'Loading...'}
+            color="#27ae60"
+            icon="💾"
+          />
+        </div>
+
+        {/* Docker Containers */}
+        {systemData?.containers && systemData.containers.length > 0 && (
+          <div className={`card ${styles.containersCard}`}>
+            <div className={styles.containersHeader}>
+              <span>Container</span>
+              <span>CPU</span>
+              <span>Memory</span>
+              <span>Status</span>
+            </div>
+            {systemData.containers.map((c) => (
+              <ContainerRow key={c.name} container={c} />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Activity Feed */}

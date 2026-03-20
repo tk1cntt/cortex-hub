@@ -12,6 +12,7 @@ import { orgsRouter, projectsRouter } from './routes/organizations.js'
 import { indexingRouter } from './routes/indexing.js'
 import { usageRouter } from './routes/usage.js'
 import { statsRouter as metricsRouter } from './routes/stats.js'
+import { systemRouter } from './routes/system.js'
 
 const app = new Hono()
 const logger = createLogger('dashboard-api')
@@ -71,6 +72,7 @@ app.route('/api/projects', projectsRouter)
 app.route('/api/projects', indexingRouter)
 app.route('/api/usage', usageRouter)
 app.route('/api/metrics', metricsRouter)
+app.route('/api/system', systemRouter)
 
 const port = Number(process.env['PORT'] ?? 4000)
 

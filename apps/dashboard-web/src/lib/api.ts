@@ -435,3 +435,51 @@ export async function getBranchIndexSummary(projectId: string) {
   return apiFetch<{ branches: BranchIndexStatus[] }>(`/api/projects/${projectId}/index/branches`)
 }
 
+// ── System Metrics ──
+export interface SystemMetrics {
+  timestamp: string
+  hostname: string
+  platform: string
+  arch: string
+  uptime: number
+  ip: string
+  cpu: {
+    percent: number
+    cores: number
+    model: string
+    loadAvg: number[]
+  }
+  memory: {
+    total: number
+    used: number
+    free: number
+    percent: number
+    totalHuman: string
+    usedHuman: string
+    freeHuman: string
+  }
+  disk: Array<{
+    filesystem: string
+    size: string
+    used: string
+    available: string
+    usedPercent: number
+    mountpoint: string
+  }>
+  containers: Array<{
+    name: string
+    status: string
+    cpu: string
+    memory: string
+    memoryRaw: number
+    memoryLimit: number
+    memoryPercent: number
+    uptime: string
+    image: string
+  }>
+}
+
+export async function getSystemMetrics() {
+  return apiFetch<SystemMetrics>('/api/system/metrics')
+}
+
