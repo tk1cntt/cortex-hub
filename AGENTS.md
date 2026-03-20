@@ -1,8 +1,34 @@
 # Cortex Hub — Agent Guidelines
 
-> **Current Phase:** 5 (Dashboard Frontend) ✅ — Ready for Phase 6
-> **Engagement:** Express | **Mode:** Greenfield
-> **Last Gate Passed:** Gate 4 (Phase 4→5) on 2026-03-18
+> **Current Phase:** 6 (Polish, docs, testing, GA release)
+> **Engagement:** Express | **Mode:** Greenfield → Brownfield
+> **Last Gate Passed:** Gate 5 (Phase 5→6) on 2026-03-19
+
+---
+
+## Session Protocol (MANDATORY)
+
+### At Session Start — ALWAYS do:
+
+1. **Read `STATE.md`** → current phase, active tasks, recent decisions
+2. **Read `.forgewright/project-profile.json`** → `verify` commands, patterns, fingerprint
+3. **Acknowledge context:** "Phase X, resuming: [task]. Verify: [commands from profile]"
+
+### At Session End — ALWAYS do:
+
+1. **Run verify commands** from `project-profile.json` → `verify.pre_commit`:
+   - `pnpm build --filter='@cortex/shared-*'`
+   - `pnpm typecheck`
+   - `pnpm lint`
+2. **Report quality:** `Build ✅/❌ | Typecheck ✅/❌ | Lint ✅/❌`
+3. **Update `STATE.md`** with progress, completed tasks, new decisions
+4. **Commit** with conventional prefix: `feat:`, `fix:`, `docs:`, `chore:`
+
+### Before Deploy — ALWAYS do:
+
+Run `verify.full` from `project-profile.json`:
+- All `pre_commit` commands + `pnpm test`
+- ALL must pass before deploying
 
 ---
 
@@ -15,11 +41,11 @@ Cortex Hub is a self-hosted, MCP-compliant platform that unifies code intelligen
 - **MCP Gateway:** Cloudflare Worker (Hono)
 - **Dashboard API:** Hono + SQLite (Node.js)
 - **Dashboard Web:** Next.js 15 + React 19
-- **Backend:** Qdrant, Neo4j, mem0, CLIProxy (Docker Compose)
+- **Backend:** Qdrant, Neo4j, mem0, GitNexus (Docker Compose)
 - **Infra:** Cloudflare Tunnel, Watchtower
 
 ### Endpoints
-| Service | URL | 
+| Service | URL |
 |---------|-----|
 | Dashboard | hub.jackle.dev |
 | API | cortex-api.jackle.dev |
@@ -28,9 +54,21 @@ Cortex Hub is a self-hosted, MCP-compliant platform that unifies code intelligen
 
 ---
 
+## Routing Rules (Natural Language)
+
+| User Pattern | Mode | Auto-Actions |
+|-------------|------|-------------|
+| "phase N" / "start phase N" / "bắt đầu phase N" | Phase Build | Read STATE.md → gate check → DEFINE → PLAN → EXECUTE → VERIFY |
+| "continue" / "tiếp" / "go" / "tiếp tục" | Resume | Read STATE.md → resume `[/]` task → EXECUTE → VERIFY |
+| "add X" / "implement X" / "thêm X" / "làm X" | Feature | Read profile → PLAN → get approval → EXECUTE → VERIFY |
+| "fix X" / "sửa X" / "debug X" | Debug | Locate issue → fix → run verify.pre_commit |
+| "deploy" / "ship" / "đẩy lên" | Deploy | Run verify.full → deploy from profile → verify live |
+| "review" / "check" / "kiểm tra" | Review | Run verify.full → check conventions → report |
+
+---
+
 ## Phase Roadmap & Gates
 
-### Completed Phases
 ### Completed Phases
 - [x] **Phase 1:** Server + Cloudflare Tunnel
 - [x] **Phase 2:** Monorepo skeleton + shared packages
@@ -38,13 +76,13 @@ Cortex Hub is a self-hosted, MCP-compliant platform that unifies code intelligen
 - [x] **Phase 4:** Hub MCP Server (Cloudflare Worker) — `apps/hub-mcp`
 - [x] **Phase 5:** Dashboard Frontend (Next.js) — `apps/dashboard-web`
 
-### Upcoming Phases
-- [ ] **Phase 6:** Polish, docs, testing, GA release
+### Current Phase
+- [/] **Phase 6:** Polish, docs, testing, GA release
 
 ### Gate Criteria
 
 > ⚠️ **MANDATORY:** Before starting Phase N, Gate N-1→N MUST pass.
-> Run `/phase N` to trigger automated gate checks.
+> Run `/phase N` or say "start phase N" to trigger automated gate checks.
 
 | Gate | From → To | Required Checks |
 |------|-----------|-----------------|
@@ -54,34 +92,17 @@ Cortex Hub is a self-hosted, MCP-compliant platform that unifies code intelligen
 | Gate 4 | Phase 4→5 | MCP tools respond via Worker, auth middleware works, logs written |
 | Gate 5 | Phase 5→6 | Dashboard renders, setup wizard works, scoped API keys functional |
 
-See: [Gate Definitions](Antigravity-Production-Grade-Suite/.protocols/gate-definitions.md)
-
 ---
 
-## Forgewright Pipeline
-
-When starting ANY phase, follow the **DEFINE → PLAN → EXECUTE → VERIFY → COMMIT** workflow:
+## Phase Workflow: DEFINE → PLAN → EXECUTE → VERIFY → COMMIT
 
 ```
 DEFINE   → Read BRD epics + requirements for this phase
 PLAN     → Create/update implementation plan, get user approval
 EXECUTE  → Write code, follow code-conventions.md
-VERIFY   → Run tests, health checks, validate acceptance criteria
-COMMIT   → Commit with conventional prefix, update task.md
+VERIFY   → Run verify commands from project-profile.json
+COMMIT   → Conventional commit, update STATE.md
 ```
-
-See: [Phase Workflow](Antigravity-Production-Grade-Suite/.protocols/phase-workflow.md)
-
-### Routing Rules
-
-| User Says | Mode | What To Do |
-|-----------|------|------------|
-| "Start Phase N" / `/phase N` | Full Build | Check gate → DEFINE → PLAN → EXECUTE → VERIFY |
-| "Add [feature]..." | Feature | BA check → Architect → Implement → Test |
-| "Debug this / fix bug" | Debug | GitNexus impact → Fix → Verify |
-| "Review my code" | Review | Code review against conventions |
-| "Deploy / ship" | Ship | Run tests → Build → Deploy → Verify |
-| "Optimize performance" | Optimize | Profile → Identify → Fix → Benchmark |
 
 ---
 
@@ -100,12 +121,14 @@ Key rules:
 
 ## Quality Gates
 
-Every code session MUST end with:
-1. ✅ Build passes (`turbo build`)
-2. ✅ Tests pass (`turbo test`)
-3. ✅ Lint clean (`turbo lint`)
-4. ✅ No HIGH/CRITICAL impact warnings ignored
-5. ✅ `task.md` updated with progress
+Every code session MUST end with verification from `project-profile.json`:
+
+| Step | Command | Source |
+|------|---------|--------|
+| 1. Build shared | `pnpm build --filter='@cortex/shared-*'` | `verify.pre_commit[0]` |
+| 2. Typecheck | `pnpm typecheck` | `verify.pre_commit[1]` |
+| 3. Lint + Prettier | `pnpm lint` | `verify.pre_commit[2]` |
+| 4. Test (deploy only) | `pnpm test` | `verify.full[3]` |
 
 ### Quality Score (per session)
 | Dimension | Weight | Description |
@@ -113,7 +136,7 @@ Every code session MUST end with:
 | Build | 25 | Code compiles, no errors |
 | Regression | 25 | No existing tests broken |
 | Standards | 25 | Follows code-conventions.md |
-| Traceability | 25 | Changes linked to requirements (R001–R013) |
+| Traceability | 25 | Changes linked to requirements |
 
 ---
 
@@ -121,17 +144,15 @@ Every code session MUST end with:
 
 | Document | Path |
 |----------|------|
+| **STATE.md** | `STATE.md` (read FIRST every session) |
+| **Project Profile** | `.forgewright/project-profile.json` (verify commands) |
+| **Code Conventions** | `.forgewright/code-conventions.md` |
 | BRD | `Antigravity-Production-Grade-Suite/product-manager/BRD/brd.md` |
 | Requirements Register | `Antigravity-Production-Grade-Suite/business-analyst/elicitation/requirements-register.md` |
-| Feasibility Assessment | `Antigravity-Production-Grade-Suite/business-analyst/evaluation/feasibility-assessment.md` |
-| BA Handoff Package | `Antigravity-Production-Grade-Suite/business-analyst/handoff/ba-package.md` |
 | Architecture Decisions | `Antigravity-Production-Grade-Suite/solution-architect/analysis/architecture-decisions.md` |
 | Gate Definitions | `Antigravity-Production-Grade-Suite/.protocols/gate-definitions.md` |
-| Phase Workflow | `Antigravity-Production-Grade-Suite/.protocols/phase-workflow.md` |
-| Code Conventions | `.forgewright/code-conventions.md` |
-| Project Profile | `.forgewright/project-profile.json` |
+| Agent Quality Strategy | `docs/architecture/agent-quality-strategy.md` |
 | Docker Stack | `infra/docker-compose.yml` |
-| Onboarding Guide | `docs/guides/onboarding.md` |
 
 ---
 
@@ -140,6 +161,7 @@ Every code session MUST end with:
 - ❌ Start a new phase without passing the gate
 - ❌ Skip the PLAN step (always get user approval before major code changes)
 - ❌ Use `any` in TypeScript without explicit comment
-- ❌ Commit without running `turbo build && turbo test`
+- ❌ Commit without running verify commands from `project-profile.json`
 - ❌ Edit infrastructure (Docker, Tunnel) without updating docs
 - ❌ Ignore quality gate failures
+- ❌ Hardcode verify commands — always read from `project-profile.json`
