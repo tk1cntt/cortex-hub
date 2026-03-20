@@ -7,41 +7,26 @@
 - **Gate Passed:** Gate 5 (Phase 5→6) on 2026-03-19
 
 ## In Progress
-- [/] Indexing Pipeline — Code complete, needs Docker rebuild on server to go live
-- [ ] Agent onboarding documentation
-- [ ] GA release prep
+- [/] Indexing pipeline testing on real repositories
+- [/] Agent quality strategy documentation
 
-## Completed (this session)
-- [x] Dashboard Frontend (Next.js 15 + App Router)
-- [x] Organizations + Projects CRUD
-- [x] Setup Wizard with OAuth + API key flows
-- [x] Private Git repos (Azure DevOps, GitHub PAT)
+## Completed (Phase 6)
+- [x] Dashboard API — 9 real routes (no stubs)
+- [x] Dashboard Web — 8 pages, full-featured
 - [x] GitNexus indexing pipeline (clone → analyze → mem0 ingest)
-- [x] Real-time IndexingPanel UI (progress bar, branch selector, history)
-- [x] Custom workflow system (STATE.md + AGENTS.md + project-profile.json verify)
-- [x] Agent quality strategy doc archived to docs/architecture/
-- [x] Project-profile.json verify section (pre_commit, full, deploy commands)
+- [x] Workflow system (conventions, per-project profiles)
+- [x] Branch-scoped knowledge (mem0 user_id namespacing, fallback chain)
+- [x] Enhanced IndexingPanel (branch dropdown, diff view, per-branch status, 1.5s realtime polling)
+- [x] MCP branch-aware tools (memory.store/search + code.search/impact with projectId/branch)
+- [x] 3 new backend endpoints (branches listing, diff, per-branch index summary)
+- [x] Docker rebuilt and deployed with latest code
 
 ## Recent Decisions
-- 2026-03-20: `project-profile.json` → `verify` section as single source of truth for CI commands
-- 2026-03-20: Custom workflow system (STATE.md + natural language triggers) over Forgewright
-- 2026-03-20: GitNexus v1.4.7 for AST indexing, mem0 for knowledge memory
-- 2026-03-19: Private repos via username/PAT injected into git clone URL
-- 2026-03-19: Cloudflare Pages production = `main` branch (not `master`)
+- mem0 branch scope: `project-{id}:branch-{name}` for branch, `project-{id}` for project fallback
+- Branch diff uses `git diff --name-status origin/base...origin/branch`
+- Branch listing via `git ls-remote --heads` (no cloning required)
 
-## Blockers
-- Server Docker rebuild needed for indexing pipeline
-
-## Verify Commands (from project-profile.json)
-```bash
-# Pre-commit (quick — run after every code change)
-pnpm build --filter='@cortex/shared-*'
-pnpm typecheck
-pnpm lint
-
-# Full (before deploy)
-pnpm build --filter='@cortex/shared-*'
-pnpm typecheck
-pnpm lint
-pnpm test
-```
+## Quality Status
+- Build ✅ | Typecheck ✅ | Lint ✅
+- Docker ✅ (container recreated 2026-03-20T03:38Z)
+- All 4 services healthy: qdrant, neo4j, cliproxy, mem0
