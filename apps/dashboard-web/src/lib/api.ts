@@ -375,7 +375,7 @@ export interface IndexJobSummary {
 export async function startIndexing(projectId: string, branch?: string) {
   return apiFetch<{ jobId: string; status: string; branch: string }>(
     `/api/projects/${projectId}/index`,
-    { method: 'POST', body: { branch: branch ?? 'main' } }
+    { method: 'POST', body: { branch } }
   )
 }
 

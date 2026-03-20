@@ -31,7 +31,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string
 }
 
 function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl: boolean }) {
-  const [branch, setBranch] = useState('main')
+  const [branch, setBranch] = useState('')
   const [starting, setStarting] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [showLog, setShowLog] = useState(false)
@@ -55,6 +55,18 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
     () => listBranches(projectId),
     { refreshInterval: 60000 }
   )
+
+  // Auto-set branch when branches load (use first branch as default)
+  useEffect(() => {
+    const branches = branchesData?.branches ?? []
+    if (branches.length > 0 && !branch) {
+      // Prefer 'master' or 'main' if available, otherwise first branch
+      const defaultBranch = (branches.find((b: string) => b === 'master') ??
+                            branches.find((b: string) => b === 'main') ??
+                            branches[0]) as string
+      setBranch(defaultBranch)
+    }
+  }, [branchesData, branch])
 
   const handleRefreshBranches = useCallback(async () => {
     setBranchesLoading(true)
