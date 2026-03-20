@@ -269,18 +269,44 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     updateJob(jobId, { progress: 25 })
     logger.info(`[${jobId}] Clone complete`)
 
-    // ── Step 2: Symbol Extraction (pure JS — no native deps) ──
+    // ── Step 2: GitNexus Analyze (primary) + Pure JS (fallback) ──
     updateJob(jobId, { status: 'analyzing', progress: 30 })
-    logger.info(`[${jobId}] Extracting symbols (pure JS)`)
+    logger.info(`[${jobId}] Running gitnexus analyze`)
 
-    const { totalFiles, symbolsFound, symbolNames } = extractSymbolsFromDir(repoDir)
-    appendLog(jobId, `Found ${totalFiles} source files, ${symbolsFound} symbols`)
+    let symbolsFound = 0
+    let totalFiles = 0
+    let symbolNames: string[] = []
+
+    const analyzeResult = await runCommand('npx', [
+      '-y', 'gitnexus', 'analyze', '.', '--force'
+    ], repoDir, jobId)
+
+    // Parse symbols count from gitnexus output
+    const symbolMatch = analyzeResult.stdout.match(/(\d+)\s*symbols?/i)
+    const fileMatch = analyzeResult.stdout.match(/(\d+)\s*files?/i)
+    if (symbolMatch?.[1]) symbolsFound = parseInt(symbolMatch[1], 10)
+    if (fileMatch?.[1]) totalFiles = parseInt(fileMatch[1], 10)
+
+    if (analyzeResult.code !== 0 || (symbolsFound === 0 && totalFiles === 0)) {
+      // GitNexus failed — fall back to pure JS regex extraction
+      appendLog(jobId, `[warn] gitnexus failed (exit ${analyzeResult.code}), using pure JS fallback`)
+      logger.warn(`[${jobId}] GitNexus failed, falling back to pure JS extraction`)
+
+      const fallback = extractSymbolsFromDir(repoDir)
+      totalFiles = fallback.totalFiles
+      symbolsFound = fallback.symbolsFound
+      symbolNames = fallback.symbolNames
+      appendLog(jobId, `Fallback: ${totalFiles} files, ${symbolsFound} symbols`)
+    } else {
+      appendLog(jobId, `GitNexus: ${totalFiles} files, ${symbolsFound} symbols`)
+    }
+
     if (symbolNames.length > 0) {
       appendLog(jobId, `Sample symbols: ${symbolNames.slice(0, 20).join(', ')}`)
     }
 
     updateJob(jobId, { progress: 70, symbols_found: symbolsFound, total_files: totalFiles })
-    logger.info(`[${jobId}] Symbol extraction: ${symbolsFound} symbols, ${totalFiles} files`)
+    logger.info(`[${jobId}] Analysis complete: ${symbolsFound} symbols, ${totalFiles} files`)
 
     // ── Step 3: mem0 Ingest (branch-scoped) ──
     updateJob(jobId, { status: 'ingesting', progress: 80 })
