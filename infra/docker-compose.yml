@@ -1,6 +1,7 @@
 # Cortex Hub — Docker Compose Stack
-# Services: CLIProxy (LLM Gateway), Qdrant, Neo4j, mem0, Dashboard API
+# Services: CLIProxy (LLM Gateway), Qdrant, Dashboard API
 # CLIProxy provides OpenAI-compatible API via OAuth — no API key required
+# mem9 runs in-process within the Dashboard API container
 # GitNexus runs natively (not Dockerized) — requires system-level git access
 
 services:
@@ -28,36 +29,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
-  # ─────────────────────────────────────────────
-  # Neo4j Community — Graph Database (for mem0)
-  # ─────────────────────────────────────────────
-  neo4j:
-    image: neo4j:5-community
-    container_name: cortex-neo4j
-    restart: unless-stopped
-    ports:
-      - "7474:7474"   # HTTP Browser
-      - "7687:7687"   # Bolt protocol
-    volumes:
-      - neo4j-data:/data
-      - neo4j-logs:/logs
-    environment:
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-cortex2026}
-      NEO4J_PLUGINS: '[]'
-      NEO4J_server_memory_heap_initial__size: 256m
-      NEO4J_server_memory_heap_max__size: 512m
-      NEO4J_server_memory_pagecache_size: 256m
-    deploy:
-      resources:
-        limits:
-          memory: 1.5G
-    healthcheck:
-      test: ["CMD", "neo4j-admin", "server", "status"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
   # ─────────────────────────────────────────────
   # CLIProxy — LLM Gateway (OAuth-based)
@@ -88,55 +59,8 @@ services:
       start_period: 10s
 
   # ─────────────────────────────────────────────
-  # mem0 — Agent Memory Service
-  # LLM (chat) routes through CLIProxy; embeddings direct to OpenAI
-  # (CLIProxy v6.8.55 does not support /v1/embeddings)
-  # ─────────────────────────────────────────────
-  mem0:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.mem0
-    image: cortex-mem0:latest
-    container_name: cortex-mem0
-    restart: unless-stopped
-    ports:
-      - "8050:8000"
-    volumes:
-      - cliproxy-auth:/app/cliproxy-auth:ro
-    environment:
-      MEM0_API_KEY: ${MEM0_API_KEY:-local}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-proxy-key}
-      OPENAI_BASE_URL: http://llm-proxy:8317/v1
-      CLIPROXY_AUTH_DIR: /app/cliproxy-auth
-      MEM0_VECTOR_STORE: qdrant
-      MEM0_QDRANT_HOST: qdrant
-      MEM0_QDRANT_PORT: 6333
-      MEM0_GRAPH_STORE: neo4j
-      MEM0_NEO4J_URL: bolt://neo4j:7687
-      MEM0_NEO4J_USERNAME: neo4j
-      MEM0_NEO4J_PASSWORD: ${NEO4J_PASSWORD:-cortex2026}
-      MEM0_EMBEDDER: openai
-      MEM0_EMBEDDING_MODEL: text-embedding-3-small
-    depends_on:
-      qdrant:
-        condition: service_healthy
-      neo4j:
-        condition: service_healthy
-      llm-proxy:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  # ─────────────────────────────────────────────
-  # Cortex Hub All-in-One (API + MCP + Web)
+  # Cortex Hub All-in-One (API + MCP + Web + mem9)
+  # mem9 runs in-process — no separate memory container
   # ─────────────────────────────────────────────
   cortex-hub:
     build:
@@ -158,24 +82,22 @@ services:
       DATABASE_PATH: /app/data/cortex.db
       COMMIT_SHA: ${COMMIT_SHA:-dev}
       QDRANT_URL: http://qdrant:6333
-      NEO4J_URL: bolt://neo4j:7687
-      NEO4J_USERNAME: neo4j
-      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-cortex2026}
-      MEM0_URL: http://mem0:8000
       OPENAI_API_KEY: ${OPENAI_API_KEY:-proxy-key}
       OPENAI_API_BASE: http://llm-proxy:8317/v1
       LLM_PROXY_URL: http://llm-proxy:8317
       CLIPROXY_AUTH_DIR: /app/cliproxy-auth
       CLIPROXY_MANAGEMENT_KEY: ${MANAGEMENT_PASSWORD:-cortex2026}
       DASHBOARD_URL: ${DASHBOARD_URL:-https://hub.jackle.dev}
+      # mem9 Configuration
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MEM9_LLM_MODEL: ${MEM9_LLM_MODEL:-gpt-5.4-mini}
+      MEM9_EMBEDDING_MODEL: ${MEM9_EMBEDDING_MODEL:-gemini-embedding-2-preview}
       # MCP Gateway Config
       MCP_SERVER_NAME: "cortex-hub"
       MCP_SERVER_VERSION: "0.1.0"
       DASHBOARD_API_URL: http://localhost:4000
     depends_on:
       qdrant:
-        condition: service_healthy
-      neo4j:
         condition: service_healthy
     deploy:
       resources:
@@ -209,10 +131,6 @@ services:
 volumes:
   qdrant-data:
     name: cortex-qdrant-data
-  neo4j-data:
-    name: cortex-neo4j-data
-  neo4j-logs:
-    name: cortex-neo4j-logs
   api-data:
     name: cortex-api-data
   cliproxy-auth:

@@ -36,3 +36,5 @@ npm-debug.log*
 
 # Coverage
 coverage/
+deploy-test/data/
+deploy-legacy-test/data/

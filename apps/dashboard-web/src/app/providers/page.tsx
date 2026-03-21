@@ -155,6 +155,98 @@ function ProviderCard({ provider, onReconnect }: { provider: Provider; onReconne
   )
 }
 
+/* ── Gemini Embedding Config Card ── */
+function GeminiConfigCard() {
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  const handleSave = async () => {
+    if (!apiKey.trim()) return
+    setSaving(true)
+    setResult(null)
+    try {
+      const res = await fetch(`${config.api.base}/api/setup/configure-mem9`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ geminiApiKey: apiKey.trim() }),
+        signal: AbortSignal.timeout(15000),
+      })
+      const data = await res.json() as { success: boolean; message?: string; error?: string }
+      setResult({
+        success: data.success,
+        message: data.success
+          ? `✅ ${data.message || 'Gemini embedding configured!'}`
+          : `❌ ${data.error || 'Configuration failed'}`,
+      })
+      if (data.success) setApiKey('')
+    } catch (err) {
+      setResult({ success: false, message: `❌ ${String(err)}` })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className={`card ${styles.providerCard}`}>
+      <div className={styles.providerHeader}>
+        <span className={styles.providerIcon}>🧠</span>
+        <div className={styles.providerInfo}>
+          <h3 className={styles.providerName}>Gemini Embedding (mem9)</h3>
+          <p className={styles.providerDesc}>
+            Google Gemini API for memory embeddings — used by the mem9 memory engine
+          </p>
+        </div>
+      </div>
+
+      <div style={{ padding: '0.75rem 0' }}>
+        <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+          GCP API Key
+        </label>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="AIza..."
+            style={{
+              flex: 1,
+              padding: '0.5rem 0.75rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+              fontSize: '0.9rem',
+            }}
+          />
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleSave}
+            disabled={saving || !apiKey.trim()}
+          >
+            {saving ? '⏳ Testing...' : '🔗 Save & Test'}
+          </button>
+        </div>
+        <p style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginTop: '0.4rem' }}>
+          Get your key from{' '}
+          <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>
+            Google AI Studio
+          </a>
+          {' '}or GCP Console → APIs & Services → Credentials
+        </p>
+      </div>
+
+      {result && (
+        <div
+          className={`${styles.testResult} ${result.success ? styles.testSuccess : styles.testFail}`}
+        >
+          <p className={styles.testDetail}>{result.message}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProvidersPage() {
   const { data, error, isLoading, mutate } = useSWR('llm-providers', fetchProviders, {
     refreshInterval: 30000,
@@ -209,6 +301,12 @@ export default function ProvidersPage() {
         </div>
       )}
 
+      {/* Gemini Embedding Config */}
+      <section style={{ marginBottom: '1.5rem' }}>
+        <h3 className={styles.infoTitle} style={{ marginBottom: '0.75rem' }}>Embedding Provider</h3>
+        <GeminiConfigCard />
+      </section>
+
       {/* Provider Cards */}
       <div className={styles.providersGrid}>
         {isLoading && !data && (
@@ -230,16 +328,18 @@ export default function ProvidersPage() {
         <h3 className={styles.infoTitle}>How LLM Providers Work</h3>
         <div className={`card ${styles.infoCard}`}>
           <div className={styles.flowDiagram}>
-            <span className={styles.flowStep}>Agent / mem0</span>
+            <span className={styles.flowStep}>Agent / mem9</span>
             <span className={styles.flowArrow}>→</span>
-            <span className={styles.flowStep}>CLIProxy :8317</span>
+            <span className={styles.flowStep}>CLIProxy :8317 (LLM)</span>
+          </div>
+          <div className={styles.flowDiagram} style={{ marginTop: '0.5rem' }}>
+            <span className={styles.flowStep}>mem9 (Embedding)</span>
             <span className={styles.flowArrow}>→</span>
-            <span className={styles.flowStep}>OpenAI API</span>
+            <span className={styles.flowStep}>Gemini API (direct)</span>
           </div>
           <p className={styles.infoText}>
-            CLIProxy acts as an OAuth proxy gateway. Agents and services (like mem0) send requests
-            to CLIProxy&apos;s OpenAI-compatible API. CLIProxy authenticates using your OAuth tokens
-            and forwards requests to the provider.
+            mem9 is the in-process memory engine. LLM requests (fact extraction) route through CLIProxy
+            using OAuth. Embedding requests go directly to Google Gemini API using your GCP API key.
           </p>
         </div>
       </section>

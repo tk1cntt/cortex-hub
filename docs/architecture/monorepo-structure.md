@@ -22,6 +22,16 @@ cortex-hub/
 │   │       ├── logger.ts              # Structured logging (pino)
 │   │       ├── validation.ts          # Zod schemas (shared)
 │   │       └── index.ts
+│   ├── shared-mem9/                    # Memory engine (replaces mem0)
+│   │   └── src/
+│   │       ├── types.ts               # Mem9Config, MemoryItem, etc.
+│   │       ├── embedder.ts            # Gemini/OpenAI embedding client
+│   │       ├── vector-store.ts        # Qdrant REST client
+│   │       ├── prompts.ts             # Fact extraction + dedup prompts
+│   │       ├── llm.ts                 # CLIProxy chat completions
+│   │       ├── memory.ts              # Core Mem9 class
+│   │       ├── history.ts             # SQLite audit trail
+│   │       └── index.ts
 │   └── ui-components/                  # Shared React components
 │       └── src/
 │           ├── DataTable.tsx           # Sortable, filterable data table
@@ -42,7 +52,7 @@ cortex-hub/
 │   │       ├── tools/                 # One file per tool group
 │   │       │   ├── base.ts            # Abstract BaseTool class
 │   │       │   ├── code.ts            # GitNexus proxy tools
-│   │       │   ├── memory.ts          # mem0 proxy tools
+│   │       │   ├── memory.ts          # mem9 proxy tools
 │   │       │   ├── knowledge.ts       # Qdrant proxy tools
 │   │       │   ├── quality.ts         # Quality gate tools
 │   │       │   └── session.ts         # Session handoff tools
@@ -53,7 +63,6 @@ cortex-hub/
 │   │       └── clients/
 │   │           ├── IServiceClient.ts  # Service client interface
 │   │           ├── GitNexusClient.ts
-│   │           ├── Mem0Client.ts
 │   │           └── QdrantClient.ts
 │   │
 │   ├── dashboard-api/                  # Backend API (Hono + SQLite)
@@ -143,10 +152,13 @@ cortex-hub/
 graph LR
     ST["@cortex/shared-types"] --> SU["@cortex/shared-utils"]
     ST --> UI["@cortex/ui-components"]
+    ST --> M9["@cortex/shared-mem9"]
+    SU --> M9
     SU --> HUB["@cortex/hub-mcp"]
     ST --> HUB
     SU --> API["@cortex/dashboard-api"]
     ST --> API
+    M9 --> API
     UI --> WEB["@cortex/dashboard-web"]
     ST --> WEB
     SU --> WEB

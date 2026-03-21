@@ -147,6 +147,22 @@ importers:
         specifier: ^4.0.0
         version: 4.75.0(@cloudflare/workers-types@4.20260317.1)
 
+  packages/shared-mem9:
+    dependencies:
+      '@cortex/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      '@cortex/shared-utils':
+        specifier: workspace:*
+        version: link:../shared-utils
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.15)(tsx@4.21.0)(yaml@2.8.2)
+
   packages/shared-types:
     devDependencies:
       typescript:
