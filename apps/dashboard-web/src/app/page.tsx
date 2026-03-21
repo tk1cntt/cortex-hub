@@ -149,7 +149,7 @@ export default function DashboardPage() {
   const services: ServiceCardProps[] = [
     {
       name: 'Hub Backend API',
-      description: 'Core API for Cortex Hub operations',
+      description: `Core API for Cortex Hub operations ${healthData?.commit ? `(${healthData.commit.substring(0, 7)})` : ''}`,
       endpoint: 'cortex-api.jackle.dev',
       status: isLoading ? 'muted' : error ? 'error' : healthData?.status === 'ok' || healthData?.status === 'degraded' ? 'healthy' : 'error',
     },

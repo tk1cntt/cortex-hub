@@ -49,6 +49,7 @@ app.get('/health', async (c) => {
     status: allOk ? 'ok' : 'degraded',
     service: 'dashboard-api',
     version: '0.1.0',
+    commit: process.env['COMMIT_SHA'] || 'dev',
     timestamp: new Date().toISOString(),
     uptime: Math.floor(process.uptime()),
     responseTime: Date.now() - startTime,
