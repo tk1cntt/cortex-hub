@@ -2,25 +2,52 @@
 FROM node:22-slim AS builder
 WORKDIR /app
 
-# Install dependencies
+# Install pnpm and turbo
 RUN npm install -g pnpm turbo
 
-# Copy all files (full context)
+# Copy all files
 COPY . .
 
-# Install and build
+# Install all deps (uses .npmrc: node-linker=hoisted, shamefully-hoist=true)
 RUN pnpm install --frozen-lockfile
+
+# Build both apps
 RUN pnpm build --filter=@cortex/dashboard-api --filter=@cortex/dashboard-web
 
-# Stage 2: Runner
+# Debug: verify @hono exists in node_modules
+RUN ls node_modules/@hono/node-server/package.json && echo "HONO_OK" || echo "HONO_MISSING"
+
+# Stage 2: Production deps only
+FROM node:22-slim AS prod-deps
+WORKDIR /app
+
+RUN npm install -g pnpm
+
+# Copy package manifests and .npmrc for install
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=builder /app/.npmrc ./.npmrc
+COPY --from=builder /app/apps/dashboard-api/package.json ./apps/dashboard-api/package.json
+COPY --from=builder /app/apps/hub-mcp/package.json ./apps/hub-mcp/package.json
+COPY --from=builder /app/packages/shared-utils/package.json ./packages/shared-utils/package.json
+COPY --from=builder /app/packages/shared-types/package.json ./packages/shared-types/package.json
+
+# Install production deps only (hoisted to root)
+RUN pnpm install --frozen-lockfile --prod
+
+# Stage 3: Runner
 FROM node:22-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=4000
 
-# Copy node_modules (hoisted)
-COPY --from=builder /app/node_modules ./node_modules
+# Copy production node_modules (hoisted, prod only)
+COPY --from=prod-deps /app/node_modules ./node_modules
+
+# Copy .npmrc for module resolution context
+COPY --from=builder /app/.npmrc ./.npmrc
 
 # Copy built artifacts
 COPY --from=builder /app/apps/dashboard-api/dist ./apps/dashboard-api/dist
@@ -28,16 +55,15 @@ COPY --from=builder /app/apps/hub-mcp/dist ./apps/hub-mcp/dist
 COPY --from=builder /app/packages/shared-utils/dist ./packages/shared-utils/dist
 COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
 
-# Copy runtime assets – VITAL FIX: ensuring schema.sql is present
-# We copy from 'src' in builder since tsc doesn't copy it to 'dist'
+# Copy runtime assets
 RUN mkdir -p /app/apps/dashboard-api/dist/db
 COPY --from=builder /app/apps/dashboard-api/src/db/schema.sql ./apps/dashboard-api/dist/db/schema.sql
 
-# Copy Dashboard Web assets to public folder for serving
+# Copy Dashboard Web assets
 RUN mkdir -p /app/public
 COPY --from=builder /app/apps/dashboard-web/out/ ./public/
 
-# Copy metadata
+# Copy metadata for ESM resolution
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/apps/dashboard-api/package.json ./apps/dashboard-api/package.json
 COPY --from=builder /app/apps/hub-mcp/package.json ./apps/hub-mcp/package.json
