@@ -307,7 +307,7 @@ export default function DashboardPage() {
 {`{
   "mcpServers": {
     "cortex-hub": {
-      "url": "https://mcp.hub.jackle.dev/mcp",
+      "url": "https://cortex-mcp.jackle.dev/mcp",
       "headers": {
         "Authorization": "Bearer <your-api-key>"
       }

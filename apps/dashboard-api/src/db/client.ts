@@ -44,6 +44,15 @@ try {
   db.exec('ALTER TABLE api_keys ADD COLUMN project_id TEXT')
 } catch (e) { /* ignore if exists */ }
 
+// Mem9 embedding status on index_jobs
+try {
+  db.exec("ALTER TABLE index_jobs ADD COLUMN mem9_status TEXT DEFAULT 'pending'")
+} catch (e) { /* ignore if exists */ }
+
+try {
+  db.exec('ALTER TABLE index_jobs ADD COLUMN mem9_chunks INTEGER DEFAULT 0')
+} catch (e) { /* ignore if exists */ }
+
 if (existsSync(schemaPath)) {
   const schema = readFileSync(schemaPath, 'utf8')
   db.exec(schema)

@@ -435,6 +435,25 @@ export async function getBranchIndexSummary(projectId: string) {
   return apiFetch<{ branches: BranchIndexStatus[] }>(`/api/projects/${projectId}/index/branches`)
 }
 
+// ── Mem9 Pipeline ──
+export interface Mem9PipelineStatus {
+  jobId?: string
+  branch?: string
+  gitnexus: { status: string; symbols?: number; files?: number; completedAt?: string }
+  mem9: { status: string; chunks?: number }
+}
+
+export async function getMemNineStatus(projectId: string) {
+  return apiFetch<Mem9PipelineStatus>(`/api/projects/${projectId}/index/mem9/status`)
+}
+
+export async function startMemNineEmbedding(projectId: string) {
+  return apiFetch<{ success: boolean; jobId: string; branch: string; status: string }>(
+    `/api/projects/${projectId}/index/mem9`,
+    { method: 'POST' }
+  )
+}
+
 // ── System Metrics ──
 export interface SystemMetrics {
   timestamp: string

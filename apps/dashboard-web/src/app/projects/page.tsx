@@ -8,7 +8,9 @@ import {
   getProject, updateProject,
   startIndexing, getIndexStatus, getIndexHistory, cancelIndexing,
   listBranches, getBranchDiff, getBranchIndexSummary, testGitConnection,
+  getMemNineStatus, startMemNineEmbedding,
   type IndexStatus, type IndexJobSummary, type BranchIndexStatus,
+  type Mem9PipelineStatus,
 } from '@/lib/api'
 import styles from './page.module.css'
 
@@ -337,6 +339,111 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
   )
 }
 
+// ── Pipeline Status Panel (GitNexus vs mem9) ──
+function PipelineStatusPanel({ projectId }: { projectId: string }) {
+  const [starting, setStarting] = useState(false)
+  const [error, setError] = useState('')
+
+  const { data: pipeline, mutate } = useSWR<Mem9PipelineStatus>(
+    `pipeline-${projectId}`,
+    () => getMemNineStatus(projectId),
+    { refreshInterval: 5000 }
+  )
+
+  const handleRunMem9 = useCallback(async () => {
+    setStarting(true)
+    setError('')
+    try {
+      await startMemNineEmbedding(projectId)
+      mutate()
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setStarting(false)
+    }
+  }, [projectId, mutate])
+
+  if (!pipeline) return null
+
+  const gn = pipeline.gitnexus
+  const m9 = pipeline.mem9
+
+  const gnDone = gn.status === 'done'
+  const m9Running = m9.status === 'embedding'
+  const m9Done = m9.status === 'done'
+  const m9Pending = !m9Done && !m9Running && m9.status !== 'error'
+
+  const statusColors: Record<string, string> = {
+    done: '#27ae60', embedding: '#f5a623', error: '#e74c3c',
+    pending: '#888', none: '#555',
+  }
+
+  return (
+    <div className={`card ${styles.pipelineCard}`}>
+      <h3 className={styles.infoTitle}>⚡ Pipeline Status</h3>
+      <div className={styles.pipelineGrid}>
+        {/* GitNexus Card */}
+        <div className={styles.pipelineItem}>
+          <div className={styles.pipelineIcon}>🔍</div>
+          <div className={styles.pipelineInfo}>
+            <div className={styles.pipelineName}>GitNexus</div>
+            <div className={styles.pipelineDesc}>Code indexing &amp; symbol extraction</div>
+          </div>
+          <span
+            className={styles.pipelineStatus}
+            style={{ background: statusColors[gn.status] ?? '#555' }}
+          >
+            {gn.status === 'done' ? '✅ Done' : gn.status === 'none' ? '— Not run' : gn.status}
+          </span>
+          {gnDone && (
+            <div className={styles.pipelineStats}>
+              <span>🧩 {gn.symbols ?? 0} symbols</span>
+              <span>📄 {gn.files ?? 0} files</span>
+            </div>
+          )}
+        </div>
+
+        {/* Arrow */}
+        <div className={styles.pipelineArrow}>→</div>
+
+        {/* mem9 Card */}
+        <div className={styles.pipelineItem}>
+          <div className={styles.pipelineIcon}>🧠</div>
+          <div className={styles.pipelineInfo}>
+            <div className={styles.pipelineName}>mem9</div>
+            <div className={styles.pipelineDesc}>Code embedding &amp; semantic search</div>
+          </div>
+          <span
+            className={styles.pipelineStatus}
+            style={{ background: statusColors[m9.status] ?? '#555' }}
+          >
+            {m9Done ? '✅ Done' : m9Running ? '⏳ Embedding...' : m9.status === 'error' ? '❌ Error' : '— Pending'}
+          </span>
+          {(m9Done || m9Running) && (
+            <div className={styles.pipelineStats}>
+              <span>📦 {m9.chunks ?? 0} chunks embedded</span>
+            </div>
+          )}
+          {gnDone && m9Pending && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleRunMem9}
+              disabled={starting}
+              style={{ marginTop: '0.5rem' }}
+            >
+              {starting ? '⏳ Starting...' : '🧠 Run mem9'}
+            </button>
+          )}
+          {error && <div className={styles.pipelineError}>⚠️ {error}</div>}
+        </div>
+      </div>
+      {pipeline.branch && (
+        <div className={styles.pipelineBranch}>Branch: <strong>{pipeline.branch}</strong></div>
+      )}
+    </div>
+  )
+}
+
 function ProjectContent() {
   const searchParams = useSearchParams()
   const projectId = searchParams.get('id')
@@ -553,6 +660,9 @@ function ProjectContent() {
 
       {/* Indexing Panel */}
       <IndexingPanel projectId={projectId} hasGitUrl={!!project.git_repo_url} />
+
+      {/* Pipeline Status */}
+      <PipelineStatusPanel projectId={projectId} />
 
       {/* Activity placeholder */}
       <div className={`card ${styles.activityCard}`}>

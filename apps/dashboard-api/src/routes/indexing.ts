@@ -4,6 +4,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { db } from '../db/client.js'
 import { startIndexing, cancelJob, buildAuthUrl } from '../services/indexer.js'
+import { embedProject } from '../services/mem9-embedder.js'
 
 const REPOS_DIR = process.env.REPOS_DIR ?? '/data/repos'
 
@@ -318,3 +319,88 @@ indexingRouter.get('/:id/index/branches', (c) => {
   }
 })
 
+// ── Trigger Mem9 Embedding (standalone) ──
+indexingRouter.post('/:id/index/mem9', async (c) => {
+  const projectId = c.req.param('id')
+
+  try {
+    // Find the latest completed index job for this project
+    const latestJob = db.prepare(
+      `SELECT id, branch, status, mem9_status FROM index_jobs 
+       WHERE project_id = ? AND status = 'done' 
+       ORDER BY completed_at DESC LIMIT 1`
+    ).get(projectId) as { id: string; branch: string; status: string; mem9_status: string } | undefined
+
+    if (!latestJob) {
+      return c.json({ error: 'No completed indexing job found. Run GitNexus indexing first.' }, 400)
+    }
+
+    // Check if mem9 is already running
+    if (latestJob.mem9_status === 'embedding') {
+      return c.json({ error: 'Mem9 embedding is already running for this project.' }, 409)
+    }
+
+    const jobId = latestJob.id
+    const branch = latestJob.branch
+
+    // Mark as embedding
+    db.prepare("UPDATE index_jobs SET mem9_status = 'embedding', mem9_chunks = 0 WHERE id = ?").run(jobId)
+
+    // Fire and forget — run embedding in background
+    embedProject(projectId, branch, jobId, (progress, chunks) => {
+      db.prepare('UPDATE index_jobs SET mem9_chunks = ? WHERE id = ?').run(chunks, jobId)
+    }).then((result) => {
+      db.prepare('UPDATE index_jobs SET mem9_status = ?, mem9_chunks = ? WHERE id = ?')
+        .run(result.status, result.chunks, jobId)
+    }).catch((err) => {
+      db.prepare("UPDATE index_jobs SET mem9_status = 'error' WHERE id = ?").run(jobId)
+      console.error('[mem9] Embedding failed:', err)
+    })
+
+    return c.json({ success: true, jobId, branch, status: 'embedding' }, 201)
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Get Mem9 Status ──
+indexingRouter.get('/:id/index/mem9/status', (c) => {
+  const projectId = c.req.param('id')
+
+  try {
+    const job = db.prepare(
+      `SELECT id, branch, mem9_status, mem9_chunks, status as gitnexus_status, 
+              symbols_found, total_files, completed_at
+       FROM index_jobs 
+       WHERE project_id = ? AND status = 'done'
+       ORDER BY completed_at DESC LIMIT 1`
+    ).get(projectId) as {
+      id: string; branch: string; mem9_status: string; mem9_chunks: number;
+      gitnexus_status: string; symbols_found: number; total_files: number; completed_at: string
+    } | undefined
+
+    if (!job) {
+      return c.json({
+        gitnexus: { status: 'none' },
+        mem9: { status: 'none' },
+      })
+    }
+
+    return c.json({
+      jobId: job.id,
+      branch: job.branch,
+      gitnexus: {
+        status: job.gitnexus_status,
+        symbols: job.symbols_found,
+        files: job.total_files,
+        completedAt: job.completed_at,
+      },
+      mem9: {
+        status: job.mem9_status ?? 'pending',
+        chunks: job.mem9_chunks ?? 0,
+      },
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
