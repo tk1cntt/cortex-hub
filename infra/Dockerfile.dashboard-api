@@ -9,7 +9,7 @@ WORKDIR /app
 
 # ── 1. Install all dependencies for build ────
 FROM base AS deps
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/shared-types/package.json ./packages/shared-types/
 COPY packages/shared-utils/package.json ./packages/shared-utils/
 COPY apps/dashboard-api/package.json ./apps/dashboard-api/
@@ -29,7 +29,7 @@ RUN pnpm --filter @cortex/shared-types build \
 
 # ── 3. Production dependencies ────────────────
 FROM base AS prod-deps
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/shared-types/package.json ./packages/shared-types/
 COPY packages/shared-utils/package.json ./packages/shared-utils/
 COPY apps/dashboard-api/package.json ./apps/dashboard-api/
