@@ -17,6 +17,16 @@ const app = new Hono<{ Bindings: Env }>()
 app.use('*', cors())
 app.use('*', logger())
 
+// Global error handler — return JSON instead of text/plain
+app.onError((err, c) => {
+  console.error('[MCP Global Error]', err.message, err.stack)
+  return c.json({
+    jsonrpc: '2.0',
+    error: { code: -32603, message: err.message },
+    id: null,
+  }, 500)
+})
+
 // Health endpoint (no auth required)
 app.get('/health', (c) => {
   return c.json({
