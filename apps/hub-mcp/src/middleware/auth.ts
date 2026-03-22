@@ -28,7 +28,8 @@ export async function validateApiKey(
   }
 
   try {
-    const res = await fetch(`${env.DASHBOARD_API_URL}/api/keys/verify`, {
+    const apiUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
+    const res = await fetch(`${apiUrl}/api/keys/verify`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
