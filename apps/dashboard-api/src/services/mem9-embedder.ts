@@ -161,7 +161,7 @@ function buildEmbeddingChain(): { config: EmbedderConfig; chain: ModelSlot[] } {
   const defaultConfig: EmbedderConfig = {
     provider: 'gemini',
     apiKey: geminiKey,
-    model: 'text-embedding-004',
+    model: 'gemini-embedding-001',
   }
 
   return { config: defaultConfig, chain: chainSlots }
