@@ -565,10 +565,15 @@ with open('lefthook.yml', 'w') as f:
 print('Generated lefthook.yml')
 "
 
-    # Remove legacy .husky directory if it exists
+    # Remove legacy .husky directory and unset core.hooksPath if it points there
     if [ -d ".husky" ]; then
         echo -e "${YELLOW}>>> Removing legacy .husky/ (replaced by Lefthook)${NC}"
         rm -rf .husky
+    fi
+    HOOKS_PATH=$(git config --local core.hooksPath 2>/dev/null || echo "")
+    if [ -n "$HOOKS_PATH" ]; then
+        echo -e "${YELLOW}>>> Unsetting core.hooksPath ($HOOKS_PATH) for Lefthook compatibility${NC}"
+        git config --unset core.hooksPath 2>/dev/null || true
     fi
 
     # Install hooks
