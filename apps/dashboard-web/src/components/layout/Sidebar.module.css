@@ -12,6 +12,50 @@
   animation: slide-in-left 0.3s ease-out;
 }
 
+/* ── Hamburger Button (mobile only) ── */
+.hamburger {
+  display: none; /* hidden on desktop */
+  position: fixed;
+  top: var(--space-4);
+  left: var(--space-4);
+  z-index: 101;
+  width: 40px;
+  height: 40px;
+  padding: var(--space-2);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all var(--transition-fast);
+}
+
+.hamburger:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-hover);
+}
+
+.hamburgerBar {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--text-secondary);
+  border-radius: 1px;
+  transition: all var(--transition-fast);
+}
+
+.hamburger:hover .hamburgerBar {
+  background: var(--accent-secondary);
+}
+
+/* ── Backdrop Overlay ── */
+.backdrop {
+  display: none; /* hidden on desktop */
+}
+
 /* Brand */
 .brand {
   display: flex;
@@ -31,6 +75,7 @@
   font-size: 1.5rem;
   background: var(--accent-gradient);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -133,4 +178,61 @@
   padding: 1px 5px;
   border-radius: var(--radius-sm);
   letter-spacing: 0.03em;
+}
+
+/* ================================================================
+   Mobile Breakpoints
+   ================================================================ */
+
+/* ── Tablet Portrait & below (≤768px): Sidebar off-screen + hamburger ── */
+@media (max-width: 768px) {
+  .hamburger {
+    display: flex;
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 99;
+    animation: fade-in 0.2s ease-out;
+  }
+
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: none;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .navItem {
+    padding: var(--space-3) var(--space-4);
+    min-height: 44px; /* touch target */
+  }
+}
+
+/* ── Phone (≤480px): Tighter sidebar ── */
+@media (max-width: 480px) {
+  .sidebar {
+    width: 280px;
+  }
+
+  .brand {
+    padding: var(--space-4) var(--space-4);
+  }
+
+  .nav {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .footer {
+    padding: var(--space-3) var(--space-4);
+  }
 }

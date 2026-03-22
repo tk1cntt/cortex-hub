@@ -160,3 +160,49 @@
   color: var(--text-tertiary);
   padding: var(--space-10) !important;
 }
+
+/* ── Mobile Breakpoints ── */
+@media (max-width: 768px) {
+  .tableCard {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table {
+    min-width: 600px;
+  }
+
+  .modalContent {
+    max-width: calc(100% - 2rem);
+    padding: var(--space-5);
+  }
+
+  .modalActions {
+    margin-top: var(--space-5);
+  }
+
+  .permItem {
+    min-height: 44px;
+  }
+
+  .actions {
+    justify-content: stretch;
+  }
+
+  .actions .btn {
+    flex: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .modalContent {
+    max-width: calc(100% - 1rem);
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+  }
+
+  .newKeyValue {
+    font-size: 0.75rem;
+    padding: var(--space-2) var(--space-3);
+  }
+}

@@ -33,3 +33,41 @@
 .content {
   animation: fade-in 0.5s ease-out 0.1s both;
 }
+
+/* ── Tablet Portrait & below (≤768px) ── */
+@media (max-width: 768px) {
+  .main {
+    margin-left: 0;
+    padding: var(--space-5);
+    padding-top: calc(var(--space-8) + 40px); /* space for hamburger button */
+    max-width: 100%;
+  }
+
+  .pageHeader {
+    margin-bottom: var(--space-5);
+  }
+
+  .title {
+    font-size: 1.5rem;
+  }
+}
+
+/* ── Phone (≤480px) ── */
+@media (max-width: 480px) {
+  .main {
+    padding: var(--space-3);
+    padding-top: calc(var(--space-6) + 44px);
+  }
+
+  .pageHeader {
+    margin-bottom: var(--space-4);
+  }
+
+  .title {
+    font-size: 1.375rem;
+  }
+
+  .subtitle {
+    font-size: 0.8125rem;
+  }
+}
