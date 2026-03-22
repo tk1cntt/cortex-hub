@@ -277,6 +277,34 @@ export async function embedProject(
 
   logger.info(`[${jobId}] Embedding complete: ${successCount}/${allChunks.length} chunks stored`)
 
+  // ── Log usage to usage_logs for dashboard visibility ──
+  if (successCount > 0) {
+    try {
+      // Estimate tokens: each embed call sends chunk text
+      // Gemini embedding token ≈ chars / 4 (rough heuristic)
+      const totalChars = allChunks
+        .slice(0, successCount)
+        .reduce((sum, c) => sum + c.content.length, 0)
+      const estimatedTokens = Math.ceil(totalChars / 4)
+      const modelName = chain[0]?.model ?? embedConfig.model
+
+      db.prepare(
+        `INSERT INTO usage_logs (agent_id, model, prompt_tokens, completion_tokens, total_tokens, project_id, request_type)
+         VALUES (?, ?, ?, 0, ?, ?, ?)`
+      ).run(
+        'mem9-embedder',
+        modelName,
+        estimatedTokens,
+        estimatedTokens,
+        projectId,
+        'embedding'
+      )
+      logger.info(`[${jobId}] Usage logged: ~${estimatedTokens} tokens, model=${modelName}`)
+    } catch (err) {
+      logger.warn(`[${jobId}] Failed to log usage: ${err}`)
+    }
+  }
+
   if (errors.length > 10) {
     // Only keep first 10 errors + summary
     const total = errors.length
