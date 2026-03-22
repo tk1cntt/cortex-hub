@@ -360,3 +360,57 @@ h4 { font-size: 1rem; }
 @keyframes rotate-glow {
   100% { transform: rotate(1turn); }
 }
+
+/* ================================================================
+   Responsive Breakpoints — Global Overrides
+   ================================================================ */
+
+/* ── Tablet Portrait (≤768px) ── */
+@media (max-width: 768px) {
+  :root {
+    --space-8: 1.25rem;
+    --space-10: 1.75rem;
+    --space-12: 2rem;
+  }
+
+  h1 { font-size: 1.375rem; }
+  h2 { font-size: 1.125rem; }
+  h3 { font-size: 1rem; }
+
+  .card {
+    padding: var(--space-4);
+  }
+
+  .btn {
+    min-height: 44px;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .btn-lg {
+    padding: var(--space-3) var(--space-5);
+  }
+}
+
+/* ── Phone (≤480px) ── */
+@media (max-width: 480px) {
+  :root {
+    --space-6: 1rem;
+    --space-8: 1rem;
+    --space-10: 1.25rem;
+    --space-12: 1.5rem;
+  }
+
+  h1 { font-size: 1.25rem; }
+  h2 { font-size: 1.0625rem; }
+
+  .card {
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+  }
+
+  /* Wider scrollbar for touch devices */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+}
