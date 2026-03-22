@@ -154,11 +154,23 @@ accountsRouter.post('/', async (c) => {
 
     const id = `pa-${randomUUID().slice(0, 8)}`
     const caps = JSON.stringify(capabilities ?? ['chat'])
+    const models = JSON.stringify(body.models ?? [])
 
     db.prepare(
-      `INSERT INTO provider_accounts (id, name, type, auth_type, api_base, api_key, capabilities) 
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, name, type, authType || 'api_key', apiBase, apiKey || null, caps)
+      `INSERT INTO provider_accounts (id, name, type, auth_type, api_base, api_key, capabilities, models) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, name, type, authType || 'api_key', apiBase, apiKey || null, caps, models)
+
+    // Auto-configure embedding routing if this provider has embedding models
+    const modelList: string[] = body.models ?? []
+    const embedModel = modelList.find((m: string) => m.includes('embed'))
+    if (embedModel) {
+      const existingRouting = db.prepare("SELECT purpose FROM model_routing WHERE purpose = 'embedding'").get()
+      if (!existingRouting) {
+        db.prepare("INSERT INTO model_routing (purpose, chain, updated_at) VALUES ('embedding', ?, datetime('now'))")
+          .run(JSON.stringify([{ accountId: id, model: embedModel }]))
+      }
+    }
 
     return c.json({ success: true, id }, 201)
   } catch (error) {

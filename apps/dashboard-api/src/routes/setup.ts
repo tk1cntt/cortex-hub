@@ -374,21 +374,27 @@ setupRouter.post('/configure-provider', async (c) => {
       fs.mkdirSync(authDir, { recursive: true })
     }
 
+    // ── Provider-specific config ──
     let yamlContent = ''
     const filename = `cortex-${provider}.yaml`
+    let apiBase = ''
+    let dbType = 'openai_compat'
 
     switch (provider) {
       case 'openai':
+        apiBase = 'https://api.openai.com/v1'
         yamlContent = [
           '# Auto-configured by Cortex Hub Setup Wizard',
           'openai-compatibility:',
           '  - name: "openai"',
-          '    base-url: "https://api.openai.com/v1"',
+          `    base-url: "${apiBase}"`,
           '    api-key-entries:',
           `      - api-key: "${apiKey}"`,
         ].join('\n')
         break
       case 'gemini':
+        apiBase = 'https://generativelanguage.googleapis.com/v1beta'
+        dbType = 'gemini'
         yamlContent = [
           '# Auto-configured by Cortex Hub Setup Wizard',
           'gemini-api-key:',
@@ -396,6 +402,7 @@ setupRouter.post('/configure-provider', async (c) => {
         ].join('\n')
         break
       case 'claude':
+        apiBase = 'https://api.anthropic.com/v1'
         yamlContent = [
           '# Auto-configured by Cortex Hub Setup Wizard',
           'claude-api-key:',
@@ -403,30 +410,101 @@ setupRouter.post('/configure-provider', async (c) => {
         ].join('\n')
         break
       case 'custom':
+        apiBase = body.apiBase || 'https://api.openai.com/v1'
         yamlContent = [
           '# Auto-configured by Cortex Hub Setup Wizard',
           'openai-compatibility:',
           '  - name: "custom"',
-          '    base-url: "https://api.openai.com/v1"',
+          `    base-url: "${apiBase}"`,
           '    api-key-entries:',
           `      - api-key: "${apiKey}"`,
         ].join('\n')
         break
       default:
-        return c.json({ error: `Unsupported provider: ${provider}` }, 400)
+        // For other providers (openrouter, groq, deepseek, etc.) use OpenAI-compat
+        apiBase = body.apiBase || 'https://api.openai.com/v1'
+        dbType = 'openai_compat'
+        yamlContent = [
+          '# Auto-configured by Cortex Hub Setup Wizard',
+          'openai-compatibility:',
+          `  - name: "${provider}"`,
+          `    base-url: "${apiBase}"`,
+          '    api-key-entries:',
+          `      - api-key: "${apiKey}"`,
+        ].join('\n')
     }
 
     const filePath = path.join(authDir, filename)
     fs.writeFileSync(filePath, yamlContent + '\n', 'utf-8')
 
-    await new Promise((resolve) => setTimeout(resolve, 2500))
-
+    // ── Validate key & discover models ──
+    let chatModels: string[] = []
+    let embedModels: string[] = []
     let modelsDetected = 0
+
     try {
-      const res = await fetch(`${CLIPROXY_URL()}/v1/models`, { signal: AbortSignal.timeout(5000) })
-      const data = (await res.json()) as { data?: Array<{ id: string }> }
-      modelsDetected = data.data?.length || 0
+      if (dbType === 'gemini') {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+          { signal: AbortSignal.timeout(10000) }
+        )
+        if (res.ok) {
+          const data = (await res.json()) as { models?: { name: string; supportedGenerationMethods?: string[] }[] }
+          const all = data.models ?? []
+          chatModels = all
+            .filter((m) => m.supportedGenerationMethods?.some((g) => g.includes('generateContent')))
+            .map((m) => m.name.replace('models/', ''))
+          embedModels = all
+            .filter((m) => m.supportedGenerationMethods?.some((g) => g.includes('embedContent')))
+            .map((m) => m.name.replace('models/', ''))
+          modelsDetected = chatModels.length + embedModels.length
+        }
+      } else {
+        // OpenAI-compatible: try /models
+        await new Promise((resolve) => setTimeout(resolve, 2500))
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`
+        const res = await fetch(`${apiBase}/models`, { headers, signal: AbortSignal.timeout(5000) })
+        if (res.ok) {
+          const data = (await res.json()) as { data?: { id: string }[] }
+          const all = data.data ?? []
+          chatModels = all.filter((m) => !m.id.includes('embed')).map((m) => m.id)
+          embedModels = all.filter((m) => m.id.includes('embed')).map((m) => m.id)
+          modelsDetected = all.length
+        }
+      }
     } catch { /* models might not be immediately available */ }
+
+    // ── Create provider_accounts DB entry ──
+    const { randomUUID } = await import('crypto')
+    const id = `pa-${randomUUID().slice(0, 8)}`
+    const allModels = [...chatModels, ...embedModels]
+    const caps = embedModels.length > 0 ? '["chat","embedding"]' : '["chat"]'
+
+    db.prepare(
+      `INSERT OR REPLACE INTO provider_accounts (id, name, type, auth_type, api_base, api_key, capabilities, models, status)
+       VALUES (?, ?, ?, 'api_key', ?, ?, ?, ?, 'enabled')`
+    ).run(id, `${provider} (setup)`, dbType, apiBase, apiKey, caps, JSON.stringify(allModels))
+
+    // ── Auto-configure embedding routing ──
+    const embedModel = embedModels[0]
+    if (embedModel) {
+      const existing = db.prepare("SELECT purpose FROM model_routing WHERE purpose = 'embedding'").get()
+      if (!existing) {
+        db.prepare("INSERT INTO model_routing (purpose, chain, updated_at) VALUES ('embedding', ?, datetime('now'))")
+          .run(JSON.stringify([{ accountId: id, model: embedModel }]))
+      }
+    }
+
+    // ── Auto-configure chat routing ──
+    const chatModel = chatModels[0]
+    if (chatModel) {
+      const existing = db.prepare("SELECT purpose FROM model_routing WHERE purpose = 'chat'").get()
+      if (!existing) {
+        db.prepare("INSERT INTO model_routing (purpose, chain, updated_at) VALUES ('chat', ?, datetime('now'))")
+          .run(JSON.stringify([{ accountId: id, model: chatModel }]))
+      }
+    }
 
     return c.json({ success: true, provider, authFile: filename, modelsDetected })
   } catch (err) {

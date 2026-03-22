@@ -375,6 +375,7 @@ function AddProviderDialog({
           apiBase,
           apiKey: selectedType.authType === 'oauth' ? null : apiKey,
           capabilities,
+          models: [...(testResult?.chatModels ?? []), ...(testResult?.embedModels ?? [])],
         }),
         signal: AbortSignal.timeout(10000),
       })
