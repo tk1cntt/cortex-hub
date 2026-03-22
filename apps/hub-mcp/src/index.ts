@@ -15,6 +15,22 @@ import type { Env } from './types.js'
 
 const app = new Hono<{ Bindings: Env }>()
 
+// Bridge process.env → c.env for Node.js runtime
+// (In Cloudflare Workers, c.env is auto-populated from wrangler bindings.
+//  In Node.js, c.env is empty — this middleware fills it from process.env.)
+app.use('*', async (c, next) => {
+  const envKeys: (keyof Env)[] = [
+    'QDRANT_URL', 'NEO4J_URL', 'MEM0_URL', 'CLIPROXY_URL',
+    'DASHBOARD_API_URL', 'MCP_SERVER_NAME', 'MCP_SERVER_VERSION', 'API_KEYS',
+  ]
+  for (const key of envKeys) {
+    if (!c.env[key] && process.env[key]) {
+      ;(c.env as unknown as Record<string, string>)[key] = process.env[key]!
+    }
+  }
+  await next()
+})
+
 app.use('*', cors())
 app.use('*', logger())
 
@@ -60,14 +76,14 @@ app.get('/', (c) => {
     mcp: '/mcp',
     health: '/health',
     tools: [
-      'cortex.health',
-      'cortex.memory.store',
-      'cortex.memory.search',
-      'cortex.knowledge.search',
-      'cortex.code.search',
-      'cortex.code.impact',
-      'cortex.quality.report',
-      'cortex.session.start'
+      'cortex_health',
+      'cortex_memory_store',
+      'cortex_memory_search',
+      'cortex_knowledge_search',
+      'cortex_code_search',
+      'cortex_code_impact',
+      'cortex_quality_report',
+      'cortex_session_start'
     ],
   })
 })

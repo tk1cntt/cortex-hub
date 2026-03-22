@@ -9,7 +9,7 @@ import type { Env } from '../types.js'
  */
 export function registerHealthTools(server: McpServer, env: Env) {
   server.tool(
-    'cortex.health',
+    'cortex_health',
     'Check health status of all Cortex Hub backend services',
     {},
     async () => {

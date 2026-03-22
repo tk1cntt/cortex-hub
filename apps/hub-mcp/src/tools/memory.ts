@@ -14,7 +14,7 @@ import type { Env } from '../types.js'
 export function registerMemoryTools(server: McpServer, env: Env) {
   // memory.store — persist a memory for an agent
   server.tool(
-    'cortex.memory.store',
+    'cortex_memory_store',
     'Store a memory for an AI agent. Memories persist across sessions and can be recalled by semantic search. Use projectId + branch to scope memories to a specific branch.',
     {
       content: z.string().describe('The memory content to store'),
@@ -95,7 +95,7 @@ export function registerMemoryTools(server: McpServer, env: Env) {
 
   // memory.search — recall memories by semantic similarity (branch-aware)
   server.tool(
-    'cortex.memory.search',
+    'cortex_memory_search',
     'Search agent memories by semantic similarity. Use projectId + branch to search branch-specific knowledge with fallback to project-level and then agent-level memories.',
     {
       query: z.string().describe('Search query for memory recall'),

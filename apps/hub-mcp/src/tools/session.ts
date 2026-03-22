@@ -10,7 +10,7 @@ import { z } from 'zod'
  */
 export function registerSessionTools(server: McpServer, env: Env) {
   server.tool(
-    'cortex.session.start',
+    'cortex_session_start',
     {
       repo: z.string().describe('The URL of the repository being worked on'),
       mode: z.string().optional().describe('Session mode: development, onboarding, review'),

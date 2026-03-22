@@ -12,7 +12,7 @@ import type { Env } from '../types.js'
 export function registerCodeTools(server: McpServer, env: Env) {
   // code.search — query codebase concepts and workflows
   server.tool(
-    'cortex.code.search',
+    'cortex_code_search',
     'Query the codebase for architecture concepts, execution flows, and file matches using GitNexus hybrid vector/AST search. Use projectId to scope to a specific project.',
     {
       query: z.string().describe('Natural language or code query to search for'),
@@ -73,7 +73,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
 
   // code.impact — calculate blast radius for code changes
   server.tool(
-    'cortex.code.impact',
+    'cortex_code_impact',
     'Analyze the blast radius of changing a specific symbol (function, class, file) to verify downstream impact before making edits.',
     {
       target: z.string().describe('The name of the function, class, or file to analyze'),

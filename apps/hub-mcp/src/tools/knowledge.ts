@@ -10,7 +10,7 @@ import type { Env } from '../types.js'
 export function registerKnowledgeTools(server: McpServer, env: Env) {
   // knowledge.search — search vector db for related concepts
   server.tool(
-    'cortex.knowledge.search',
+    'cortex_knowledge_search',
     'Search the platform knowledge base by semantic similarity using Qdrant. Returns relevant snippets and document text.',
     {
       query_vector: z.array(z.number()).describe('The text embedding vector (dense) for the search query'),
