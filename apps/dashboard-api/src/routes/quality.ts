@@ -32,16 +32,72 @@ qualityRouter.get('/logs', (c) => {
 
 export const sessionsRouter = new Hono()
 
+/**
+ * POST /start — Create a real session record
+ * Body: { repo, mode?, agentId? }
+ * Returns: session context with project info, standards, recent quality
+ */
 sessionsRouter.post('/start', async (c) => {
   try {
     const body = await c.req.json()
-    const { action, project } = body
-    const sessionId = `sess_${Date.now()}`
-    
-    const stmt = db.prepare('INSERT INTO session_handoffs (id, from_agent, project, task_summary, context) VALUES (?, ?, ?, ?, ?)')
-    stmt.run(sessionId, 'agent-1', project ?? 'unknown', action, JSON.stringify(body))
+    const { repo, mode, agentId } = body
+    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
-    return c.json({ success: true, sessionId })
+    // Look up project by git_repo_url
+    let project: Record<string, unknown> | undefined
+    if (repo) {
+      const stmt = db.prepare('SELECT * FROM projects WHERE git_repo_url = ?')
+      project = stmt.get(repo) as Record<string, unknown> | undefined
+    }
+
+    // Get recent quality logs (last 5)
+    const qualityStmt = db.prepare('SELECT tool, status, created_at FROM query_logs ORDER BY created_at DESC LIMIT 5')
+    const recentQuality = qualityStmt.all()
+
+    // Get recent sessions (last 3) for context continuity
+    const recentStmt = db.prepare('SELECT id, task_summary, created_at FROM session_handoffs ORDER BY created_at DESC LIMIT 3')
+    const recentSessions = recentStmt.all()
+
+    // Build mission brief from project data or defaults
+    const projectName = (project?.name as string) ?? 'Unknown Project'
+    const projectDesc = (project?.description as string) ?? ''
+    const orgId = (project?.org_id as string) ?? ''
+
+    // Store session record
+    const insertStmt = db.prepare(
+      'INSERT INTO session_handoffs (id, from_agent, project, task_summary, context, status) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    insertStmt.run(
+      sessionId,
+      agentId ?? 'default',
+      repo ?? 'unknown',
+      `Session started: mode=${mode ?? 'development'}`,
+      JSON.stringify({ repo, mode, agentId, projectId: project?.id }),
+      'active'
+    )
+
+    return c.json({
+      sessionId,
+      status: 'active',
+      mode: mode ?? 'development',
+      project: project ? {
+        id: project.id,
+        name: projectName,
+        description: projectDesc,
+        orgId,
+        repo: project.git_repo_url,
+        indexedAt: project.indexed_at,
+        indexedSymbols: project.indexed_symbols,
+      } : null,
+      standards: [
+        'SOLID Principles',
+        'Clean Architecture',
+        'Phase Gate Enforcement (build, typecheck, lint must pass)',
+      ],
+      recentQuality,
+      recentSessions,
+      timestamp: new Date().toISOString(),
+    })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

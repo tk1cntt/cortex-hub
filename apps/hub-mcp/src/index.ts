@@ -54,18 +54,25 @@ app.get('/health', (c) => {
   })
 })
 
-// Session Start endpoint (REST)
+// Session Start endpoint (REST — proxies to dashboard-api for real data)
 app.post('/session/start', async (c) => {
   const auth = await validateApiKey(c.req.raw, c.env)
   if (!auth.valid) return c.json({ error: auth.error }, 401)
   
-  const sessionData = await c.req.json() as any
-  return c.json({ 
-    session_id: `sess_${Math.random().toString(36).substr(2, 9)}`,
-    status: 'active',
-    repo: sessionData.repo,
-    mission_brief: 'Refined Phase 6 objectives loaded. SOLID and Clean Architecture enforced.',
-  })
+  try {
+    const sessionData = await c.req.json()
+    const apiUrl = c.env.DASHBOARD_API_URL || 'http://localhost:4000'
+    const response = await fetch(`${apiUrl}/api/sessions/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sessionData),
+      signal: AbortSignal.timeout(10000),
+    })
+    const result = await response.json()
+    return c.json(result, response.ok ? 200 : 500)
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
 })
 
 // Root endpoint — server info
