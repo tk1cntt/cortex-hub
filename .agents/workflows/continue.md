@@ -25,7 +25,7 @@ Read `STATE.md` at project root. Identify:
 - Recent decisions that affect current work
 
 ### 2. Load Project Profile
-Read `.forgewright/project-profile.json` → note `verify.pre_commit` commands.
+Read `.cortex/project-profile.json` → note `verify.pre_commit` commands.
 
 ### 3. Resume Task
 Continue the identified task. Follow the appropriate workflow:

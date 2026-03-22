@@ -12,12 +12,36 @@
 import { Hono } from 'hono'
 import { Mem9, Embedder } from '@cortex/shared-mem9'
 import type { Mem9Config, EmbedderConfig } from '@cortex/shared-mem9'
+import { db } from '../db/client.js'
 
 export const mem9ProxyRouter = new Hono()
 
 /** Lazily initialize Mem9 instance (singleton) */
 let mem9Instance: Mem9 | null = null
 let embedderInstance: Embedder | null = null
+
+/**
+ * Resolve the Gemini API key from multiple sources (priority order):
+ * 1. GEMINI_API_KEY env var (direct config)
+ * 2. provider_accounts table in SQLite (Providers UI)
+ */
+function resolveGeminiApiKey(): string {
+  // 1. Environment variable (highest priority)
+  const envKey = process.env['GEMINI_API_KEY']
+  if (envKey) return envKey
+
+  // 2. Providers DB — look for a Gemini provider with an API key
+  try {
+    const row = db.prepare(
+      "SELECT api_key FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
+    ).get() as { api_key: string } | undefined
+    if (row?.api_key) return row.api_key
+  } catch {
+    // DB might not be ready yet
+  }
+
+  return ''
+}
 
 function getMem9Config(): Mem9Config {
   return {
@@ -27,7 +51,7 @@ function getMem9Config(): Mem9Config {
     },
     embedder: {
       provider: 'gemini' as const,
-      apiKey: process.env['GEMINI_API_KEY'] || '',
+      apiKey: resolveGeminiApiKey(),
       model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-exp-03-07',
     },
     vectorStore: {
@@ -37,15 +61,23 @@ function getMem9Config(): Mem9Config {
   }
 }
 
+/** Track the API key used to create singletons — invalidate if it changes */
+let lastApiKey = ''
+
 function getMem9(): Mem9 {
-  if (!mem9Instance) {
+  const currentKey = resolveGeminiApiKey()
+  if (!mem9Instance || currentKey !== lastApiKey) {
+    lastApiKey = currentKey
     mem9Instance = new Mem9(getMem9Config())
+    embedderInstance = null // also invalidate embedder
   }
   return mem9Instance
 }
 
 function getEmbedder(): Embedder {
-  if (!embedderInstance) {
+  const currentKey = resolveGeminiApiKey()
+  if (!embedderInstance || currentKey !== lastApiKey) {
+    lastApiKey = currentKey
     const config = getMem9Config()
     embedderInstance = new Embedder(config.embedder)
   }

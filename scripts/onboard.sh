@@ -102,7 +102,10 @@ with open(path, 'r') as f: config = json.load(f)
 if 'mcpServers' not in config: config['mcpServers'] = {}
 config['mcpServers']['cortex-hub'] = {
     'command': 'npx',
-    'args': ['-y', 'mcp-remote', '$MCP_URL', '--header', 'Authorization: Bearer $HUB_API_KEY']
+    'args': ['-y', 'mcp-remote', '$MCP_URL', '--header', 'Authorization: Bearer \${HUB_API_KEY}'],
+    'env': {
+        'HUB_API_KEY': '$HUB_API_KEY'
+    }
 }
 with open(path, 'w') as f: json.dump(config, f, indent=2)
 "

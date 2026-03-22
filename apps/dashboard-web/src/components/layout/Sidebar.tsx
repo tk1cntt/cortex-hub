@@ -105,11 +105,11 @@ export default function Sidebar() {
               {isOnline ? 'All systems online' : 'Connecting...'}
             </span>
           </div>
-          {commitShort !== 'dev' && (
-            <div className={styles.commitRow} title={`Commit: ${health?.commit}\nBuilt: ${health?.buildDate ?? 'unknown'}`}>
-              <code className={styles.commitHash}>{commitShort}</code>
-            </div>
-          )}
+          <div className={styles.commitRow} title={commitShort !== 'dev' ? `Commit: ${health?.commit}\nBuilt: ${health?.buildDate ?? 'N/A'}` : undefined}>
+            <code className={styles.commitHash}>
+              {commitShort !== 'dev' ? commitShort : `v${health?.version ?? '0.1.0'}`}
+            </code>
+          </div>
         </div>
       </aside>
     </>

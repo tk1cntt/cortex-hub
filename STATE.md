@@ -44,6 +44,9 @@
 - [x] cortex_code_reindex tool + project lookup route (`0c0c45a`)
 - [x] Fix self-fetch deadlock: apiCall + setInternalFetch for in-memory routing (`bba043d`)
 - [x] Service separation: split All-in-One into cortex-api + cortex-mcp
+- [x] Agent workflow gaps: catch-all routing, continue.md path fix, onboard.sh env var
+- [x] Version display: Sidebar footer shows version badge, docker-compose build args
+- [x] mem9 API key resolution: read from provider_accounts DB as fallback
 
 ## Completed (Phase 6)
 - [x] Dashboard API — 9 real routes (no stubs)

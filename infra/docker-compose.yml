@@ -65,6 +65,9 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.dashboard-api
+      args:
+        COMMIT_SHA: ${COMMIT_SHA:-dev}
+        BUILD_DATE: ${BUILD_DATE:-}
     image: ghcr.io/lktiep/cortex-api:latest
     container_name: cortex-api
     restart: unless-stopped

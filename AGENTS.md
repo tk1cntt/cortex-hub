@@ -72,6 +72,7 @@ Cortex Hub is a self-hosted, MCP-compliant platform that unifies code intelligen
 | "deploy" / "ship" / "đẩy lên" | Deploy | Run verify.full → deploy from profile → verify live |
 | "onboard" / "setup" / "cài đặt" | Setup | Run scripts/onboard.sh or scripts/install-hub.sh |
 | "review" / "check" / "kiểm tra" | Review | Run verify.full → check conventions → report |
+| ANY other message in cortex-hub workspace | Session Init | `cortex_session_start` → Read STATE.md → acknowledge context → then respond |
 
 ---
 
