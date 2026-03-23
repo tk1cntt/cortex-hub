@@ -146,6 +146,13 @@ export default function DashboardPage() {
     refreshInterval: 5000,
   })
 
+  const svcStatus = (key: string): ServiceCardProps['status'] => {
+    if (isLoading) return 'muted'
+    if (error) return 'error'
+    const s = healthData?.services?.[key as keyof typeof healthData.services]
+    return s === 'ok' ? 'healthy' : s === 'error' ? 'error' : 'warning'
+  }
+
   const services: ServiceCardProps[] = [
     {
       name: 'Hub Backend API',
@@ -157,19 +164,31 @@ export default function DashboardPage() {
       name: 'MCP Gateway',
       description: 'Cloudflare Worker — MCP protocol endpoint',
       endpoint: 'cortex-mcp.jackle.dev',
-      status: isLoading ? 'muted' : 'warning',
+      status: svcStatus('mcp'),
+    },
+    {
+      name: 'GitNexus',
+      description: 'Code intelligence — AST search & impact analysis',
+      endpoint: 'Local Docker :4848',
+      status: svcStatus('gitnexus'),
+    },
+    {
+      name: 'mem9',
+      description: 'Persistent memory — agent knowledge store',
+      endpoint: 'Local Docker :3100',
+      status: svcStatus('mem9'),
     },
     {
       name: 'Qdrant Vector DB',
       description: 'Vector database — semantic search',
       endpoint: 'Local Docker :6333',
-      status: isLoading ? 'muted' : healthData?.services?.qdrant === 'ok' ? 'healthy' : 'error',
+      status: svcStatus('qdrant'),
     },
     {
       name: 'CLIProxy (LLM)',
       description: 'LLM gateway — OAuth proxy to AI providers',
       endpoint: 'Local Docker :8317',
-      status: isLoading ? 'muted' : healthData?.services?.cliproxy === 'ok' ? 'healthy' : 'error',
+      status: svcStatus('cliproxy'),
     },
   ]
 
