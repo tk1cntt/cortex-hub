@@ -37,4 +37,51 @@ branch: "<current branch>"
 Every session must end with verification commands from `.cortex/project-profile.json`.
 Call `cortex_quality_report` with results.
 Call `cortex_session_end` to close the session.
+
+---
+
+## ⚠️ Tool Usage Enforcement (MANDATORY)
+
+> **You MUST use Cortex tools throughout the session. Skipping them defeats the purpose of Cortex Hub.**
+> If any tool is missing or fails with `fetch failed`, immediately inform the user to refresh the MCP server connection.
+
+### Complete Tool Reference (12 tools)
+
+| # | Tool | When to Use | Required Args |
+|---|------|-------------|---------------|
+| 1 | `cortex_session_start` | Start of EVERY conversation | `repo`, `agentId`, `mode` |
+| 2 | `cortex_session_end` | End of EVERY session | `sessionId` |
+| 3 | `cortex_changes` | Before editing shared files | `agentId`, `projectId` |
+| 4 | `cortex_code_search` | **BEFORE** grep/find — use FIRST | `query`, optional `projectId` |
+| 5 | `cortex_code_impact` | Before editing core code | `target` (function/class/file) |
+| 6 | `cortex_code_reindex` | After EVERY push | `repo`, `branch` |
+| 7 | `cortex_memory_search` | Recall past decisions/findings | `query` |
+| 8 | `cortex_memory_store` | Store session findings | `content` |
+| 9 | `cortex_knowledge_search` | Search shared knowledge base | `query` |
+| 10 | `cortex_knowledge_store` | Contribute reusable patterns | `title`, `content` |
+| 11 | `cortex_quality_report` | After running verify commands | `gate_name`, `passed`, `details` |
+| 12 | `cortex_health` | Check service health | (none) |
+
+### Tool Priority Order (MANDATORY — before grep/find)
+
+1. `cortex_memory_search` → check if you already know this
+2. `cortex_knowledge_search` → search shared knowledge base
+3. `cortex_code_search` → search indexed codebase (GitNexus AST)
+4. `cortex_code_impact` → check blast radius before editing
+5. `grep_search` / `find_by_name` → fallback ONLY if Cortex tools unavailable
+
+### Post-Push Checklist (NEVER skip)
+
+```
+1. pnpm build && pnpm typecheck && pnpm lint  ← verify
+2. cortex_quality_report(...)                  ← report results
+3. cortex_code_reindex(repo, branch)           ← update code intelligence
+4. cortex_memory_store(...)                    ← store findings
+5. cortex_session_end(sessionId)               ← close session
+```
+
+### Tool Verification
+
+If you see fewer than 12 tools from `cortex-hub` MCP server, the connection may be stale.
+**Action:** Immediately inform the user: "MCP tools are incomplete. Please refresh the cortex-hub MCP server connection."
 <!-- cortex-hub:auto-mcp -->
