@@ -501,7 +501,7 @@ Call `cortex_session_end` to close the session.
 | 8 | `cortex_memory_store` | Store session findings | `content` |
 | 9 | `cortex_knowledge_search` | Search shared knowledge base | `query` |
 | 10 | `cortex_knowledge_store` | Contribute reusable patterns | `title`, `content` |
-| 11 | `cortex_quality_report` | After running verify commands | `gate_name`, `passed`, `details` |
+| 11 | `cortex_quality_report` | After running verify commands | `gate_name`, `passed`, `details`, `agent_id` |
 | 12 | `cortex_health` | Check service health | (none) |
 
 ### Tool Priority Order (MANDATORY — before grep/find)
@@ -515,11 +515,11 @@ Call `cortex_session_end` to close the session.
 ### Post-Push Checklist (NEVER skip)
 
 ```
-1. pnpm build && pnpm typecheck && pnpm lint  ← verify
-2. cortex_quality_report(...)                  ← report results
-3. cortex_code_reindex(repo, branch)           ← update code intelligence
-4. cortex_memory_store(...)                    ← store findings
-5. cortex_session_end(sessionId)               ← close session
+1. pnpm build && pnpm typecheck && pnpm lint                    ← verify
+2. cortex_quality_report(gate, passed, details, agent_id)       ← report (agent_id: "antigravity")
+3. cortex_code_reindex(repo, branch)                            ← update code intelligence
+4. cortex_memory_store(content, projectId)                      ← store findings
+5. cortex_session_end(sessionId)                                ← close session
 ```
 
 ### Tool Verification

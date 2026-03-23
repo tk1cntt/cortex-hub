@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
 import {
@@ -8,38 +8,59 @@ import {
   createKnowledgeDocument,
   deleteKnowledgeDocument,
   getKnowledgeTags,
+  getAllProjects,
   type KnowledgeDocument,
+  type Project,
 } from '@/lib/api'
 import styles from './page.module.css'
 
 // ── Create Dialog ──
 function CreateDocumentDialog({
+  projects,
   onSubmit,
   onCancel,
 }: {
-  onSubmit: (data: { title: string; content: string; tags: string[] }) => void
+  projects: Project[]
+  onSubmit: (data: { title: string; content: string; tags: string[]; projectId?: string }) => void
   onCancel: () => void
 }) {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [tagsInput, setTagsInput] = useState('')
+  const [projectId, setProjectId] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const canSubmit = title.trim().length > 0 && content.trim().length > 0
 
   async function handleSubmit() {
     setSubmitting(true)
-    const tags = tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
-    onSubmit({ title: title.trim(), content: content.trim(), tags })
+    const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean)
+    onSubmit({
+      title: title.trim(),
+      content: content.trim(),
+      tags,
+      projectId: projectId || undefined,
+    })
   }
 
   return (
     <div className={styles.dialogOverlay} onClick={onCancel}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
         <h3 className={styles.dialogTitle}>New Knowledge Document</h3>
+
+        <div className={styles.dialogField}>
+          <label className={styles.dialogLabel}>Project</label>
+          <select
+            className={styles.dialogInput}
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+          >
+            <option value="">Global (no project)</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
 
         <div className={styles.dialogField}>
           <label className={styles.dialogLabel}>Title</label>
@@ -74,14 +95,8 @@ function CreateDocumentDialog({
         </div>
 
         <div className={styles.dialogActions}>
-          <button className="btn btn-secondary" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSubmit}
-            disabled={!canSubmit || submitting}
-          >
+          <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={!canSubmit || submitting}>
             {submitting ? 'Creating...' : 'Create Document'}
           </button>
         </div>
@@ -94,23 +109,26 @@ function CreateDocumentDialog({
 function DocumentCard({
   doc,
   onDelete,
+  showProject,
+  projectName,
 }: {
   doc: KnowledgeDocument
   onDelete: (id: string) => void
+  showProject?: boolean
+  projectName?: string
 }) {
   const [confirming, setConfirming] = useState(false)
   let tags: string[] = []
-  try {
-    tags = JSON.parse(doc.tags) as string[]
-  } catch {
-    /* ignore */
-  }
+  try { tags = JSON.parse(doc.tags) as string[] } catch { /* ignore */ }
 
   return (
     <div className={styles.docCard}>
       <div className={styles.docHeader}>
         <h4 className={styles.docTitle}>{doc.title}</h4>
         <div className={styles.docMeta}>
+          {showProject && projectName && (
+            <span className={styles.docProject}>{projectName}</span>
+          )}
           <span className={styles.docSource}>{doc.source}</span>
           {doc.source_agent_id && (
             <span className={styles.docAgent}>{doc.source_agent_id}</span>
@@ -125,29 +143,20 @@ function DocumentCard({
       <div className={styles.docFooter}>
         <div className={styles.docTags}>
           {tags.map((tag) => (
-            <span key={tag} className={styles.tag}>
-              {tag}
-            </span>
+            <span key={tag} className={styles.tag}>{tag}</span>
           ))}
         </div>
 
         <div className={styles.docStats}>
           <span title="Chunks">{doc.chunk_count} chunks</span>
           <span title="Search hits">{doc.hit_count} hits</span>
-          <span title="Created">
-            {new Date(doc.created_at).toLocaleDateString()}
-          </span>
+          <span title="Created">{new Date(doc.created_at).toLocaleDateString()}</span>
         </div>
 
         <div className={styles.docActions}>
           {confirming ? (
             <>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setConfirming(false)}
-              >
-                Cancel
-              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setConfirming(false)}>Cancel</button>
               <button
                 className="btn btn-sm"
                 style={{ background: 'var(--danger)', color: '#fff' }}
@@ -157,15 +166,46 @@ function DocumentCard({
               </button>
             </>
           ) : (
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => setConfirming(true)}
-            >
-              Delete
-            </button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setConfirming(true)}>Delete</button>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Project Section ──
+function ProjectSection({
+  projectName,
+  projectId,
+  docs,
+  onDelete,
+  defaultExpanded,
+}: {
+  projectName: string
+  projectId: string | null
+  docs: KnowledgeDocument[]
+  onDelete: (id: string) => void
+  defaultExpanded: boolean
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
+
+  return (
+    <div className={styles.projectSection}>
+      <button className={styles.projectHeader} onClick={() => setExpanded(!expanded)}>
+        <span className={styles.projectToggle}>{expanded ? '\u25BC' : '\u25B6'}</span>
+        <span className={styles.projectIcon}>{projectId ? '\uD83D\uDCC1' : '\uD83C\uDF10'}</span>
+        <span className={styles.projectName}>{projectName}</span>
+        <span className={styles.projectCount}>{docs.length} doc{docs.length !== 1 ? 's' : ''}</span>
+      </button>
+
+      {expanded && (
+        <div className={styles.projectDocs}>
+          {docs.map((doc) => (
+            <DocumentCard key={doc.id} doc={doc} onDelete={onDelete} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -174,20 +214,72 @@ function DocumentCard({
 export default function KnowledgePage() {
   const [showCreate, setShowCreate] = useState(false)
   const [filterTag, setFilterTag] = useState('')
+  const [filterProject, setFilterProject] = useState<string>('all')
+  const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped')
 
   const { data, error, isLoading, mutate } = useSWR(
-    `knowledge-${filterTag}`,
-    () => getKnowledgeDocuments(filterTag ? { tag: filterTag } : undefined),
+    `knowledge-${filterTag}-${filterProject}`,
+    () => getKnowledgeDocuments({
+      tag: filterTag || undefined,
+      projectId: filterProject !== 'all' ? (filterProject === 'global' ? undefined : filterProject) : undefined,
+    }),
     { refreshInterval: 15000 }
   )
 
   const { data: tagsData } = useSWR('knowledge-tags', getKnowledgeTags)
+  const { data: projectsData } = useSWR('all-projects', getAllProjects)
 
-  async function handleCreate(input: {
-    title: string
-    content: string
-    tags: string[]
-  }) {
+  const projects = projectsData?.projects ?? []
+  const projectMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const p of projects) map.set(p.id, p.name)
+    return map
+  }, [projects])
+
+  // Group documents by project
+  const grouped = useMemo(() => {
+    const docs = data?.documents ?? []
+    const groups = new Map<string, { name: string; projectId: string | null; docs: KnowledgeDocument[] }>()
+
+    for (const doc of docs) {
+      const pid = doc.project_id
+      const key = pid ?? '__global__'
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          name: pid ? (projectMap.get(pid) ?? pid) : 'Global Knowledge',
+          projectId: pid,
+          docs: [],
+        })
+      }
+      groups.get(key)?.docs.push(doc)
+    }
+
+    // Sort: global first, then alphabetical
+    const sorted = [...groups.values()].sort((a, b) => {
+      if (!a.projectId) return -1
+      if (!b.projectId) return 1
+      return a.name.localeCompare(b.name)
+    })
+
+    return sorted
+  }, [data?.documents, projectMap])
+
+  // Flat list for flat view
+  const allDocs = data?.documents ?? []
+
+  // Stats per project
+  const projectStats = useMemo(() => {
+    return grouped.map(g => ({
+      name: g.name,
+      projectId: g.projectId,
+      count: g.docs.length,
+      chunks: g.docs.reduce((s, d) => s + d.chunk_count, 0),
+      hits: g.docs.reduce((s, d) => s + d.hit_count, 0),
+    }))
+  }, [grouped])
+
+  async function handleCreate(input: { title: string; content: string; tags: string[]; projectId?: string }) {
     try {
       await createKnowledgeDocument(input)
       setShowCreate(false)
@@ -206,15 +298,11 @@ export default function KnowledgePage() {
     }
   }
 
-  const documents = data?.documents ?? []
   const stats = data?.stats
 
   return (
-    <DashboardLayout
-      title="Knowledge Base"
-      subtitle="Shared knowledge contributed by agents and humans"
-    >
-      {/* Stats */}
+    <DashboardLayout title="Knowledge Base" subtitle="Shared knowledge organized by project">
+      {/* Stats Row */}
       {stats && (
         <div className={styles.statsGrid}>
           <div className={styles.statCard}>
@@ -229,12 +317,30 @@ export default function KnowledgePage() {
             <span className={styles.statValue}>{stats.totalHits}</span>
             <span className={styles.statLabel}>Search Hits</span>
           </div>
+          <div className={styles.statCard}>
+            <span className={styles.statValue}>{grouped.length}</span>
+            <span className={styles.statLabel}>Projects</span>
+          </div>
         </div>
       )}
 
       {/* Action Bar */}
       <div className={styles.actionBar}>
         <div className={styles.filters}>
+          {/* Project filter */}
+          <select
+            className={styles.filterSelect}
+            value={filterProject}
+            onChange={(e) => setFilterProject(e.target.value)}
+          >
+            <option value="all">All projects</option>
+            <option value="global">Global only</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+
+          {/* Tag filter */}
           <select
             className={styles.filterSelect}
             value={filterTag}
@@ -242,16 +348,30 @@ export default function KnowledgePage() {
           >
             <option value="">All tags</option>
             {(tagsData?.tags ?? []).map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
+              <option key={tag} value={tag}>{tag}</option>
             ))}
           </select>
+
+          {/* View mode toggle */}
+          <div className={styles.viewToggle}>
+            <button
+              className={`${styles.viewBtn} ${viewMode === 'grouped' ? styles.viewBtnActive : ''}`}
+              onClick={() => setViewMode('grouped')}
+              title="Group by project"
+            >
+              Grouped
+            </button>
+            <button
+              className={`${styles.viewBtn} ${viewMode === 'flat' ? styles.viewBtnActive : ''}`}
+              onClick={() => setViewMode('flat')}
+              title="Flat list"
+            >
+              Flat
+            </button>
+          </div>
         </div>
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => setShowCreate(true)}
-        >
+
+        <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>
           + New Document
         </button>
       </div>
@@ -268,30 +388,65 @@ export default function KnowledgePage() {
         <div className={styles.loading}>Loading knowledge base...</div>
       )}
 
-      {/* Document List */}
-      {documents.length === 0 && !isLoading && (
+      {/* Content */}
+      {allDocs.length === 0 && !isLoading ? (
         <div className={styles.emptyState}>
           <p>No knowledge documents yet.</p>
           <p>
-            Create one manually or use{' '}
-            <code>cortex_knowledge_store</code> from an AI agent.
+            Create one manually or use <code>cortex_knowledge_store</code> from an AI agent.
           </p>
         </div>
-      )}
+      ) : viewMode === 'grouped' ? (
+        /* Grouped View */
+        <div className={styles.groupedList}>
+          {/* Project summary bar */}
+          {projectStats.length > 1 && (
+            <div className={styles.projectSummary}>
+              {projectStats.map((ps) => (
+                <button
+                  key={ps.projectId ?? 'global'}
+                  className={styles.projectPill}
+                  onClick={() => setFilterProject(ps.projectId ?? 'global')}
+                  title={`${ps.count} docs, ${ps.chunks} chunks, ${ps.hits} hits`}
+                >
+                  <span className={styles.pillIcon}>{ps.projectId ? '\uD83D\uDCC1' : '\uD83C\uDF10'}</span>
+                  <span className={styles.pillName}>{ps.name}</span>
+                  <span className={styles.pillCount}>{ps.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
-      <div className={styles.docList}>
-        {documents.map((doc: KnowledgeDocument) => (
-          <DocumentCard
-            key={doc.id}
-            doc={doc}
-            onDelete={handleDelete}
-          />
-        ))}
-      </div>
+          {grouped.map((group) => (
+            <ProjectSection
+              key={group.projectId ?? '__global__'}
+              projectName={group.name}
+              projectId={group.projectId}
+              docs={group.docs}
+              onDelete={handleDelete}
+              defaultExpanded={grouped.length <= 3}
+            />
+          ))}
+        </div>
+      ) : (
+        /* Flat View */
+        <div className={styles.docList}>
+          {allDocs.map((doc: KnowledgeDocument) => (
+            <DocumentCard
+              key={doc.id}
+              doc={doc}
+              onDelete={handleDelete}
+              showProject
+              projectName={doc.project_id ? (projectMap.get(doc.project_id) ?? doc.project_id) : 'Global'}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Create Dialog */}
       {showCreate && (
         <CreateDocumentDialog
+          projects={projects}
           onSubmit={handleCreate}
           onCancel={() => setShowCreate(false)}
         />
