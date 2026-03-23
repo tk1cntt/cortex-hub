@@ -826,6 +826,390 @@ else
     echo -e "${YELLOW}>>> No project-profile.json found. Skipping hook setup.${NC}"
 fi
 
+# ── Step 6b: Install Claude Code Enforcement Hooks ──
+# Claude Code is the ONLY IDE that supports runtime hooks (PreToolUse, PostToolUse, etc.)
+# For other IDEs, enforcement is instruction-based only + server-side validation.
+
+CLAUDE_DIR=".claude"
+CLAUDE_HOOKS_DIR="$CLAUDE_DIR/hooks"
+CLAUDE_SETTINGS="$CLAUDE_DIR/settings.json"
+
+# Check if Claude Code is one of the configured tools
+INSTALL_CLAUDE_HOOKS=false
+for tool in "${SELECTED_TOOLS[@]}"; do
+    if [ "$tool" = "claude" ]; then
+        INSTALL_CLAUDE_HOOKS=true
+        break
+    fi
+done
+
+if [ "$INSTALL_CLAUDE_HOOKS" = true ]; then
+    echo -e "${BLUE}>>> Installing Claude Code enforcement hooks...${NC}"
+    mkdir -p "$CLAUDE_HOOKS_DIR"
+
+    # ── Hook 1: session-init.sh — Inject mandatory session_start reminder ──
+    cat > "$CLAUDE_HOOKS_DIR/session-init.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Session Init — Injects mandatory reminder + resets session markers.
+CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+mkdir -p "$CORTEX_STATE_DIR"
+rm -f "$CORTEX_STATE_DIR/session-started" "$CORTEX_STATE_DIR/quality-gates-passed" \
+      "$CORTEX_STATE_DIR/gate-build" "$CORTEX_STATE_DIR/gate-typecheck" "$CORTEX_STATE_DIR/gate-lint" \
+      "$CORTEX_STATE_DIR/session-ended" 2>/dev/null
+cat <<'MSG'
+MANDATORY SESSION PROTOCOL — You MUST complete these steps NOW before any other work:
+1. Call cortex_session_start with repo, mode: "development", agentId: "claude-code"
+2. If recentChanges.count > 0, warn user and run git pull
+3. Read STATE.md for current task progress
+DO NOT proceed with any code changes until step 1 is complete.
+MSG
+HOOKEOF
+
+    # ── Hook 2: enforce-commit.sh — Block git commit without quality gates ──
+    cat > "$CLAUDE_HOOKS_DIR/enforce-commit.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Commit Enforcement — Blocks git commit if quality gates haven't passed.
+INPUT=$(cat)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+if [[ ! "$COMMAND" =~ ^git\ (commit|push) ]]; then exit 0; fi
+CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+if [[ "$COMMAND" =~ ^git\ commit ]]; then
+  if [ ! -f "$CORTEX_STATE_DIR/quality-gates-passed" ]; then
+    echo "Quality gates not passed. Run: pnpm build && pnpm typecheck && pnpm lint first, then call cortex_quality_report." >&2
+    exit 2
+  fi
+fi
+if [[ "$COMMAND" =~ ^git\ push ]]; then
+  echo "REMINDER: After push, call cortex_code_reindex to update code intelligence." >&2
+fi
+exit 0
+HOOKEOF
+
+    # ── Hook 3: track-quality.sh — Track quality gate passes + MCP calls ──
+    cat > "$CLAUDE_HOOKS_DIR/track-quality.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Quality Tracker — Marks gates as passed when build/typecheck/lint succeed.
+INPUT=$(cat)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+mkdir -p "$CORTEX_STATE_DIR"
+[[ "$COMMAND" =~ pnpm\ build ]] && touch "$CORTEX_STATE_DIR/gate-build"
+[[ "$COMMAND" =~ pnpm\ typecheck ]] && touch "$CORTEX_STATE_DIR/gate-typecheck"
+[[ "$COMMAND" =~ pnpm\ lint ]] && touch "$CORTEX_STATE_DIR/gate-lint"
+if [ -f "$CORTEX_STATE_DIR/gate-build" ] && [ -f "$CORTEX_STATE_DIR/gate-typecheck" ] && [ -f "$CORTEX_STATE_DIR/gate-lint" ]; then
+  touch "$CORTEX_STATE_DIR/quality-gates-passed"
+fi
+[[ "$TOOL_NAME" =~ cortex_session_start ]] && touch "$CORTEX_STATE_DIR/session-started"
+[[ "$TOOL_NAME" =~ cortex_session_end ]] && touch "$CORTEX_STATE_DIR/session-ended"
+exit 0
+HOOKEOF
+
+    # ── Hook 4: session-end-check.sh — Warn if session_end not called ──
+    cat > "$CLAUDE_HOOKS_DIR/session-end-check.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Session End Check — Warns if cortex_session_end not called.
+CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+if [ -f "$CORTEX_STATE_DIR/session-started" ] && [ ! -f "$CORTEX_STATE_DIR/session-ended" ]; then
+  echo "WARNING: cortex_session_end has not been called. Call it with sessionId and summary before ending."
+fi
+exit 0
+HOOKEOF
+
+    # ── Hook 5: enforce-session.sh — HARD BLOCK Edit/Write/Bash without session ──
+    cat > "$CLAUDE_HOOKS_DIR/enforce-session.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Session Enforcement — HARD BLOCK.
+# Blocks Edit, Write, Bash (file-modifying) if cortex_session_start hasn't been called.
+CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+if [ -f "$CORTEX_STATE_DIR/session-started" ]; then exit 0; fi
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+case "$TOOL_NAME" in
+  Edit|Write|NotebookEdit)
+    echo "BLOCKED: Call cortex_session_start before editing files. Session not started." >&2
+    exit 2
+    ;;
+  Bash)
+    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+    if [[ "$COMMAND" =~ ^(ls|cat|head|tail|pwd|which|echo|git\ (status|log|diff|branch|remote)|pnpm\ (build|typecheck|lint|test)|curl|python3\ -m\ json) ]]; then
+      exit 0
+    fi
+    if [[ "$COMMAND" =~ (git\ (add|commit|push|reset)|rm\ |mv\ |cp\ |mkdir\ |touch\ |chmod\ |sed\ -i|">" ) ]]; then
+      echo "BLOCKED: Call cortex_session_start before modifying files. Session not started." >&2
+      exit 2
+    fi
+    exit 0
+    ;;
+esac
+exit 0
+HOOKEOF
+
+    chmod +x "$CLAUDE_HOOKS_DIR"/*.sh
+
+    # ── Generate .claude/settings.json with hooks (merge with existing if present) ──
+    python3 -c "
+import json, os
+
+settings_path = '$CLAUDE_SETTINGS'
+hooks_config = {
+    'hooks': {
+        'SessionStart': [{
+            'matcher': '',
+            'hooks': [{'type': 'command', 'command': '.claude/hooks/session-init.sh'}]
+        }],
+        'PreToolUse': [
+            {
+                'matcher': 'Edit|Write|NotebookEdit|Bash',
+                'hooks': [{'type': 'command', 'command': '.claude/hooks/enforce-session.sh'}]
+            },
+            {
+                'matcher': 'Bash',
+                'hooks': [{'type': 'command', 'command': '.claude/hooks/enforce-commit.sh'}]
+            }
+        ],
+        'PostToolUse': [{
+            'matcher': '',
+            'hooks': [{'type': 'command', 'command': '.claude/hooks/track-quality.sh'}]
+        }],
+        'Stop': [{
+            'matcher': '',
+            'hooks': [{'type': 'command', 'command': '.claude/hooks/session-end-check.sh'}]
+        }]
+    }
+}
+
+existing = {}
+if os.path.exists(settings_path):
+    try:
+        with open(settings_path) as f:
+            existing = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        existing = {}
+
+existing['hooks'] = hooks_config['hooks']
+
+with open(settings_path, 'w') as f:
+    json.dump(existing, f, indent=2)
+    f.write('\n')
+"
+
+    echo -e "${GREEN}    ✓ Claude Code hooks installed (5 enforcement hooks)${NC}"
+    echo -e "${GREEN}      SessionStart  → session-init.sh (inject reminder)${NC}"
+    echo -e "${GREEN}      PreToolUse    → enforce-session.sh (BLOCK edit/write without session)${NC}"
+    echo -e "${GREEN}      PreToolUse    → enforce-commit.sh (BLOCK commit without gates)${NC}"
+    echo -e "${GREEN}      PostToolUse   → track-quality.sh (track gate passes + MCP calls)${NC}"
+    echo -e "${GREEN}      Stop          → session-end-check.sh (session_end reminder)${NC}"
+else
+    echo -e "${YELLOW}>>> Claude Code not selected — skipping Claude hooks${NC}"
+fi
+
+# ── Step 6c: Install Gemini CLI Enforcement Hooks ──
+# Gemini CLI (v0.26+) supports hooks similar to Claude Code:
+#   BeforeTool (can block), AfterTool, SessionStart, SessionEnd, BeforeModel, etc.
+# Config: .gemini/settings.json (project-level)
+
+GEMINI_DIR=".gemini"
+GEMINI_HOOKS_DIR="$GEMINI_DIR/hooks"
+GEMINI_SETTINGS="$GEMINI_DIR/settings.json"
+
+INSTALL_GEMINI_HOOKS=false
+for tool in "${SELECTED_TOOLS[@]}"; do
+    if [ "$tool" = "antigravity" ]; then
+        INSTALL_GEMINI_HOOKS=true
+        break
+    fi
+done
+
+if [ "$INSTALL_GEMINI_HOOKS" = true ]; then
+    echo -e "${BLUE}>>> Installing Gemini CLI enforcement hooks...${NC}"
+    mkdir -p "$GEMINI_HOOKS_DIR"
+
+    # ── Hook 1: session-init.sh — Inject mandatory session_start reminder ──
+    cat > "$GEMINI_HOOKS_DIR/session-init.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Session Init (Gemini) — Resets session markers + injects reminder.
+CORTEX_STATE_DIR=".cortex/.session-state"
+mkdir -p "$CORTEX_STATE_DIR"
+rm -f "$CORTEX_STATE_DIR/session-started" "$CORTEX_STATE_DIR/quality-gates-passed" \
+      "$CORTEX_STATE_DIR/gate-build" "$CORTEX_STATE_DIR/gate-typecheck" "$CORTEX_STATE_DIR/gate-lint" \
+      "$CORTEX_STATE_DIR/session-ended" 2>/dev/null
+cat <<'MSG'
+{"systemMessage": "MANDATORY: Call cortex_session_start(repo, mode: 'development', agentId: 'antigravity') NOW before any work."}
+MSG
+HOOKEOF
+
+    # ── Hook 2: enforce-commit.sh — Block shell commands (git commit) without quality gates ──
+    cat > "$GEMINI_HOOKS_DIR/enforce-commit.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Commit Enforcement (Gemini) — Blocks git commit without quality gates.
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+
+# Only intercept shell commands
+if [[ "$TOOL_NAME" != "run_shell_command" ]] && [[ "$TOOL_NAME" != "shell" ]]; then
+  echo '{"decision":"allow"}'
+  exit 0
+fi
+
+CORTEX_STATE_DIR=".cortex/.session-state"
+
+if [[ "$COMMAND" =~ ^git\ commit ]]; then
+  if [ ! -f "$CORTEX_STATE_DIR/quality-gates-passed" ]; then
+    echo '{"decision":"deny","reason":"Quality gates not passed. Run: pnpm build && pnpm typecheck && pnpm lint first."}'
+    exit 0
+  fi
+fi
+
+echo '{"decision":"allow"}'
+exit 0
+HOOKEOF
+
+    # ── Hook 3: track-quality.sh — Track quality gate passes + MCP calls ──
+    cat > "$GEMINI_HOOKS_DIR/track-quality.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Quality Tracker (Gemini) — Marks gates as passed after successful commands.
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+CORTEX_STATE_DIR=".cortex/.session-state"
+mkdir -p "$CORTEX_STATE_DIR"
+
+# Track shell command results
+[[ "$COMMAND" =~ pnpm\ build ]] && touch "$CORTEX_STATE_DIR/gate-build"
+[[ "$COMMAND" =~ pnpm\ typecheck ]] && touch "$CORTEX_STATE_DIR/gate-typecheck"
+[[ "$COMMAND" =~ pnpm\ lint ]] && touch "$CORTEX_STATE_DIR/gate-lint"
+if [ -f "$CORTEX_STATE_DIR/gate-build" ] && [ -f "$CORTEX_STATE_DIR/gate-typecheck" ] && [ -f "$CORTEX_STATE_DIR/gate-lint" ]; then
+  touch "$CORTEX_STATE_DIR/quality-gates-passed"
+fi
+
+# Track MCP tool calls
+[[ "$TOOL_NAME" =~ cortex_session_start ]] && touch "$CORTEX_STATE_DIR/session-started"
+[[ "$TOOL_NAME" =~ cortex_session_end ]] && touch "$CORTEX_STATE_DIR/session-ended"
+
+echo '{}'
+exit 0
+HOOKEOF
+
+    # ── Hook 4: session-end-check.sh — Warn if session_end not called ──
+    cat > "$GEMINI_HOOKS_DIR/session-end-check.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Session End Check (Gemini) — Warns if session_end not called.
+CORTEX_STATE_DIR=".cortex/.session-state"
+if [ -f "$CORTEX_STATE_DIR/session-started" ] && [ ! -f "$CORTEX_STATE_DIR/session-ended" ]; then
+  echo '{"systemMessage":"WARNING: cortex_session_end not called. Call it with sessionId and summary."}'
+else
+  echo '{}'
+fi
+exit 0
+HOOKEOF
+
+    # ── Hook 5: enforce-session.sh — HARD BLOCK write_file/edit_file without session ──
+    cat > "$GEMINI_HOOKS_DIR/enforce-session.sh" <<'HOOKEOF'
+#!/bin/bash
+# Cortex Session Enforcement (Gemini) — HARD BLOCK.
+# Blocks write_file, edit_file, run_shell_command (modifying) without session.
+CORTEX_STATE_DIR=".cortex/.session-state"
+if [ -f "$CORTEX_STATE_DIR/session-started" ]; then
+  echo '{"decision":"allow"}'
+  exit 0
+fi
+INPUT=$(cat)
+TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
+case "$TOOL_NAME" in
+  write_file|edit_file|create_file|insert_text)
+    echo '{"decision":"deny","reason":"BLOCKED: Call cortex_session_start before editing files. Session not started."}'
+    exit 0
+    ;;
+  run_shell_command|shell)
+    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
+    if [[ "$COMMAND" =~ (git\ (add|commit|push)|rm\ |mv\ |cp\ |mkdir\ ) ]]; then
+      echo '{"decision":"deny","reason":"BLOCKED: Call cortex_session_start before modifying files. Session not started."}'
+      exit 0
+    fi
+    ;;
+esac
+echo '{"decision":"allow"}'
+exit 0
+HOOKEOF
+
+    chmod +x "$GEMINI_HOOKS_DIR"/*.sh
+
+    # ── Generate .gemini/settings.json with hooks ──
+    python3 -c "
+import json, os
+
+settings_path = '$GEMINI_SETTINGS'
+hooks_config = {
+    'hooks': {
+        'SessionStart': [{
+            'hooks': [{
+                'type': 'command',
+                'command': '.gemini/hooks/session-init.sh',
+                'name': 'cortex_session_init'
+            }]
+        }],
+        'BeforeTool': [
+            {
+                'matcher': 'write_file|edit_file|create_file|insert_text|run_shell_command|shell',
+                'hooks': [{
+                    'type': 'command',
+                    'command': '.gemini/hooks/enforce-session.sh',
+                    'name': 'cortex_enforce_session'
+                }]
+            },
+            {
+                'matcher': 'run_shell_command|shell',
+                'hooks': [{
+                    'type': 'command',
+                    'command': '.gemini/hooks/enforce-commit.sh',
+                    'name': 'cortex_enforce_commit'
+                }]
+            }
+        ],
+        'AfterTool': [{
+            'matcher': '.*',
+            'hooks': [{
+                'type': 'command',
+                'command': '.gemini/hooks/track-quality.sh',
+                'name': 'cortex_track_quality'
+            }]
+        }],
+        'SessionEnd': [{
+            'hooks': [{
+                'type': 'command',
+                'command': '.gemini/hooks/session-end-check.sh',
+                'name': 'cortex_session_end_check'
+            }]
+        }]
+    }
+}
+
+existing = {}
+if os.path.exists(settings_path):
+    try:
+        with open(settings_path) as f:
+            existing = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        existing = {}
+
+existing['hooks'] = hooks_config['hooks']
+
+with open(settings_path, 'w') as f:
+    json.dump(existing, f, indent=2)
+    f.write('\n')
+"
+
+    echo -e "${GREEN}    ✓ Gemini CLI hooks installed (4 enforcement hooks)${NC}"
+    echo -e "${GREEN}      SessionStart  → session-init.sh (inject reminder)${NC}"
+    echo -e "${GREEN}      BeforeTool    → enforce-commit.sh (block commit without gates)${NC}"
+    echo -e "${GREEN}      AfterTool     → track-quality.sh (track gate passes)${NC}"
+    echo -e "${GREEN}      SessionEnd    → session-end-check.sh (session_end reminder)${NC}"
+else
+    echo -e "${YELLOW}>>> Gemini CLI not selected — skipping Gemini hooks${NC}"
+fi
+
 # ── Step 7: Generate .cortex/agent-rules.md (Cortex-managed) ──
 # This file is FULLY managed by the onboard script. It can be regenerated anytime.
 # AGENTS.md is the PROJECT TEAM's file — we only append a reference line, never modify content.
@@ -929,5 +1313,14 @@ if [ ${#CONFIGURED_TOOLS[@]} -gt 0 ]; then
     echo -e "    Tools:     ${BLUE}${CONFIGURED_TOOLS[*]}${NC}"
 fi
 echo ""
-echo -e "    ${YELLOW}Enforcement: git commit/push will FAIL if verify doesn't pass.${NC}"
+echo -e "    ${YELLOW}Enforcement:${NC}"
+echo -e "      ${YELLOW}├─ Lefthook: git commit/push BLOCKED if verify doesn't pass${NC}"
+echo -e "      ${YELLOW}├─ Server-side: session validation on quality reports${NC}"
+if [ "$INSTALL_CLAUDE_HOOKS" = true ]; then
+echo -e "      ${YELLOW}├─ Claude hooks: commit BLOCKED, session reminders (4 hooks)${NC}"
+fi
+if [ "$INSTALL_GEMINI_HOOKS" = true ]; then
+echo -e "      ${YELLOW}├─ Gemini hooks: commit BLOCKED, session reminders (4 hooks)${NC}"
+fi
+echo -e "      ${YELLOW}└─ Instructions: CLAUDE.md / GEMINI.md / .cursorrules${NC}"
 echo -e "${BLUE}>>> Happy Coding!${NC}"

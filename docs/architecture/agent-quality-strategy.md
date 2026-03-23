@@ -1,7 +1,7 @@
 # Agent Quality Gates & Performance Strategy
 
 > Architecture decision document — Cortex Hub
-> Created: 2026-03-20 | Updated: 2026-03-23
+> Created: 2026-03-20 | Updated: 2026-03-23 (enforcement hooks added)
 
 ---
 
@@ -16,6 +16,88 @@ Cortex Hub uses a **hybrid approach** to quality enforcement:
 | **Automated** | Lefthook pre-commit/pre-push hooks | Zero manual effort | Prevent bad code from reaching remote |
 
 The key insight: **client-side rules enforce process** (what to do), **server-side MCP provides data** (what to know), **hooks enforce gates** (what must pass).
+
+### Enforcement Layers (6 total)
+
+| Layer | Type | Blocking? | What It Enforces |
+|-------|------|-----------|------------------|
+| **CLAUDE.md** | Instructions | Soft | Session protocol, tool usage |
+| **AGENTS.md** | Instructions | Soft | Routing rules, tool priority |
+| **agent-rules.md** | Auto-gen instructions | Soft | MCP tool requirements |
+| **Claude Code hooks** | Runtime scripts | **HARD** | Session init, quality gates, commit blocking |
+| **Lefthook** | Git hooks | **HARD** | Build/test must pass before git |
+| **Server-side validation** | API middleware | **Warn** | Session must exist before quality reports |
+| **Post-push webhook** | Notification | Soft | Code reindex trigger |
+
+### IDE Hook Support Matrix
+
+| IDE/Agent | Hooks? | Enforcement Type | What Works |
+|-----------|--------|-----------------|------------|
+| **Claude Code** | **YES** (4 hooks) | Hard blocking | Commit blocked without gates, session reminders |
+| **Cursor** | No | Instructions only | `.cursorrules` + lefthook + server-side |
+| **Windsurf** | No | Instructions only | `.windsurfrules` + lefthook + server-side |
+| **VS Code Copilot** | No | Instructions only | `copilot-instructions.md` + lefthook + server-side |
+| **Antigravity** | No | Instructions only | `GEMINI.md` (enriched) + lefthook + server-side |
+| **Headless Bots** | No | Server-side only | API validates session before accepting reports |
+
+### Server-Side Enforcement (All IDEs)
+
+The Dashboard API validates session state on quality report submission:
+
+```
+POST /api/quality/report
+  └─ validateSession(agent_id, session_id)
+     ├─ session_id provided? → verify it's active in DB
+     ├─ no session_id? → check if agent has ANY active session
+     └─ no active session? → return warning in response
+```
+
+This ensures ALL agents (not just Claude Code) get feedback when they skip `cortex_session_start`.
+
+### Auto-Installation via onboard.sh
+
+The `scripts/onboard.sh` script (Step 6b) automatically installs Claude Code hooks when `--tool claude` is selected:
+
+```bash
+bash scripts/onboard.sh --tool claude
+# Output:
+#   ✓ Claude Code hooks installed (4 enforcement hooks)
+#     SessionStart  → session-init.sh (inject reminder)
+#     PreToolUse    → enforce-commit.sh (block commit without gates)
+#     PostToolUse   → track-quality.sh (track gate passes)
+#     Stop          → session-end-check.sh (session_end reminder)
+```
+
+### Claude Code Hooks (`.claude/settings.json`)
+
+```
+SessionStart  →  session-init.sh      Inject mandatory session_start reminder
+PreToolUse    →  enforce-commit.sh     Block git commit without quality gates
+PostToolUse   →  track-quality.sh      Track build/typecheck/lint pass + MCP calls
+Stop          →  session-end-check.sh  Warn if session_end not called
+```
+
+**Flow:**
+```
+Session Start
+│
+├─ [HOOK] session-init.sh → inject reminder
+├─ [AGENT] calls cortex_session_start
+├─ [HOOK] track-quality.sh → marks session-started
+│
+├─ ... work ...
+│
+├─ [AGENT] runs pnpm build/typecheck/lint
+├─ [HOOK] track-quality.sh → marks gates passed
+│
+├─ [AGENT] git commit
+├─ [HOOK] enforce-commit.sh → BLOCKS if gates not passed
+├─ [HOOK] lefthook pre-commit → BLOCKS if build fails
+│
+├─ [AGENT] calls cortex_session_end
+│
+└─ [HOOK] session-end-check.sh → warns if session_end missing
+```
 
 ---
 
