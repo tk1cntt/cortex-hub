@@ -1302,6 +1302,60 @@ else
     echo -e "${YELLOW}>>> No AGENTS.md found — $CORTEX_RULES_PATH will be the sole rules source${NC}"
 fi
 
+# ── Step 7b: Deploy Workflow Templates ──
+# Installs Cortex workflow templates into .agents/workflows/ for any project.
+# Templates define how agents use Cortex tools (code, continue, phase, onboard).
+
+WORKFLOWS_DIR=".agents/workflows"
+WORKFLOW_VERSION="2"  # Bump when updating templates
+WORKFLOW_MARKER="<!-- cortex-workflows-version: -->"
+
+echo -e "${BLUE}>>> Deploying Cortex workflow templates to ${WORKFLOWS_DIR}...${NC}"
+mkdir -p "$WORKFLOWS_DIR"
+
+# Check if workflows need update
+NEEDS_UPDATE=false
+if [ -f "$WORKFLOWS_DIR/code.md" ]; then
+    if grep -q "cortex-workflows-version: ${WORKFLOW_VERSION}" "$WORKFLOWS_DIR/code.md" 2>/dev/null; then
+        echo -e "${GREEN}    ✓ Workflows already at v${WORKFLOW_VERSION} — skipping${NC}"
+    else
+        echo -e "${YELLOW}    ⟳ Workflows outdated — updating to v${WORKFLOW_VERSION}${NC}"
+        NEEDS_UPDATE=true
+    fi
+else
+    NEEDS_UPDATE=true
+fi
+
+if [ "$NEEDS_UPDATE" = true ]; then
+    # Source 1: Local templates from cortex-hub repo (if running from inside cortex-hub)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    TEMPLATES_SRC="$SCRIPT_DIR/../templates/workflows"
+
+    if [ -d "$TEMPLATES_SRC" ] && [ -f "$TEMPLATES_SRC/code.md" ]; then
+        echo -e "${BLUE}    Using local templates from $TEMPLATES_SRC${NC}"
+        for tmpl in "$TEMPLATES_SRC"/*.md; do
+            filename=$(basename "$tmpl")
+            cp "$tmpl" "$WORKFLOWS_DIR/$filename"
+            echo -e "${GREEN}    ✓ Deployed $filename${NC}"
+        done
+    else
+        # Source 2: Download from GitHub
+        TEMPLATES_BASE="https://raw.githubusercontent.com/lktiep/cortex-hub/main/templates/workflows"
+        WORKFLOW_FILES=("code.md" "continue.md" "phase.md")
+
+        echo -e "${BLUE}    Downloading templates from GitHub...${NC}"
+        for wf in "${WORKFLOW_FILES[@]}"; do
+            if curl -sf "$TEMPLATES_BASE/$wf" -o "$WORKFLOWS_DIR/$wf" 2>/dev/null; then
+                echo -e "${GREEN}    ✓ Downloaded $wf${NC}"
+            else
+                echo -e "${YELLOW}    ⚠ Could not download $wf — skipping${NC}"
+            fi
+        done
+    fi
+
+    echo -e "${GREEN}    ✓ Workflows deployed to $WORKFLOWS_DIR (v${WORKFLOW_VERSION})${NC}"
+fi
+
 # ── Step 8: Session Start ──
 echo -e "${BLUE}>>> Announcing agent availability...${NC}"
 if command -v gitnexus >/dev/null 2>&1; then
@@ -1321,6 +1375,7 @@ echo -e "    Stack:     ${BLUE}$PKG_MANAGER${NC}"
 echo -e "    Profile:   ${BLUE}$PROFILE_PATH${NC}"
 echo -e "    Hooks:     ${BLUE}lefthook (pre-commit + pre-push + post-push)${NC}"
 echo -e "    Rules:     ${BLUE}AGENTS.md${NC}"
+echo -e "    Workflows: ${BLUE}.agents/workflows/ (code, continue, phase)${NC}"
 if [ ${#CONFIGURED_TOOLS[@]} -gt 0 ]; then
     echo -e "    Tools:     ${BLUE}${CONFIGURED_TOOLS[*]}${NC}"
 fi
