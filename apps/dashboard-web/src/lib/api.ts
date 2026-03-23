@@ -175,6 +175,7 @@ export interface QualityReportRow {
   grade: string
   passed: number
   details: string | null
+  api_key_name: string | null
   created_at: string
 }
 

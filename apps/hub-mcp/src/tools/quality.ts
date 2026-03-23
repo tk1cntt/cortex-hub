@@ -73,8 +73,8 @@ export function registerQualityTools(server: McpServer, env: Env) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             gate_name,
-            // Server-resolved identity (from API key) takes precedence over self-reported
-            agent_id: env.API_KEY_OWNER || agent_id || 'unknown',
+            // Keep self-reported agent_id — API key name tracked separately via X-API-Key-Owner header
+            agent_id: agent_id || 'unknown',
             session_id,
             project_id,
             results,

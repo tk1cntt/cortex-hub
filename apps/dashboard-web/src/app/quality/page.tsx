@@ -376,6 +376,7 @@ export default function QualityPage() {
                 <tr>
                   <th>Gate</th>
                   <th>Agent</th>
+                  <th>API Key</th>
                   <th className={styles.cellCenter}>Build</th>
                   <th className={styles.cellCenter}>Regr.</th>
                   <th className={styles.cellCenter}>Stds.</th>
@@ -489,6 +490,7 @@ function ReportRow({ report }: { report: QualityReportRow }) {
     <tr>
       <td><code className={styles.toolName}>{report.gate_name}</code></td>
       <td className={styles.cellMono}>{report.agent_id}</td>
+      <td className={styles.cellMuted}>{report.api_key_name || '—'}</td>
       <td className={styles.cellCenter}>
         <DimScore value={report.score_build} max={25} />
       </td>

@@ -58,10 +58,9 @@ qualityRouter.post('/report', async (c) => {
 
     if (!gate_name) return c.json({ error: 'gate_name is required' }, 400)
 
-    // Identity resolution: X-API-Key-Owner (server-resolved from API key)
-    // takes precedence over self-reported agent_id
-    const apiKeyOwner = c.req.header('X-API-Key-Owner')
-    const agentId = apiKeyOwner || agent_id || 'unknown'
+    // Identity resolution: keep agent_id from self-report, track API key name separately
+    const apiKeyName = c.req.header('X-API-Key-Owner') || null
+    const agentId = agent_id || 'unknown'
 
     // Server-side enforcement: validate session
     const sessionCheck = validateSession(agentId, session_id)
@@ -109,17 +108,21 @@ qualityRouter.post('/report', async (c) => {
       }
     }
 
+    // Ensure api_key_name column exists (safe migration)
+    try { db.exec('ALTER TABLE quality_reports ADD COLUMN api_key_name TEXT') } catch { /* already exists */ }
+
     const stmt = db.prepare(`
       INSERT INTO quality_reports (id, project_id, agent_id, session_id, gate_name,
         score_build, score_regression, score_standards, score_traceability,
-        score_total, grade, passed, details)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        score_total, grade, passed, details, api_key_name)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
     stmt.run(
       reportId, project_id || null, agentId, session_id || null, gate_name,
       scoreBuild, scoreRegression, scoreStandards, scoreTraceability,
       scoreTotal, grade, reportPassed ? 1 : 0,
-      details ? (typeof details === 'string' ? details : JSON.stringify(details)) : null
+      details ? (typeof details === 'string' ? details : JSON.stringify(details)) : null,
+      apiKeyName
     )
 
     // Also log to query_logs for backward compatibility
@@ -321,10 +324,8 @@ sessionsRouter.post('/start', async (c) => {
     const body = await c.req.json()
     const { repo, mode, agentId: bodyAgentId } = body
 
-    // Identity resolution: X-API-Key-Owner (server-resolved from API key)
-    // takes precedence over self-reported agentId
-    const apiKeyOwner = c.req.header('X-API-Key-Owner')
-    const agentId = apiKeyOwner || bodyAgentId
+    // Identity resolution: keep self-reported agentId, API key name tracked separately
+    const agentId = bodyAgentId
 
     if (!agentId) {
       return c.json({ error: 'agentId is required. Identify your agent (e.g., "claude-code", "antigravity", "cursor").' }, 400)
