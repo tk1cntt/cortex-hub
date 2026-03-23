@@ -284,16 +284,19 @@ cd infra && docker compose up -d
 pnpm build && pnpm dev
 ```
 
-### Connect Your Agent
+### Connect Your Agent (Member Install)
 
-Run the onboarding script in **any** project to connect your IDE agent:
+Connect your IDE agent to an existing Cortex Hub — **no need to clone the repo**:
 
 ```bash
-# From any project directory:
-bash /path/to/cortex-hub/scripts/onboard.sh
+# One-liner: download and run onboard script from any project directory
+bash <(curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/onboard.sh)
+```
 
-# Or with API key:
-HUB_API_KEY=your-key bash onboard.sh --tool antigravity
+Or with API key pre-configured:
+
+```bash
+HUB_API_KEY=your-key bash <(curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/onboard.sh) --tool antigravity
 ```
 
 The onboarding script will:
