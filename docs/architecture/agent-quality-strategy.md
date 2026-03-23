@@ -297,6 +297,117 @@ Track these metrics via Dashboard:
 | CI success rate | GitHub Actions | Green vs red builds |
 | Edit-revert ratio | Git history | Reverted commits / total |
 
+---
+
+## 11. Complexity-Based Model Routing
+
+The LLM Gateway uses **pure heuristic analysis** (zero LLM overhead) to route tasks to the optimal model tier:
+
+### Tier Classification
+
+| Tier | Score | Use Case | Example Models |
+|------|-------|----------|----------------|
+| **Light** | 1-3.5 | Simple tasks: typos, renames, status checks | gpt-5.4-mini, gemini-2.5-flash, claude-haiku |
+| **Standard** | 3.5-6.5 | Feature work: endpoints, components, bug fixes | gpt-5.4, gemini-2.5-pro, claude-sonnet |
+| **Heavy** | 6.5-10 | Complex: architecture, migrations, security audits | o3, gemini-2.5-pro, claude-opus |
+
+### 8 Complexity Signals (weighted)
+
+| Signal | Weight | Low (1-3) | High (7-10) |
+|--------|--------|-----------|-------------|
+| Keywords | 3 | "fix typo", "rename" | "architect", "migration" |
+| Prompt length | 2 | < 10 words | > 500 words |
+| File count | 2 | 1 file | > 20 files |
+| Step count | 2 | 1 step | > 10 steps |
+| Task type | 2 | completion | planning, architecture |
+| Token estimate | 1 | < 1K | > 50K |
+| Codebase size | 1 | small | large |
+| Retry escalation | 1 | first attempt | retry after failure |
+
+### API Usage
+
+```typescript
+// Auto-routing: set model to "auto" or omit
+POST /api/llm/v1/chat/completions
+{
+  "model": "auto",
+  "messages": [...],
+  "complexity": { "fileCount": 5, "taskType": "refactor" }
+}
+
+// Response includes routing metadata
+{ "routing": { "tier": "standard", "score": 5.2, "reasoning": "..." } }
+
+// Standalone analysis
+POST /api/llm/analyze-complexity
+{ "prompt": "Refactor the auth system to use JWT", "fileCount": 8 }
+```
+
+### Estimated Savings
+
+| Scenario | Without Routing | With Routing | Savings |
+|----------|----------------|--------------|---------|
+| 100 tasks (mix) | All use Opus | 40% light, 40% standard, 20% heavy | **40-60% tokens** |
+
+---
+
+## 12. Plan Quality Loop
+
+Pre-execution validation scores plans against **8 criteria** before implementation starts.
+
+### 8 Scoring Criteria
+
+| Criterion | Weight | What It Measures |
+|-----------|--------|------------------|
+| Completeness | 2 | Does the plan cover all aspects of the request? |
+| Specificity | 2 | Are file paths, function names, and commands specified? |
+| Feasibility | 1.5 | Is the scope achievable in one session? |
+| Risk Awareness | 1 | Are breaking changes, rollback, edge cases addressed? |
+| Scope Boundary | 1.5 | Is scope clearly defined without creep? |
+| Ordering | 1 | Are steps logically ordered with dependencies? |
+| Testability | 1.5 | How will success be verified? (build/test commands) |
+| Impact Clarity | 1 | What changes, what's affected, expected outcome? |
+
+### Threshold & Iteration
+
+```
+Score >= 8.0/10  → APPROVED — proceed with implementation
+Score < 8.0      → NEEDS IMPROVEMENT — revise plan (max 3 iterations)
+3 failed iterations → ESCALATE to user for guidance
+```
+
+### MCP Tool: `cortex_plan_quality`
+
+```typescript
+cortex_plan_quality({
+  plan: "1. Add JWT middleware to auth.ts\n2. Update user routes...",
+  request: "Add JWT authentication",
+  iteration: 1,
+  threshold: 8.0,
+  plan_type: "feature",
+})
+```
+
+Response:
+```
+Plan Quality Assessment (Iteration 1/3)
+───────────────────────────────────────────────────────────
+  Completeness       ████████░░ 8.0/10  GOOD
+  Specificity        █████████░ 9.0/10  GOOD
+  Feasibility        ████████░░ 8.0/10  GOOD
+  Risk Awareness     ██████░░░░ 6.0/10  OK
+  Scope Boundary     █████████░ 9.0/10  GOOD
+  Ordering           ████████░░ 8.0/10  GOOD
+  Testability        ████████░░ 8.0/10  GOOD
+  Impact Clarity     ███████░░░ 7.0/10  GOOD
+───────────────────────────────────────────────────────────
+  Total Score: 8.1/10  APPROVED
+
+Plan APPROVED. Proceed with implementation.
+```
+
+---
+
 ### Comparison with Forgewright Reference
 
 | Feature | Forgewright | Cortex Hub | Status |

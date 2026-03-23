@@ -222,6 +222,53 @@ Submit a quality gate report with automatic 4-dimension scoring.
 | `/api/quality/summary` | GET | Aggregate stats + grade distribution |
 | `/api/quality/logs` | GET | Legacy execution logs |
 
+#### `cortex_plan_quality`
+
+Assess plan quality against 8 criteria before execution. Use BEFORE implementing complex plans.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `plan` | string | Yes | The implementation plan text |
+| `request` | string | Yes | Original user request |
+| `iteration` | number | — | Iteration number (1-3, default 1) |
+| `threshold` | number | — | Minimum score to pass (default 8.0) |
+| `plan_type` | string | — | One of: feature, bugfix, refactor, architecture, migration, general |
+
+**Scoring criteria:** Completeness, Specificity, Feasibility, Risk Awareness, Scope Boundary, Ordering, Testability, Impact Clarity
+
+**Threshold:** Score >= 8.0/10 → APPROVED. Max 3 iterations.
+
+---
+
+### `routing.*` — Complexity-Based Model Routing
+
+#### `POST /api/llm/analyze-complexity`
+
+Analyze task complexity using pure heuristics (zero LLM cost). Returns recommended model tier.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `prompt` | string | Yes | Task description |
+| `fileCount` | number | — | Estimated files to touch |
+| `stepCount` | number | — | Number of plan steps |
+| `taskType` | string | — | completion, planning, research, review, generation, debug, refactor |
+| `isRetry` | boolean | — | Previous attempt failed |
+| `codebaseSize` | string | — | small, medium, large |
+
+**Response:**
+```json
+{
+  "analysis": {
+    "tier": "standard",
+    "score": 5.2,
+    "signals": [...],
+    "reasoning": "Complexity 5.2/10 → standard tier [keywords(6), promptLength(4), taskType(6)]"
+  }
+}
+```
+
+**Auto-routing in chat:** Set `model: "auto"` in `/api/llm/v1/chat/completions` to auto-select model tier.
+
 ---
 
 ### `session.*` — Session Handoff

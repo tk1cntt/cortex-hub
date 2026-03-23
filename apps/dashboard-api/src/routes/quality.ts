@@ -4,8 +4,10 @@ import {
   calculateFromVerificationResults,
   scoreToGrade,
   approximateDimensionsFromTotal,
+  assessPlanQuality,
   type VerificationResults,
   type Grade,
+  type PlanInput,
 } from '@cortex/shared-types'
 
 export const qualityRouter = new Hono()
@@ -225,6 +227,20 @@ qualityRouter.get('/summary', (c) => {
     ).get()
 
     return c.json({ summary, latest })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── POST /plan-quality — Assess plan quality (8 criteria, threshold >= 8.0) ──
+qualityRouter.post('/plan-quality', async (c) => {
+  try {
+    const body = await c.req.json() as PlanInput
+    if (!body.plan) return c.json({ error: 'plan is required' }, 400)
+    if (!body.request) return c.json({ error: 'request is required' }, 400)
+
+    const result = assessPlanQuality(body)
+    return c.json({ result })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

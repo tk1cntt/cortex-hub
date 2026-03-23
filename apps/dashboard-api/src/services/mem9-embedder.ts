@@ -36,7 +36,16 @@ const CODE_EXTENSIONS = new Set([
 const MAX_FILE_SIZE = 256 * 1024 // 256KB
 const CHUNK_SIZE = 1500 // ~375 tokens (4 chars/token)
 const CHUNK_OVERLAP = 300
-const EMBED_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes global timeout
+
+// Dynamic timeout: min 10min, +3s per chunk, max 60min
+const MIN_TIMEOUT_MS = 10 * 60 * 1000
+const MAX_TIMEOUT_MS = 60 * 60 * 1000
+const MS_PER_CHUNK = 3000
+
+function calculateTimeout(chunkCount: number): number {
+  const dynamic = MIN_TIMEOUT_MS + chunkCount * MS_PER_CHUNK
+  return Math.min(dynamic, MAX_TIMEOUT_MS)
+}
 
 interface ChunkResult {
   filePath: string
@@ -176,15 +185,37 @@ export async function embedProject(
   jobId: string,
   onProgress?: (progress: number, chunks: number) => void,
 ): Promise<{ status: string; chunks: number; errors: string[] }> {
-  // Wrap with global timeout to prevent infinite hangs
+  // First pass: count chunks to calculate dynamic timeout
+  // The actual embedding happens in embedProjectInternal
+  // We use a clearable timer so it doesn't fire after success
+  let timer: ReturnType<typeof setTimeout> | null = null
+
   const timeoutPromise = new Promise<{ status: string; chunks: number; errors: string[] }>((resolve) => {
-    setTimeout(() => {
-      logger.warn(`[${jobId}] mem9 embedding timed out after ${EMBED_TIMEOUT_MS / 1000}s`)
-      resolve({ status: 'error', chunks: 0, errors: ['Embedding timed out (10 min limit)'] })
-    }, EMBED_TIMEOUT_MS)
+    // Start with max timeout; embedProjectInternal will adjust it after counting chunks
+    timer = setTimeout(() => {
+      logger.warn(`[${jobId}] mem9 embedding timed out after ${MAX_TIMEOUT_MS / 1000}s (max)`)
+      resolve({ status: 'error', chunks: 0, errors: [`Embedding timed out (${MAX_TIMEOUT_MS / 1000}s max limit)`] })
+    }, MAX_TIMEOUT_MS)
   })
 
-  return Promise.race([embedProjectInternal(projectId, branch, jobId, onProgress), timeoutPromise])
+  const embedPromise = embedProjectInternal(projectId, branch, jobId, onProgress, (chunkCount) => {
+    // Callback: adjust timeout based on actual chunk count
+    if (timer) {
+      clearTimeout(timer)
+      const dynamicMs = calculateTimeout(chunkCount)
+      logger.info(`[${jobId}] Dynamic timeout set: ${Math.round(dynamicMs / 1000)}s for ${chunkCount} chunks`)
+      timer = setTimeout(() => {
+        logger.warn(`[${jobId}] mem9 embedding timed out after ${Math.round(dynamicMs / 1000)}s`)
+      }, dynamicMs)
+    }
+  })
+
+  const result = await Promise.race([embedPromise, timeoutPromise])
+
+  // Clear the timer on completion to prevent orphaned timeout warnings
+  if (timer) clearTimeout(timer)
+
+  return result
 }
 
 async function embedProjectInternal(
@@ -192,6 +223,7 @@ async function embedProjectInternal(
   branch: string,
   jobId: string,
   onProgress?: (progress: number, chunks: number) => void,
+  onChunkCount?: (count: number) => void,
 ): Promise<{ status: string; chunks: number; errors: string[] }> {
   const repoDir = join(REPOS_DIR, projectId)
   const collectionName = `cortex-project-${projectId}`
@@ -228,6 +260,9 @@ async function embedProjectInternal(
   }
 
   logger.info(`[${jobId}] Created ${allChunks.length} chunks from ${sourceFiles.length} files`)
+
+  // Notify parent to adjust dynamic timeout
+  onChunkCount?.(allChunks.length)
 
   // 3. Build embedder with fallback chain, routed through LLM gateway
   const { config: embedConfig, chain } = buildEmbeddingChain()

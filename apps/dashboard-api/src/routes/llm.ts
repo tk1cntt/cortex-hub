@@ -1,5 +1,10 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
+import {
+  analyzeComplexity,
+  reorderChainByTier,
+  type TaskInput,
+} from '@cortex/shared-types'
 
 export const llmRouter = new Hono()
 
@@ -357,6 +362,8 @@ llmRouter.post('/v1/chat/completions', async (c) => {
     max_tokens?: number
     agent_id?: string
     project_id?: string
+    /** Complexity hints for auto-routing */
+    complexity?: Partial<TaskInput>
   }
 
   if (!body.messages?.length) return c.json({ error: 'Missing messages' }, 400)
@@ -369,10 +376,31 @@ llmRouter.post('/v1/chat/completions', async (c) => {
     return c.json({ error: 'No chat providers configured. Add a provider in Settings.' }, 503)
   }
 
+  // ── Complexity-Based Routing ──
+  // When model is 'auto' or unset, analyze task complexity to pick optimal tier
   const requestedModel = body.model && body.model !== 'auto' ? body.model : null
-  const orderedChain = requestedModel
-    ? [...chain.filter((s) => s.model === requestedModel), ...chain.filter((s) => s.model !== requestedModel)]
-    : chain
+  let orderedChain: ProviderSlot[]
+  let complexityInfo: { tier: string; score: number; reasoning: string } | null = null
+
+  if (requestedModel) {
+    // Explicit model requested → prioritize it
+    orderedChain = [
+      ...chain.filter((s) => s.model === requestedModel),
+      ...chain.filter((s) => s.model !== requestedModel),
+    ]
+  } else {
+    // Auto-routing: analyze complexity from last user message + hints
+    const lastUserMsg = [...body.messages].reverse().find(m => m.role === 'user')
+    const prompt = lastUserMsg?.content ?? ''
+
+    const analysis = analyzeComplexity({
+      prompt,
+      ...body.complexity,
+    })
+
+    orderedChain = reorderChainByTier(chain, analysis.tier)
+    complexityInfo = { tier: analysis.tier, score: analysis.score, reasoning: analysis.reasoning }
+  }
 
   const errors: string[] = []
 
@@ -409,6 +437,8 @@ llmRouter.post('/v1/chat/completions', async (c) => {
             completion_tokens: result.completionTokens,
             total_tokens: totalTokens,
           },
+          // Complexity routing metadata (when auto-routed)
+          ...(complexityInfo ? { routing: complexityInfo } : {}),
         })
       } catch (err) {
         const status = (err as { status?: number }).status ?? 0
@@ -423,6 +453,19 @@ llmRouter.post('/v1/chat/completions', async (c) => {
   }
 
   return c.json({ error: 'All chat providers failed', details: errors }, 502)
+})
+
+// ═══════════════════════════════════════════════════
+// Complexity Analysis & Plan Quality Endpoints
+// ═══════════════════════════════════════════════════
+
+/** POST /analyze-complexity — Analyze task complexity without making an LLM call */
+llmRouter.post('/analyze-complexity', async (c) => {
+  const body = await c.req.json() as TaskInput
+  if (!body.prompt) return c.json({ error: 'prompt is required' }, 400)
+
+  const analysis = analyzeComplexity(body)
+  return c.json({ analysis })
 })
 
 // ═══════════════════════════════════════════════════

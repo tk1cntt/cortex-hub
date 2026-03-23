@@ -6,6 +6,8 @@ import { apiCall } from '../api-call.js'
 import {
   calculateFromVerificationResults,
   gradeAction,
+  assessPlanQuality,
+  formatPlanScorecard,
   type VerificationResults,
 } from '@cortex/shared-types'
 
@@ -105,6 +107,49 @@ export function registerQualityTools(server: McpServer, env: Env) {
       } catch (error) {
         return {
           content: [{ type: 'text' as const, text: `Quality API error: ${String(error)}` }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  // ── Plan Quality Assessment ──
+  server.tool(
+    'cortex_plan_quality',
+    'Assess plan quality against 8 criteria before execution. Score >= 8.0/10 to proceed. Max 3 iterations. Use BEFORE implementing a complex plan.',
+    {
+      plan: z.string().describe('The implementation plan to assess'),
+      request: z.string().describe('The original user request this plan addresses'),
+      iteration: z.number().optional().describe('Iteration number (1-3, default 1)'),
+      threshold: z.number().optional().describe('Minimum score to pass (default 8.0)'),
+      plan_type: z.enum(['feature', 'bugfix', 'refactor', 'architecture', 'migration', 'general']).optional(),
+    },
+    async ({ plan, request, iteration, threshold, plan_type }) => {
+      try {
+        const result = assessPlanQuality({
+          plan,
+          request,
+          iteration: iteration ?? 1,
+          threshold: threshold ?? 8.0,
+          planType: plan_type ?? 'general',
+        })
+
+        const scorecard = formatPlanScorecard(result)
+        const statusLine = result.passed
+          ? 'Plan APPROVED. Proceed with implementation.'
+          : result.canRetry
+            ? `Plan needs improvement. Revise and re-submit (${result.maxIterations - result.iteration} retries remaining).`
+            : 'Plan failed after max iterations. Escalate to user for guidance.'
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `${scorecard}\n\n${statusLine}`,
+          }],
+        }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Plan quality error: ${String(error)}` }],
           isError: true,
         }
       }
