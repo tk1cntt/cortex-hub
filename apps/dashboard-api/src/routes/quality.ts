@@ -42,6 +42,10 @@ sessionsRouter.post('/start', async (c) => {
     const body = await c.req.json()
     const { repo, mode, agentId } = body
 
+    if (!agentId) {
+      return c.json({ error: 'agentId is required. Identify your agent (e.g., "claude-code", "antigravity", "cursor").' }, 400)
+    }
+
     // Normalize repo URL: strip .git suffix and trailing slash for consistent matching
     const normalizedRepo = repo
       ? repo.replace(/\.git$/, '').replace(/\/$/, '')
@@ -70,7 +74,7 @@ sessionsRouter.post('/start', async (c) => {
        WHERE from_agent = ? AND project IN (?, ?, ?, ?) AND status = 'active'
        ORDER BY created_at DESC LIMIT 1`
     ).get(
-      agentId ?? 'default',
+      agentId,
       normalizedRepo,
       `${normalizedRepo}.git`,
       `${normalizedRepo}/`,
@@ -107,7 +111,7 @@ sessionsRouter.post('/start', async (c) => {
       )
       insertStmt.run(
         sessionId,
-        agentId ?? 'default',
+        agentId,
         normalizedRepo,
         `Session started: mode=${mode ?? 'development'}`,
         JSON.stringify({ repo, mode, agentId, projectId: project?.id }),

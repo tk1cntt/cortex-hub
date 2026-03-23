@@ -57,7 +57,7 @@ export function registerSessionTools(server: McpServer, env: Env) {
     {
       repo: z.string().describe('The URL of the repository being worked on'),
       mode: z.string().optional().describe('Session mode: development, onboarding, review'),
-      agentId: z.string().optional().describe('Your agent identifier for change tracking'),
+      agentId: z.string().describe('Your agent identifier for change tracking (e.g., "claude-code", "antigravity", "cursor")'),
     },
     async ({ repo, mode, agentId }) => {
       try {
