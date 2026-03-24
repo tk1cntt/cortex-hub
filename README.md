@@ -498,9 +498,7 @@ cortex-hub/
 ### Planned
 
 - [ ] Agent performance leaderboard
-- [ ] Interactive knowledge graph visualization
-- [ ] Slack/Discord notification integrations
-- [ ] Cloudflare Access for Dashboard UI protection
+- [ ] Plugin system for custom MCP tools
 
 ---
 
