@@ -104,10 +104,15 @@ app.get('/', (c) => {
       'cortex_knowledge_search',
       'cortex_code_search',
       'cortex_code_impact',
+      'cortex_code_context',
       'cortex_code_reindex',
+      'cortex_cypher',
+      'cortex_detect_changes',
       'cortex_quality_report',
       'cortex_session_start',
-      'cortex_changes'
+      'cortex_session_end',
+      'cortex_changes',
+      'cortex_plan_quality',
     ],
   })
 })

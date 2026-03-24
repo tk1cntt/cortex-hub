@@ -12,7 +12,30 @@ import type { Env } from '../types.js'
  * Proxied via Dashboard API — GitNexus runs as a CLI tool server-side.
  */
 export function registerCodeTools(server: McpServer, env: Env) {
-  // code.search — query codebase concepts and workflows
+  const apiUrl = () => env.DASHBOARD_API_URL || 'http://localhost:4000'
+
+  // ── Helper: call Dashboard API intel endpoints ──
+  async function callIntel(
+    endpoint: string,
+    params: Record<string, unknown>,
+    timeoutMs = 15000,
+  ): Promise<unknown> {
+    const response = await fetch(`${apiUrl()}/api/intel/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`${endpoint} failed: ${response.status} ${errorText}`)
+    }
+
+    return response.json()
+  }
+
+  // ── code_search — query codebase concepts and workflows ──
   server.tool(
     'cortex_code_search',
     'Query the codebase for architecture concepts, execution flows, and file matches using GitNexus hybrid vector/AST search. Use projectId to scope to a specific project.',
@@ -24,35 +47,13 @@ export function registerCodeTools(server: McpServer, env: Env) {
     },
     async ({ query, projectId, branch, limit }) => {
       try {
-        const apiUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
-        const response = await fetch(`${apiUrl}/api/intel/search`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query,
-            projectId,
-            branch,
-            limit: limit ?? 5,
-          }),
-          signal: AbortSignal.timeout(15000),
-        })
+        const data = (await callIntel('search', {
+          query,
+          projectId,
+          branch,
+          limit: limit ?? 5,
+        })) as { data?: { formatted?: string }; success?: boolean }
 
-        if (!response.ok) {
-          const errorText = await response.text()
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Code search failed: ${response.status} ${errorText}`,
-              },
-            ],
-            isError: true,
-          }
-        }
-
-        const data = (await response.json()) as { data?: { formatted?: string }; success?: boolean }
-
-        // Prefer formatted output from the API (human-readable report)
         const formatted = data?.data?.formatted
         if (formatted) {
           return {
@@ -60,30 +61,22 @@ export function registerCodeTools(server: McpServer, env: Env) {
           }
         }
 
-        // Fallback to raw JSON
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify(data, null, 2),
-            },
-          ],
+          content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
         }
       } catch (error) {
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Code search error: ${error instanceof Error ? error.message : 'Unknown'}`,
-            },
-          ],
+          content: [{
+            type: 'text' as const,
+            text: `Code search error: ${error instanceof Error ? error.message : 'Unknown'}`,
+          }],
           isError: true,
         }
       }
     }
   )
 
-  // code.impact — calculate blast radius for code changes
+  // ── code_impact — calculate blast radius for code changes ──
   server.tool(
     'cortex_code_impact',
     'Analyze the blast radius of changing a specific symbol (function, class, file) to verify downstream impact before making edits.',
@@ -95,56 +88,117 @@ export function registerCodeTools(server: McpServer, env: Env) {
     },
     async ({ target, projectId, branch, direction }) => {
       try {
-        const apiUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
-        const response = await fetch(`${apiUrl}/api/intel/impact`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            target,
-            projectId,
-            branch,
-            direction: direction ?? 'downstream',
-          }),
-          signal: AbortSignal.timeout(15000),
-        })
+        const data = await callIntel('impact', {
+          target,
+          projectId,
+          branch,
+          direction: direction ?? 'downstream',
+        }) as { data?: { results?: { raw?: string } } }
 
-        if (!response.ok) {
-          const errorText = await response.text()
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Impact analysis failed: ${response.status} ${errorText}`,
-              },
-            ],
-            isError: true,
-          }
+        const raw = data?.data?.results?.raw ?? ''
+
+        // Auto-retry: if target appears "isolated", it may be a class name.
+        // Try context lookup to find methods, then retry impact on first method.
+        if (raw.includes('appears isolated') || raw.includes('not found')) {
+          try {
+            const contextData = await callIntel('context', {
+              name: target,
+              projectId,
+            }) as { data?: { results?: { raw?: string } } }
+
+            const contextRaw = contextData?.data?.results?.raw ?? ''
+            // Extract method names from context output (pattern: "→ [has_method] ... MethodName →")
+            const methodMatches = contextRaw.match(/\[has_method\]\s+\w+\s+(\w+)/g)
+
+            if (methodMatches && methodMatches.length > 0) {
+              const methods = methodMatches
+                .filter((m): m is string => typeof m === 'string')
+                .map((m) => {
+                  const parts = m.split(/\s+/)
+                  return parts[parts.length - 1] ?? ''
+                })
+                .filter((m) => m && m !== target)
+
+              // Build enriched response with class context + first method impact
+              const lines: string[] = [
+                `📋 Class "${target}" — ${methods.length} method(s) found:\n`,
+                ...methods.map((m: string) => `  • ${m}`),
+                '',
+              ]
+
+              if (methods.length > 0) {
+                try {
+                  const methodImpact = await callIntel('impact', {
+                    target: methods[0],
+                    projectId,
+                    direction: direction ?? 'downstream',
+                  }) as { data?: { results?: { raw?: string } } }
+
+                  const methodRaw = methodImpact?.data?.results?.raw ?? ''
+                  if (!methodRaw.includes('appears isolated') && !methodRaw.includes('not found')) {
+                    lines.push(`\n🎯 Impact for "${methods[0]}" (first method):\n`)
+                    lines.push(methodRaw)
+                  }
+                } catch { /* ignore retry failure */ }
+              }
+
+              lines.push(`\n💡 Tip: Run cortex_code_impact on specific methods above for detailed blast radius.`)
+
+              return {
+                content: [{ type: 'text' as const, text: lines.join('\n') }],
+              }
+            }
+          } catch { /* ignore context failure, return original result */ }
         }
 
-        const data = await response.json()
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify(data, null, 2),
-            },
-          ],
+          content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
         }
       } catch (error) {
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Impact analysis error: ${error instanceof Error ? error.message : 'Unknown'}`,
-            },
-          ],
+          content: [{
+            type: 'text' as const,
+            text: `Impact analysis error: ${error instanceof Error ? error.message : 'Unknown'}`,
+          }],
           isError: true,
         }
       }
     }
   )
 
-  // code.detect_changes — pre-commit risk analysis
+  // ── code_context — 360° symbol view (callers, callees, methods) ──
+  server.tool(
+    'cortex_code_context',
+    'Get a 360° view of a code symbol: its methods, callers, callees, and related execution flows. Essential for exploring class hierarchies and understanding how a symbol is used across the codebase.',
+    {
+      name: z.string().describe('The name of the function, class, or symbol to explore'),
+      projectId: z.string().optional().describe('Project ID to scope lookup to'),
+      file: z.string().optional().describe('File path to disambiguate when multiple symbols share the same name'),
+    },
+    async ({ name, projectId, file }) => {
+      try {
+        const data = await callIntel('context', { name, projectId, file }) as {
+          data?: { results?: { raw?: string } }
+        }
+
+        const raw = data?.data?.results?.raw ?? JSON.stringify(data, null, 2)
+
+        return {
+          content: [{ type: 'text' as const, text: raw }],
+        }
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Context lookup error: ${error instanceof Error ? error.message : 'Unknown'}`,
+          }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  // ── detect_changes — pre-commit risk analysis ──
   server.tool(
     'cortex_detect_changes',
     'Detect uncommitted changes and analyze their risk level across the indexed codebase. Shows changed symbols, affected processes, and risk assessment.',
@@ -154,23 +208,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
     },
     async ({ scope, projectId }) => {
       try {
-        const apiUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
-        const response = await fetch(`${apiUrl}/api/intel/detect-changes`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope: scope ?? 'all', projectId }),
-          signal: AbortSignal.timeout(15000),
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          return {
-            content: [{ type: 'text' as const, text: `Detect changes failed: ${response.status} ${errorText}` }],
-            isError: true,
-          }
-        }
-
-        const data = await response.json()
+        const data = await callIntel('detect-changes', { scope: scope ?? 'all', projectId })
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
         }
@@ -183,7 +221,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
     }
   )
 
-  // code.cypher — direct graph queries
+  // ── cypher — direct graph queries ──
   server.tool(
     'cortex_cypher',
     'Run Cypher queries directly against the GitNexus knowledge graph. Supports MATCH, RETURN, WHERE, ORDER BY for exploring code relationships.',
@@ -193,23 +231,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
     },
     async ({ query, projectId }) => {
       try {
-        const apiUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
-        const response = await fetch(`${apiUrl}/api/intel/cypher`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, projectId }),
-          signal: AbortSignal.timeout(15000),
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          return {
-            content: [{ type: 'text' as const, text: `Cypher query failed: ${response.status} ${errorText}` }],
-            isError: true,
-          }
-        }
-
-        const data = await response.json()
+        const data = await callIntel('cypher', { query, projectId })
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
         }
