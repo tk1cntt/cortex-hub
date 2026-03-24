@@ -74,7 +74,8 @@ try {
         # Count tools
         try {
             $tools = ($response.Content | ConvertFrom-Json).result.tools
-            Write-Ok "Available tools: $($tools.Count)"
+            $toolsCount = $tools.Count
+            Write-Ok "Available tools: $toolsCount"
         } catch { }
     }
 } catch {
@@ -138,7 +139,8 @@ if ($Tool -ne "") {
 } else {
     Write-Host ""
     Write-Host "Select which tools to configure:" -ForegroundColor Cyan
-    Write-Host "  1) All detected tools ($($detectedTools -join ', '))"
+    $detectedStr = $detectedTools -join ', '
+    Write-Host "  1) All detected tools ($detectedStr)"
     Write-Host "  2) Claude Code"
     Write-Host "  3) Cursor"
     Write-Host "  4) Windsurf"
@@ -447,7 +449,8 @@ Write-Host "╔═════════════════════�
 Write-Host "║         Cortex Hub Setup Complete! ✓         ║" -ForegroundColor Green
 Write-Host "╚══════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Configured tools: $($selectedTools -join ', ')" -ForegroundColor Cyan
+$configuredStr = $selectedTools -join ', '
+Write-Host "  Configured tools: $configuredStr" -ForegroundColor Cyan
 Write-Host "  MCP endpoint:     $McpUrl" -ForegroundColor Cyan
 Write-Host "  Profile:          $profilePath" -ForegroundColor Cyan
 Write-Host "  Agent rules:      $agentRulesPath" -ForegroundColor Cyan
