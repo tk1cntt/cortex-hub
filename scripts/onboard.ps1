@@ -232,15 +232,14 @@ else:
     target = config
 
 entry = {
-    'command': 'cmd',
-    'args': ['/c', 'npx', '-y', 'mcp-remote', mcp_url, '--header', 'Authorization: Bearer ' + api_key],
-    'env': {
-        'HUB_API_KEY': api_key
+    'url': mcp_url,
+    'headers': {
+        'Authorization': 'Bearer ' + api_key
     }
 }
 
 if tool_key == 'vscode':
-    entry['type'] = 'stdio'
+    entry['type'] = 'sse'
 
 target['cortex-hub'] = entry
 
