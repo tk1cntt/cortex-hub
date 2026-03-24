@@ -107,6 +107,7 @@ app.get('/', (c) => {
       'cortex_code_impact',
       'cortex_code_context',
       'cortex_code_reindex',
+      'cortex_list_repos',
       'cortex_cypher',
       'cortex_detect_changes',
       'cortex_quality_report',

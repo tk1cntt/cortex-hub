@@ -393,11 +393,49 @@ intelRouter.post('/context', async (c) => {
     const params: Record<string, unknown> = { name, content: true }
     if (file) params.file = file
 
-    const results = await callGitNexusWithFallback('context', params, projectId) as { raw?: string }
+    let results = await callGitNexusWithFallback('context', params, projectId) as { raw?: string }
 
     // Post-process CLI hints
     if (results?.raw) {
       results.raw = rewriteGitNexusHints(results.raw)
+    }
+
+    // ── Auto-resolve disambiguation when file param provided ──
+    // GitNexus may return "Multiple symbols named 'X'. Disambiguate with file path:"
+    // even when file param is set. Auto-resolve by matching file against disambiguation list.
+    if (file && results?.raw?.includes('Disambiguate with file path')) {
+      const lines = results.raw.split('\n')
+      // Find the line matching the provided file path
+      // Pattern: "  undefined HandleAttack → GameServer/Logic/NpcAttackLogic.cs:885  (uid: Method:...)"
+      const normalizedFile = file.replace(/\\/g, '/')
+      const matchingLine = lines.find((line) => {
+        // Match against full path or basename
+        const pathMatch = line.match(/→\s+(\S+\.(?:cs|ts|js|py|go|rs|java)):/)
+        return pathMatch && (
+          pathMatch[1] === normalizedFile ||
+          pathMatch[1]?.endsWith(normalizedFile) ||
+          normalizedFile.endsWith(pathMatch[1] ?? '')
+        )
+      })
+
+      if (matchingLine) {
+        // Extract UID: (uid: Method:GameServer/Logic/NpcAttackLogic.cs:HandleAttack)
+        const uidMatch = matchingLine.match(/\(uid:\s+(\S+)\)/)
+        if (uidMatch?.[1]) {
+          logger.info(`Context auto-disambiguate: resolved "${name}" + file "${file}" → uid "${uidMatch[1]}"`)
+          try {
+            const retryParams: Record<string, unknown> = { name: uidMatch[1], content: true }
+            const retryResults = await callGitNexusWithFallback('context', retryParams, projectId) as { raw?: string }
+            if (retryResults?.raw && !retryResults.raw.includes('not found')) {
+              retryResults.raw = rewriteGitNexusHints(retryResults.raw)
+              results = retryResults
+            }
+          } catch {
+            // Keep original disambiguation result
+            logger.warn(`Context auto-disambiguate retry failed for uid "${uidMatch[1]}"`)
+          }
+        }
+      }
     }
 
     return c.json({
@@ -417,11 +455,63 @@ intelRouter.post('/context', async (c) => {
   }
 })
 
-// ── List Repos: discover indexed repositories ──
+// ── List Repos: discover indexed repositories with project mapping ──
 intelRouter.get('/repos', async (c) => {
   try {
-    const results = await callGitNexus('list_repos', {})
-    return c.json({ success: true, data: results })
+    const gitNexusResult = await callGitNexus('list_repos', {})
+
+    // Enrich with project DB data for project ID mapping
+    const projects = db.prepare(
+      'SELECT id, slug, name, git_repo_url, indexed_symbols FROM projects'
+    ).all() as Array<{ id: string; slug: string; name: string; git_repo_url: string | null; indexed_symbols: number | null }>
+
+    // Build a lookup for matching by slug or repo URL basename
+    const projectBySlug = new Map<string, typeof projects[0]>()
+    const projectById = new Map<string, typeof projects[0]>()
+    for (const p of projects) {
+      projectBySlug.set(p.slug?.toLowerCase(), p)
+      projectById.set(p.id, p)
+      // Also map by git URL basename (e.g., "cortex-hub" from github.com/lktiep/cortex-hub.git)
+      if (p.git_repo_url) {
+        const basename = p.git_repo_url.replace(/\.git$/, '').split('/').pop()?.toLowerCase()
+        if (basename && !projectBySlug.has(basename)) {
+          projectBySlug.set(basename, p)
+        }
+      }
+    }
+
+    // Parse GitNexus raw response — may be array, object with repos, or raw text
+    let repos: Array<{ name: string; projectId: string; slug: string; symbols: number | string; gitUrl: string }> = []
+
+    const rawData = gitNexusResult as Record<string, unknown>
+    if (rawData?.raw && typeof rawData.raw === 'string') {
+      // Raw text: parse repo names from lines
+      const repoNames = rawData.raw.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+      repos = repoNames.map(name => {
+        const match = projectBySlug.get(name.toLowerCase()) ?? projectById.get(name)
+        return {
+          name,
+          projectId: match?.id ?? '',
+          slug: match?.slug ?? name,
+          symbols: match?.indexed_symbols ?? '?',
+          gitUrl: match?.git_repo_url ?? '',
+        }
+      })
+    } else if (Array.isArray(rawData)) {
+      repos = rawData.map((r: unknown) => {
+        const name = typeof r === 'string' ? r : ((r as Record<string, string>).name ?? 'unknown')
+        const match = projectBySlug.get(name.toLowerCase()) ?? projectById.get(name)
+        return {
+          name,
+          projectId: match?.id ?? '',
+          slug: match?.slug ?? name,
+          symbols: match?.indexed_symbols ?? '?',
+          gitUrl: match?.git_repo_url ?? '',
+        }
+      })
+    }
+
+    return c.json({ success: true, data: repos })
   } catch (error) {
     logger.error(`List repos failed: ${String(error)}`)
     return c.json(
