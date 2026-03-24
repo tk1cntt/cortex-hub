@@ -54,7 +54,25 @@ export function registerCodeTools(server: McpServer, env: Env) {
           limit: limit ?? 5,
         })) as { data?: { formatted?: string }; success?: boolean }
 
-        const formatted = data?.data?.formatted
+        let formatted = data?.data?.formatted ?? ''
+
+        // ── P0 Fix: Suggest alternatives when no flows found ──
+        // Repos with 0 execution flows (e.g., YulgangProject) always return empty.
+        // Guide agents to code_context and cypher which work on symbols directly.
+        if (formatted && (
+          formatted.includes('No matching execution flows') ||
+          formatted.includes('No matching results found')
+        )) {
+          const searchTerms = query.split(/\s+/).filter(w => w.length > 3).slice(0, 2)
+          const symbolSuggestion = searchTerms[0] ?? query
+          formatted += '\n\n---'
+          formatted += `\nNext: Pick a symbol above and run cortex_code_context "${symbolSuggestion}" to see all its callers, callees, and execution flows.`
+          formatted += `\nAlternative: Use cortex_cypher 'MATCH (n) WHERE n.name CONTAINS "${symbolSuggestion}" RETURN n.name, labels(n) LIMIT 20' for direct graph query.`
+          if (projectId) {
+            formatted += `\nProject routing: Use cortex_list_repos to verify which projectId maps to your repository.`
+          }
+        }
+
         if (formatted) {
           return {
             content: [{ type: 'text' as const, text: formatted }],
@@ -263,7 +281,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
   // ── cypher — direct graph queries ──
   server.tool(
     'cortex_cypher',
-    'Run Cypher queries directly against the GitNexus knowledge graph. Supports MATCH, RETURN, WHERE, ORDER BY for exploring code relationships.',
+    'Run Cypher queries directly against the GitNexus knowledge graph. Supports MATCH, RETURN, WHERE, ORDER BY for exploring code relationships.\n\nAvailable node properties: name, filePath. Use labels(n) for type.\nExample: MATCH (n) WHERE n.name CONTAINS "Attack" RETURN n.name, labels(n) LIMIT 20',
     {
       query: z.string().describe('Cypher query to run (e.g., MATCH (n:Function) RETURN n.name LIMIT 10)'),
       projectId: z.string().optional().describe('Project ID to scope query to'),
@@ -275,8 +293,66 @@ export function registerCodeTools(server: McpServer, env: Env) {
           content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
         }
       } catch (error) {
+        const errMsg = error instanceof Error ? error.message : 'Unknown'
+        // ── P2: Include schema hint when property not found ──
+        const schemaHint = errMsg.includes('Cannot find property')
+          ? '\n\n💡 Available properties: name, filePath. Use labels(n) for node type, not n.type.\nExample: MATCH (n) WHERE n.name CONTAINS "X" RETURN n.name, labels(n) LIMIT 20'
+          : ''
         return {
-          content: [{ type: 'text' as const, text: `Cypher query error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          content: [{ type: 'text' as const, text: `Cypher query error: ${errMsg}${schemaHint}` }],
+          isError: true,
+        }
+      }
+    }
+  )
+
+  // ── list_repos — discover indexed repositories and their project mapping ──
+  server.tool(
+    'cortex_list_repos',
+    'List all indexed repositories with project ID mapping. Use this to find which projectId to pass to code_search, code_context, code_impact, and cypher tools.',
+    {},
+    async () => {
+      try {
+        const response = await fetch(`${apiUrl()}/api/intel/repos`, {
+          signal: AbortSignal.timeout(10000),
+        })
+
+        if (!response.ok) {
+          throw new Error(`Failed to list repos: ${response.status}`)
+        }
+
+        const data = await response.json() as { success?: boolean; data?: unknown }
+        const repoData = data?.data
+
+        // Format as a readable table for agents
+        const lines: string[] = ['📦 **Indexed Repositories**\n']
+
+        if (Array.isArray(repoData)) {
+          // If repos is an array of objects
+          for (const repo of repoData) {
+            const name = typeof repo === 'string' ? repo : (repo.name ?? repo.repo ?? 'unknown')
+            const projectId = repo.projectId ?? repo.project_id ?? ''
+            const slug = repo.slug ?? ''
+            const symbols = repo.symbols ?? repo.symbol_count ?? ''
+            lines.push(`  • **${name}** → projectId: \`${projectId || '(auto)'}\` | slug: \`${slug || name}\` | symbols: ${symbols || '?'}`)
+          }
+        } else if (typeof repoData === 'object' && repoData !== null) {
+          // If repos is a raw text / object response
+          lines.push(JSON.stringify(repoData, null, 2))
+        }
+
+        lines.push('\n💡 Use the `projectId` value when calling cortex_code_search, cortex_code_context, cortex_code_impact, or cortex_cypher.')
+        lines.push('💡 If projectId is "(auto)", try passing the repo slug or name directly as projectId.')
+
+        return {
+          content: [{ type: 'text' as const, text: lines.join('\n') }],
+        }
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `List repos error: ${error instanceof Error ? error.message : 'Unknown'}`,
+          }],
           isError: true,
         }
       }

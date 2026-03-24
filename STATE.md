@@ -53,6 +53,7 @@
 - [x] **Multi-Repo Code Intelligence** — GitNexus auto-discovery + multi-candidate repo routing (`fe1ff04`, `3f2e60c`, `b48c385`)
 - [x] **Tool Usage Analytics** — token tracking (input_size/output_size), tool-analytics API, `cortex_tool_stats` MCP tool (`753eaeb`)
 - [x] **Compliance Enforcement** — session compliance score (5-category grading on session_end) + MCP response hints injection (contextual reminders in every tool response) (`1be109a`)
+- [x] **Cross-Project Intelligence Fixes** — P0: code_context file disambiguation auto-resolve via UID extraction, code_search fallback hints when 0 flows; P1: `cortex_list_repos` MCP tool + `/repos` enrichment with project mapping; P2: cypher schema hints, 4 new hint engine scenarios
 
 ## Completed (Phase 6)
 - [x] Dashboard API — 9 real routes (no stubs)
@@ -77,9 +78,11 @@
 - **Service separation:** dashboard-api and hub-mcp run as separate Docker services. hub-mcp calls dashboard-api via real HTTP.
 - MCP handler uses `WebStandardStreamableHTTPServerTransport` (stateless, enableJsonResponse)
 - Mobile responsive: hamburger toggle + backdrop overlay at ≤768px, CSS-only breakpoints at 3 tiers
+- **Context auto-disambiguation:** When `code_context` returns disambiguation list AND `file` param is set, auto-extracts UID and retries
+- **Hints engine evolution:** 4 new scenarios (code_search empty → suggest context/cypher, code_context → suggest list_repos, cypher → schema tips, list_repos → next steps)
 
 ## Quality Status
-- Build ✅ | Typecheck ✅ | Lint ✅ (Verified 2026-03-24T13:46+07:00)
+- Build ✅ | Typecheck ✅ | Lint ✅ (Verified 2026-03-24T14:17+07:00)
 - Architecture: 2-service model (cortex-api + cortex-mcp)
-- MCP: 16 tools, hub-mcp as standalone service (latest: cortex_tool_stats + compliance enforcement)
+- MCP: 17 tools, hub-mcp as standalone service (latest: cortex_list_repos + cross-project intelligence fixes)
 - GitNexus: 6 repos indexed (cortex-hub + 5 Yulgang projects)
