@@ -223,9 +223,9 @@ function Set-McpConfig {
     }
 
     # Build MCP entry
-    $cortexHubConfig = [PSCustomObject]@{
+    $mcpEntry = [PSCustomObject]@{
         command = "npx"
-        args    = @("-y", "mcp-remote", $McpUrl, "--header", "Authorization: Bearer $HUB_API_KEY")
+        args    = @("-y", "mcp-remote", $McpUrl, "--header", "Authorization: Bearer $ApiKey")
         env     = [PSCustomObject]@{
             HUB_API_KEY = $ApiKey
         }
