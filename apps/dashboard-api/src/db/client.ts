@@ -95,6 +95,15 @@ try {
   }
 } catch (e) { /* ignore */ }
 
+// Token estimation: input/output size on query_logs
+try {
+  db.exec('ALTER TABLE query_logs ADD COLUMN input_size INTEGER DEFAULT 0')
+} catch (e) { /* ignore if exists */ }
+
+try {
+  db.exec('ALTER TABLE query_logs ADD COLUMN output_size INTEGER DEFAULT 0')
+} catch (e) { /* ignore if exists */ }
+
 if (existsSync(schemaPath)) {
   const schema = readFileSync(schemaPath, 'utf8')
   db.exec(schema)

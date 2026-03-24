@@ -12,6 +12,7 @@ import { registerMemoryTools } from './tools/memory.js'
 import { registerQualityTools } from './tools/quality.js'
 import { registerSessionTools } from './tools/session.js'
 import { registerChangeTools } from './tools/changes.js'
+import { registerAnalyticsTools } from './tools/analytics.js'
 import { validateApiKey } from './middleware/auth.js'
 import type { Env } from './types.js'
 
@@ -131,6 +132,7 @@ function createMcpServer(env: Env) {
   registerQualityTools(server, env)
   registerSessionTools(server, env)
   registerChangeTools(server, env)
+  registerAnalyticsTools(server, env)
   return server
 }
 
@@ -194,6 +196,15 @@ app.all('/mcp', async (c) => {
   try {
     const response = await transport.handleRequest(newReq)
     const latencyMs = Date.now() - startTime
+    const inputSize = bodyText.length
+
+    // Measure output size by cloning the response
+    let outputSize = 0
+    try {
+      const cloned = response.clone()
+      const respText = await cloned.text()
+      outputSize = respText.length
+    } catch { /* ignore clone failures */ }
 
     if (toolName !== 'unknown') {
       const apiUrl = (c.env.DASHBOARD_API_URL || 'http://localhost:4000').replace(/\/$/, '')
@@ -206,7 +217,9 @@ app.all('/mcp', async (c) => {
           params: argsObj,
           status: response.status >= 400 ? 'error' : 'ok',
           latencyMs,
-          projectId
+          projectId,
+          inputSize,
+          outputSize,
         })
       }).catch((err: any) => console.error('[MCP Telemetry Error]', err))
     }
@@ -228,7 +241,9 @@ app.all('/mcp', async (c) => {
           status: 'error',
           error: error.message,
           latencyMs,
-          projectId
+          projectId,
+          inputSize: bodyText.length,
+          outputSize: 0,
         })
       }).catch((err: any) => console.error('[MCP Telemetry Error]', err))
     }

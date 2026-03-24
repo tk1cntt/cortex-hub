@@ -304,8 +304,8 @@ statsRouter.post('/admin/restart/:service', async (c) => {
 // ── Telemetry: Log MCP Tool Queries ──
 statsRouter.post('/query-log', async (c) => {
   try {
-    const { agentId, tool, params, status, latencyMs, error, projectId } = await c.req.json()
-    const stmt = db.prepare('INSERT INTO query_logs (agent_id, tool, params, latency_ms, status, error, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    const { agentId, tool, params, status, latencyMs, error, projectId, inputSize, outputSize } = await c.req.json()
+    const stmt = db.prepare('INSERT INTO query_logs (agent_id, tool, params, latency_ms, status, error, project_id, input_size, output_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     stmt.run(
       agentId || 'unknown', 
       tool || 'unknown',
@@ -313,7 +313,9 @@ statsRouter.post('/query-log', async (c) => {
       latencyMs || 0,
       status || 'ok',
       error || null,
-      projectId || null
+      projectId || null,
+      inputSize || 0,
+      outputSize || 0
     )
     return c.json({ success: true })
   } catch (err) {
@@ -355,6 +357,108 @@ statsRouter.get('/projects/:id/analytics', (c) => {
       totalTokens: tokenUsage,
       avgLatency: Math.round(avgLatency),
       errorRate: Math.round(errorRate * 10) / 10,
+      trend,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Tool Analytics — per-tool metrics for measuring Cortex effectiveness ──
+statsRouter.get('/tool-analytics', (c) => {
+  const days = Number(c.req.query('days') ?? 7)
+  const agentId = c.req.query('agentId')
+  const projectId = c.req.query('projectId')
+
+  try {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19)
+
+    // Build WHERE clause dynamically
+    const conditions = ['created_at >= ?']
+    const params: unknown[] = [since]
+    if (agentId) { conditions.push('agent_id = ?'); params.push(agentId) }
+    if (projectId) { conditions.push('project_id = ?'); params.push(projectId) }
+    const where = conditions.join(' AND ')
+
+    // Per-tool breakdown
+    const tools = db.prepare(`
+      SELECT 
+        tool,
+        COUNT(*) as total_calls,
+        SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as success_count,
+        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
+        ROUND(AVG(latency_ms)) as avg_latency_ms,
+        ROUND(AVG(CASE WHEN input_size > 0 THEN input_size ELSE NULL END)) as avg_input_size,
+        ROUND(AVG(CASE WHEN output_size > 0 THEN output_size ELSE NULL END)) as avg_output_size,
+        COALESCE(SUM(input_size), 0) as total_input_bytes,
+        COALESCE(SUM(output_size), 0) as total_output_bytes
+      FROM query_logs
+      WHERE ${where}
+      GROUP BY tool
+      ORDER BY total_calls DESC
+    `).all(...params) as Array<{
+      tool: string; total_calls: number; success_count: number; error_count: number
+      avg_latency_ms: number; avg_input_size: number | null; avg_output_size: number | null
+      total_input_bytes: number; total_output_bytes: number
+    }>
+
+    // Enrich with success rate and estimated tokens
+    const enriched = tools.map(t => ({
+      tool: t.tool,
+      totalCalls: t.total_calls,
+      successRate: Math.round((t.success_count / t.total_calls) * 100 * 10) / 10,
+      errorCount: t.error_count,
+      avgLatencyMs: t.avg_latency_ms,
+      avgInputSize: t.avg_input_size,
+      avgOutputSize: t.avg_output_size,
+      // Estimate tokens: ~4 chars per token (conservative)
+      estimatedTokensSaved: Math.round(t.total_output_bytes / 4),
+      totalInputBytes: t.total_input_bytes,
+      totalOutputBytes: t.total_output_bytes,
+    }))
+
+    // Overall summary
+    const totalCalls = enriched.reduce((s, t) => s + t.totalCalls, 0)
+    const totalSuccess = enriched.reduce((s, t) => s + Math.round(t.totalCalls * t.successRate / 100), 0)
+    const totalOutputBytes = enriched.reduce((s, t) => s + t.totalOutputBytes, 0)
+    const totalInputBytes = enriched.reduce((s, t) => s + t.totalInputBytes, 0)
+
+    // Per-agent breakdown
+    const agents = db.prepare(`
+      SELECT agent_id, COUNT(*) as calls, 
+             SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as successes
+      FROM query_logs WHERE ${where}
+      GROUP BY agent_id ORDER BY calls DESC
+    `).all(...params) as Array<{ agent_id: string; calls: number; successes: number }>
+
+    // Daily trend
+    const trend: Array<{ day: string; calls: number; errors: number }> = []
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i)
+      const day = d.toISOString().split('T')[0] as string
+      const dayConditions = [`created_at >= '${day} 00:00:00'`, `created_at < date('${day}', '+1 day')`]
+      if (agentId) dayConditions.push(`agent_id = '${agentId}'`)
+      if (projectId) dayConditions.push(`project_id = '${projectId}'`)
+      const dayWhere = dayConditions.join(' AND ')
+      const dayStat = db.prepare(`SELECT COUNT(*) as calls, SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as errors FROM query_logs WHERE ${dayWhere}`).get() as { calls: number; errors: number }
+      trend.push({ day, calls: dayStat.calls, errors: dayStat.errors ?? 0 })
+    }
+
+    return c.json({
+      period: { days, since },
+      summary: {
+        totalCalls,
+        overallSuccessRate: totalCalls > 0 ? Math.round((totalSuccess / totalCalls) * 100 * 10) / 10 : 0,
+        estimatedTokensSaved: Math.round(totalOutputBytes / 4),
+        totalDataBytes: totalInputBytes + totalOutputBytes,
+        activeAgents: agents.length,
+      },
+      tools: enriched,
+      agents: agents.map(a => ({
+        agentId: a.agent_id,
+        totalCalls: a.calls,
+        successRate: Math.round((a.successes / a.calls) * 100 * 10) / 10,
+      })),
       trend,
     })
   } catch (error) {
