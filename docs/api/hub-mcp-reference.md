@@ -303,6 +303,87 @@ Mark a handoff as completed.
 
 ---
 
+### `analytics.*` — Tool Usage Analytics & Compliance
+
+#### `cortex_tool_stats`
+
+View Cortex MCP tool usage analytics. Available to all team members (not admin-only).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `days` | number | — | Time window in days (default: 7) |
+| `agentId` | string | — | Filter by agent ID |
+| `projectId` | string | — | Filter by project ID |
+
+**Response includes:**
+- Per-tool breakdown: success rate, latency, error count, token estimates
+- Per-agent breakdown: calls, success rate
+- Daily trend with call volume and error count
+- Overall summary: total calls, success rate, estimated tokens saved
+
+#### Session Compliance Check
+
+**`GET /api/metrics/session-compliance/:sessionId`**
+
+Evaluates tool usage across 5 categories for a completed session.
+
+**Categories scored:**
+| Category | Required Tools |
+|----------|---------------|
+| Discovery | `cortex_code_search`, `cortex_code_context`, `cortex_cypher` |
+| Safety | `cortex_code_impact`, `cortex_detect_changes` |
+| Learning | `cortex_knowledge_search`, `cortex_memory_search` |
+| Contribution | `cortex_knowledge_store`, `cortex_memory_store` |
+| Lifecycle | `cortex_session_start`, `cortex_session_end`, `cortex_quality_report` |
+
+**Response:** Overall score (0-100%), grade (A/B/C/D), per-category breakdown, improvement hints.
+
+#### Cortex Hints Engine
+
+**`GET /api/metrics/hints/:agentId?currentTool=<toolName>`**
+
+Returns context-aware hints based on which tools the agent has/hasn't used in the current session window.
+
+**Hint triggers:**
+- After `code_search` → remind about `code_impact`
+- After `quality_report` → remind about `knowledge_store`
+- Before `session_end` → remind about `quality_report` + `memory_store`
+- Low discovery coverage → remind about `code_search`
+
+> 💡 Hints are automatically injected into MCP tool responses by the interceptor. Agents don't need to call this endpoint directly.
+
+#### Tool Analytics Dashboard
+
+**`GET /api/metrics/tool-analytics?days=7&agentId=x&projectId=y`**
+
+Aggregate analytics for tool usage across all sessions.
+
+**Response:**
+```json
+{
+  "period": { "days": 7, "since": "..." },
+  "summary": {
+    "totalCalls": 142,
+    "overallSuccessRate": 94.2,
+    "estimatedTokensSaved": 35000,
+    "activeAgents": 3
+  },
+  "tools": [
+    {
+      "tool": "cortex_code_search",
+      "totalCalls": 45,
+      "successRate": 97.8,
+      "avgLatencyMs": 320,
+      "estimatedTokensSaved": 12500
+    }
+  ],
+  "agents": [...],
+  "trend": [...]
+}
+```
+
+---
+
 ## Rate Limits
 
 | Tier | Requests/min | Burst |

@@ -36,10 +36,12 @@
 
 > ⚠️ **Agents MUST use Cortex tools throughout the session, not just at start/end.**
 > These tools are the core value of Cortex Hub — skipping them defeats the purpose.
+> ℹ️ **Compliance is enforced automatically** — see [Compliance Enforcement](#compliance-enforcement) below.
 
 | When | Tool | What to Do |
 |------|------|------------|
 | **Searching code** | `cortex_code_search` | Use FIRST before `grep_search` or `find_by_name`. Queries GitNexus knowledge graph with AST-aware search. Fall back to grep only if unavailable. |
+| **Understanding a symbol** | `cortex_code_context` | Get 360° view of a function/class: callers, callees, imports, process participation. |
 | **Before editing core code** | `cortex_code_impact` | Run blast radius analysis on the symbol/file you plan to change. |
 | **Before committing** | `cortex_detect_changes` | Detect uncommitted changes and assess risk level — shows affected symbols, processes, and risk rating. Use before `git commit`. |
 | **Exploring code graph** | `cortex_cypher` | Run Cypher queries against the knowledge graph. Useful for: finding all callers of a function, listing classes by community, tracing dependency chains. |
@@ -48,6 +50,7 @@
 | **Recalling past context** | `cortex_memory_search` | Search agent memories for past decisions, debugging findings, and session context. |
 | **Storing personal memory** | `cortex_memory_store` | Store session-specific findings, debugging gotchas, and workarounds for future recall. |
 | **After pushing code changes** | `cortex_quality_report` | Report build/typecheck/lint results and a summary of changes. |
+| **Measuring effectiveness** | `cortex_tool_stats` | View tool usage analytics: success rates, latency, token estimates. Available to all team members. |
 
 **Tool priority order for discovery (before grep/find):**
 1. `cortex_memory_search` → check if you or another agent already knows this
@@ -63,6 +66,24 @@ If you encounter a compilation error, runtime error, or failing test:
 1. First search `cortex_knowledge_search` or `cortex_memory_search` for the error message.
 2. Fix the error.
 3. If the fix was non-obvious, **YOU MUST** use `cortex_knowledge_store` to record the problem and solution so you (and others) don't have to debug it again.
+
+### Compliance Enforcement (Automated)
+
+Cortex Hub enforces tool usage through two mechanisms:
+
+1. **Session Compliance Score** — When you call `cortex_session_end`, the system automatically evaluates your tool usage across 5 categories and shows a grade:
+   - **Discovery** (code_search, code_context, cypher)
+   - **Safety** (code_impact, detect_changes)
+   - **Learning** (knowledge_search, memory_search)
+   - **Contribution** (knowledge_store, memory_store)
+   - **Lifecycle** (session_start, session_end, quality_report)
+
+2. **MCP Response Hints** — Every tool response includes context-aware hints reminding you which tools to use next:
+   - After `code_search` → reminder to check `code_impact` before editing
+   - After `quality_report` → reminder to store knowledge/memory
+   - Before `session_end` → reminder to report quality first
+
+> 💡 These are enforced at the infrastructure level — they work on ANY MCP client (Antigravity, Claude, Cursor, etc.)
 
 ### Before Deploy — ALWAYS do:
 
@@ -189,6 +210,7 @@ Every code session MUST end with verification from `project-profile.json`:
 | **STATE.md** | `STATE.md` (read FIRST every session) |
 | **Project Profile** | `.cortex/project-profile.json` (verify commands) |
 | **Code Conventions** | `.cortex/code-conventions.md` |
+| MCP Tool Reference | `docs/api/hub-mcp-reference.md` |
 | Database ERD | `docs/database/erd.md` |
 | Agent Quality Strategy | `docs/architecture/agent-quality-strategy.md` |
 | Docker Stack | `infra/docker-compose.yml` |

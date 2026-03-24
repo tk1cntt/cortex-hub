@@ -52,6 +52,7 @@
 - [x] Global MCP Telemetry: intercept `tools/call` in `hub-mcp` and log to dashboard API (`query_logs`)
 - [x] **Multi-Repo Code Intelligence** — GitNexus auto-discovery + multi-candidate repo routing (`fe1ff04`, `3f2e60c`, `b48c385`)
 - [x] **Tool Usage Analytics** — token tracking (input_size/output_size), tool-analytics API, `cortex_tool_stats` MCP tool (`753eaeb`)
+- [x] **Compliance Enforcement** — session compliance score (5-category grading on session_end) + MCP response hints injection (contextual reminders in every tool response) (`1be109a`)
 
 ## Completed (Phase 6)
 - [x] Dashboard API — 9 real routes (no stubs)
@@ -78,7 +79,7 @@
 - Mobile responsive: hamburger toggle + backdrop overlay at ≤768px, CSS-only breakpoints at 3 tiers
 
 ## Quality Status
-- Build ✅ | Typecheck ✅ | Lint ✅ (Verified 2026-03-24T10:46+07:00)
+- Build ✅ | Typecheck ✅ | Lint ✅ (Verified 2026-03-24T13:46+07:00)
 - Architecture: 2-service model (cortex-api + cortex-mcp)
-- MCP: 15 tools, hub-mcp as standalone service (added cortex_tool_stats)
+- MCP: 16 tools, hub-mcp as standalone service (latest: cortex_tool_stats + compliance enforcement)
 - GitNexus: 6 repos indexed (cortex-hub + 5 Yulgang projects)
