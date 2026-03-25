@@ -86,6 +86,11 @@ function SessionCard({
         <span className={styles.timestamp}>
           {session.created_at ? <TimeAgo date={session.created_at} /> : '—'}
         </span>
+        {session.savings && session.savings.tokensSaved > 0 && (
+          <span className={styles.savingsBadge}>
+            💎 {session.savings.tokensSaved >= 1000 ? `${(session.savings.tokensSaved / 1000).toFixed(1)}k` : session.savings.tokensSaved} tokens · {session.savings.toolCalls} calls
+          </span>
+        )}
         {session.claimed_by && (
           <span className={styles.claimedBy}>
             Claimed by <code>{session.claimed_by}</code>

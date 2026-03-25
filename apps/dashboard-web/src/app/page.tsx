@@ -159,7 +159,7 @@ export default function DashboardPage() {
         <StatPill icon="📁" value={overview ? String(overview.projects.length) : '...'} label="Projects" />
         <StatPill icon="🤖" value={overview ? formatNumber(overview.totalAgents) : '...'} label="Agents" />
         <StatPill icon="📊" value={overview ? formatNumber(overview.today.queries) : '...'} label="Queries Today" />
-        <StatPill icon="🧠" value={overview ? formatNumber(overview.memoryNodes) : '...'} label="Vectors" />
+        <StatPill icon="💎" value={overview ? formatNumber(overview.tokenSavings?.totalTokensSaved ?? 0) : '...'} label="Tokens Saved" />
         <StatPill icon="🏆" value={overview?.quality.lastGrade ?? '...'} label="Quality" />
         <StatPill icon="⚡" value={overview ? `${Math.floor(overview.uptime / 3600)}h` : '...'} label="Uptime" />
       </div>
@@ -290,6 +290,40 @@ export default function DashboardPage() {
                 <span className={styles.intelLabel}>Orgs</span>
               </div>
             </div>
+          </div>
+
+          {/* Cortex Savings */}
+          <div className={`card ${styles.intelCard}`}>
+            <div className={styles.intelHeader}>
+              <span>💎 Cortex Savings</span>
+              <Link href="/usage" className={styles.intelLink}>View →</Link>
+            </div>
+            <div className={styles.intelGrid}>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue} style={{ color: '#22c55e' }}>
+                  {formatNumber(overview?.tokenSavings?.totalTokensSaved ?? 0)}
+                </span>
+                <span className={styles.intelLabel}>Tokens Saved</span>
+              </div>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{formatNumber(overview?.tokenSavings?.totalToolCalls ?? 0)}</span>
+                <span className={styles.intelLabel}>Tool Calls</span>
+              </div>
+              <div className={styles.intelStat}>
+                <span className={styles.intelValue}>{overview?.tokenSavings?.avgTokensPerCall ?? 0}</span>
+                <span className={styles.intelLabel}>Avg/Call</span>
+              </div>
+            </div>
+            {overview?.tokenSavings?.topTools && overview.tokenSavings.topTools.length > 0 && (
+              <div className={styles.topToolsList}>
+                {overview.tokenSavings.topTools.slice(0, 3).map((t) => (
+                  <div key={t.tool} className={styles.topToolRow}>
+                    <code className={styles.topToolName}>{t.tool.replace('cortex_', '')}</code>
+                    <span className={styles.topToolValue}>{formatNumber(t.tokensSaved)} tokens</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       </div>

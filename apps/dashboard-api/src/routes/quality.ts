@@ -443,8 +443,40 @@ sessionsRouter.get('/all', (c) => {
     const stmt = status
       ? db.prepare('SELECT * FROM session_handoffs WHERE status = ? ORDER BY created_at DESC LIMIT ?')
       : db.prepare('SELECT * FROM session_handoffs ORDER BY created_at DESC LIMIT ?')
-    const sessions = status ? stmt.all(status, limit) : stmt.all(limit)
-    return c.json({ sessions })
+    const rawSessions = (status ? stmt.all(status, limit) : stmt.all(limit)) as Array<Record<string, unknown>>
+
+    // Enrich each session with token savings from query_logs
+    const sessionsWithSavings = rawSessions.map((session) => {
+      try {
+        const agentId = session.from_agent as string
+        const sessionCreatedAt = session.created_at as string
+        // For completed sessions, look at tool calls made by same agent within a 4-hour window
+        // For active sessions, look from session start to now
+        const savings = db.prepare(`
+          SELECT COUNT(*) as tool_calls,
+                 COALESCE(SUM(output_size), 0) as output_bytes,
+                 COALESCE(SUM(input_size), 0) + COALESCE(SUM(output_size), 0) as data_bytes
+          FROM query_logs
+          WHERE agent_id = ? AND created_at >= ? AND created_at <= datetime(?, '+4 hours')
+            AND status = 'ok'
+        `).get(agentId, sessionCreatedAt, sessionCreatedAt) as {
+          tool_calls: number; output_bytes: number; data_bytes: number
+        }
+
+        return {
+          ...session,
+          savings: {
+            toolCalls: savings.tool_calls,
+            tokensSaved: Math.round(savings.output_bytes / 4),
+            dataBytes: savings.data_bytes,
+          },
+        }
+      } catch {
+        return { ...session, savings: { toolCalls: 0, tokensSaved: 0, dataBytes: 0 } }
+      }
+    })
+
+    return c.json({ sessions: sessionsWithSavings })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }
