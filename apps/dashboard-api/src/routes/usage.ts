@@ -27,13 +27,24 @@ usageRouter.get('/summary', (c) => {
       )
       .get() as Record<string, number>
 
-    // Estimate cost ($0.005 per 1K tokens blended rate)
-    const totalTokens = totalRow?.total_tokens ?? 0
-    const estimatedCost = (totalTokens / 1000) * 0.005
+    const modelTotals = db
+      .prepare(`SELECT model, SUM(total_tokens) as tokens FROM usage_logs GROUP BY model`)
+      .all() as { model: string; tokens: number }[]
+
+    let estimatedCost = 0
+    for (const r of modelTotals) {
+      if (r.model.includes('embedding')) {
+        estimatedCost += (r.tokens / 1000) * 0.00002 // $0.02 per 1M
+      } else if (r.model.includes('gpt-4o-mini') || r.model.includes('claude-3-haiku') || r.model.includes('gemini-1.5-flash')) {
+        estimatedCost += (r.tokens / 1000) * 0.00015 // Blended cheap rate
+      } else {
+        estimatedCost += (r.tokens / 1000) * 0.005 // Default $5/M
+      }
+    }
 
     return c.json({
       totalRequests: totalRow?.total_requests ?? 0,
-      totalTokens,
+      totalTokens: totalRow?.total_tokens ?? 0,
       promptTokens: totalRow?.prompt_tokens ?? 0,
       completionTokens: totalRow?.completion_tokens ?? 0,
       todayRequests: todayRow?.requests ?? 0,

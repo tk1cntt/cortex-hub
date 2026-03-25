@@ -221,6 +221,43 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
+
+          {/* Cortex Savings */}
+          <div style={{ marginTop: 'var(--space-8)' }}>
+            <h2 className={styles.sectionTitle} style={{ marginBottom: 'var(--space-4)' }}>Cortex Savings</h2>
+            <div className={`card ${styles.intelCard}`}>
+              <div className={styles.intelHeader}>
+                <span>💎 Token Analytics</span>
+                <Link href="/usage" className={styles.intelLink}>View →</Link>
+              </div>
+              <div className={styles.intelGrid}>
+                <div className={styles.intelStat}>
+                  <span className={styles.intelValue} style={{ color: '#22c55e' }}>
+                    {formatNumber(overview?.tokenSavings?.totalTokensSaved ?? 0)}
+                  </span>
+                  <span className={styles.intelLabel}>Tokens Saved</span>
+                </div>
+                <div className={styles.intelStat}>
+                  <span className={styles.intelValue}>{formatNumber(overview?.tokenSavings?.totalToolCalls ?? 0)}</span>
+                  <span className={styles.intelLabel}>Tool Calls</span>
+                </div>
+                <div className={styles.intelStat}>
+                  <span className={styles.intelValue}>{overview?.tokenSavings?.avgTokensPerCall ?? 0}</span>
+                  <span className={styles.intelLabel}>Avg/Call</span>
+                </div>
+              </div>
+              {overview?.tokenSavings?.topTools && overview.tokenSavings.topTools.length > 0 && (
+                <div className={styles.topToolsList}>
+                  {overview.tokenSavings.topTools.slice(0, 3).map((t) => (
+                    <div key={t.tool} className={styles.topToolRow}>
+                      <code className={styles.topToolName}>{t.tool.replace('cortex_', '')}</code>
+                      <span className={styles.topToolValue}>{formatNumber(t.tokensSaved)} tokens</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </section>
 
         {/* Right: Quick Stats */}
@@ -292,39 +329,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Cortex Savings */}
-          <div className={`card ${styles.intelCard}`}>
-            <div className={styles.intelHeader}>
-              <span>💎 Cortex Savings</span>
-              <Link href="/usage" className={styles.intelLink}>View →</Link>
-            </div>
-            <div className={styles.intelGrid}>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue} style={{ color: '#22c55e' }}>
-                  {formatNumber(overview?.tokenSavings?.totalTokensSaved ?? 0)}
-                </span>
-                <span className={styles.intelLabel}>Tokens Saved</span>
-              </div>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>{formatNumber(overview?.tokenSavings?.totalToolCalls ?? 0)}</span>
-                <span className={styles.intelLabel}>Tool Calls</span>
-              </div>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>{overview?.tokenSavings?.avgTokensPerCall ?? 0}</span>
-                <span className={styles.intelLabel}>Avg/Call</span>
-              </div>
-            </div>
-            {overview?.tokenSavings?.topTools && overview.tokenSavings.topTools.length > 0 && (
-              <div className={styles.topToolsList}>
-                {overview.tokenSavings.topTools.slice(0, 3).map((t) => (
-                  <div key={t.tool} className={styles.topToolRow}>
-                    <code className={styles.topToolName}>{t.tool.replace('cortex_', '')}</code>
-                    <span className={styles.topToolValue}>{formatNumber(t.tokensSaved)} tokens</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </section>
       </div>
 
