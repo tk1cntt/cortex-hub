@@ -52,7 +52,7 @@
 - [x] mem9 API key resolution: read from provider_accounts DB as fallback
 - [x] Global MCP Telemetry: intercept `tools/call` in `hub-mcp` and log to dashboard API (`query_logs`)
 - [x] **Multi-Repo Code Intelligence** — GitNexus auto-discovery + multi-candidate repo routing (`fe1ff04`, `3f2e60c`, `b48c385`)
-- [x] **Tool Usage Analytics** — token tracking (input_size/output_size), tool-analytics API, `cortex_tool_stats` MCP tool (`753eaeb`)
+- [x] **Tool Usage Analytics** — token tracking (input_size/output_size), tool-analytics API, `cortex_tool_stats` MCP tool, and comprehensive Token Savings Dashboard (Global + Per Session) (`753eaeb`)
 - [x] **Compliance Enforcement** — session compliance score (5-category grading on session_end) + MCP response hints injection (contextual reminders in every tool response) (`1be109a`)
 - [x] **Cross-Project Intelligence Fixes** — P0: code_context file disambiguation auto-resolve via UID extraction, code_search fallback hints when 0 flows; P1: `cortex_list_repos` MCP tool + `/repos` enrichment with project mapping; P2: cypher schema hints, 4 new hint engine scenarios
 

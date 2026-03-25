@@ -402,4 +402,11 @@ Cortex Hub reduces token consumption in two main ways:
 | Architecture context | Re-explain every session, ~5K tokens | `memory_search` → instant recall, ~500 tokens |
 | Setup instructions | Re-discover every time, ~10K tokens | Stored once, recalled forever, ~500 tokens |
 
-> **Estimated savings for a team of 3 agents over 1 month:** 500K-1M tokens (~$2-5 for Gemini, ~$5-15 for GPT-4o)
+### 3. Transparent Dashboard Analytics
+
+All these savings are not theoretical — they are tracked and surfaced in real-time in the Cortex Hub dashboard:
+- **Global Savings:** View the total "Tokens Saved" and "Active Agents" on the Overview page.
+- **Per-Session Savings:** Track exact token savings per individual agent session dynamically correlated from `query_logs`.
+- **Top Tools Breakdown:** View which MCP tools (`code_search`, `memory_search`, etc.) are saving you the most tokens and developer time.
+
+> **Estimated savings for a team of 3 agents over 1 month:** 500K-1M tokens (~$2-5 for Gemini, ~$5-15 for GPT-4o). Tracked automatically via the Cortex Hub Usage Dashboard.
