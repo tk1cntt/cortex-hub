@@ -186,6 +186,32 @@ statsRouter.get('/overview-v2', async (c) => {
       knowledgeStats = { totalDocs: kDocs, totalChunks: kChunks, totalHits: kHits }
     } catch (e) { console.warn('[overview-v2] knowledge stats error:', e) }
 
+    // ── Token savings (from Cortex tool calls) ──
+    let tokenSavings = { totalTokensSaved: 0, totalToolCalls: 0, avgTokensPerCall: 0, totalDataBytes: 0, topTools: [] as { tool: string; tokensSaved: number; calls: number }[] }
+    try {
+      const savingsOverall = db.prepare(`
+        SELECT COUNT(*) as total_calls,
+               COALESCE(SUM(output_size), 0) as total_output_bytes,
+               COALESCE(SUM(input_size), 0) + COALESCE(SUM(output_size), 0) as total_data_bytes
+        FROM query_logs WHERE status = 'ok'
+      `).get() as { total_calls: number; total_output_bytes: number; total_data_bytes: number }
+
+      const topTools = db.prepare(`
+        SELECT tool, COUNT(*) as calls, COALESCE(SUM(output_size), 0) as output_bytes
+        FROM query_logs WHERE status = 'ok'
+        GROUP BY tool ORDER BY output_bytes DESC LIMIT 5
+      `).all() as Array<{ tool: string; calls: number; output_bytes: number }>
+
+      const totalTokensSaved = Math.round(savingsOverall.total_output_bytes / 4)
+      tokenSavings = {
+        totalTokensSaved,
+        totalToolCalls: savingsOverall.total_calls,
+        avgTokensPerCall: savingsOverall.total_calls > 0 ? Math.round(totalTokensSaved / savingsOverall.total_calls) : 0,
+        totalDataBytes: savingsOverall.total_data_bytes,
+        topTools: topTools.map(t => ({ tool: t.tool, tokensSaved: Math.round(t.output_bytes / 4), calls: t.calls })),
+      }
+    } catch (e) { console.warn('[overview-v2] token savings error:', e) }
+
     return c.json({
       activeKeys: keyCount,
       totalAgents: agentCount,
@@ -203,6 +229,7 @@ statsRouter.get('/overview-v2', async (c) => {
         averageScore: Math.round(avgScore),
       },
       knowledge: knowledgeStats,
+      tokenSavings,
     })
   } catch (error) {
     return c.json({ error: String(error) }, 500)

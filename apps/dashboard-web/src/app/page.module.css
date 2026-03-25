@@ -483,6 +483,37 @@
   letter-spacing: 0.06em;
 }
 
+/* ── Top Tools List (Savings Card) ── */
+.topToolsList {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.topToolRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.topToolName {
+  font-size: 0.6875rem;
+  color: var(--accent-secondary);
+  background: var(--accent-glow);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.topToolValue {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Activity Feed ── */
 .activityCard {
   padding: 0;

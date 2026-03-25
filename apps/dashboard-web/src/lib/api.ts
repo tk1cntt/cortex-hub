@@ -246,6 +246,11 @@ export interface SessionHandoff {
   created_at: string
   expires_at: string | null
   api_key_name: string | null
+  savings?: {
+    toolCalls: number
+    tokensSaved: number
+    dataBytes: number
+  }
 }
 
 export async function getSessions(limit = 50) {
@@ -413,6 +418,13 @@ export interface DashboardOverview {
     totalChunks: number
     totalHits: number
   }
+  tokenSavings: {
+    totalTokensSaved: number
+    totalToolCalls: number
+    avgTokensPerCall: number
+    totalDataBytes: number
+    topTools: { tool: string; tokensSaved: number; calls: number }[]
+  }
 }
 
 export async function getDashboardOverview() {
@@ -485,6 +497,32 @@ export async function getUsageByModel() {
 
 export async function getUsageByAgent() {
   return apiFetch<UsageByAgent>('/api/usage/by-agent')
+}
+
+// ── Tool Stats (Cortex Savings) ──
+export interface ToolStatsData {
+  period: { days: number; since: string }
+  summary: {
+    totalCalls: number
+    overallSuccessRate: number
+    estimatedTokensSaved: number
+    totalDataBytes: number
+    activeAgents: number
+  }
+  tools: Array<{
+    tool: string
+    totalCalls: number
+    successRate: number
+    errorCount: number
+    avgLatencyMs: number
+    estimatedTokensSaved: number
+  }>
+  agents: Array<{ agentId: string; totalCalls: number; successRate: number }>
+  trend: Array<{ day: string; calls: number; errors: number }>
+}
+
+export async function getToolStats(days = 7) {
+  return apiFetch<ToolStatsData>(`/api/metrics/tool-stats?days=${days}`)
 }
 
 export async function getUsageHistory(days = 7) {

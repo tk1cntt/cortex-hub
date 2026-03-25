@@ -10,6 +10,7 @@ import {
   getUsageHistory,
   getBudget,
   setBudget,
+  getToolStats,
 } from '@/lib/api'
 import styles from './page.module.css'
 
@@ -117,6 +118,75 @@ function BudgetAlert() {
   )
 }
 
+// ── Cortex Tool Savings Component ──
+function CortexSavingsSection() {
+  const { data: toolStats } = useSWR('tool-stats', () => getToolStats(7), { refreshInterval: 30000 })
+
+  if (!toolStats) return null
+
+  const { summary, tools } = toolStats
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>💎 Cortex Tool Savings (7 days)</h2>
+      </div>
+      <div className={styles.statsGrid}>
+        <div className={`card ${styles.statCard}`}>
+          <span className={styles.statIcon}>💎</span>
+          <div>
+            <div className={styles.statValue} style={{ color: '#22c55e' }}>{formatNumber(summary.estimatedTokensSaved)}</div>
+            <div className={styles.statLabel}>Tokens Saved</div>
+          </div>
+        </div>
+        <div className={`card ${styles.statCard}`}>
+          <span className={styles.statIcon}>🔧</span>
+          <div>
+            <div className={styles.statValue}>{formatNumber(summary.totalCalls)}</div>
+            <div className={styles.statLabel}>Tool Calls</div>
+          </div>
+        </div>
+        <div className={`card ${styles.statCard}`}>
+          <span className={styles.statIcon}>🤖</span>
+          <div>
+            <div className={styles.statValue}>{summary.activeAgents}</div>
+            <div className={styles.statLabel}>Active Agents</div>
+          </div>
+        </div>
+        <div className={`card ${styles.statCard}`}>
+          <span className={styles.statIcon}>✅</span>
+          <div>
+            <div className={styles.statValue}>{summary.overallSuccessRate}%</div>
+            <div className={styles.statLabel}>Success Rate</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Per-tool breakdown */}
+      {tools.length > 0 && (
+        <div className={`card ${styles.savingsTable}`}>
+          <div className={styles.savingsTableHeader}>
+            <span>Tool</span>
+            <span>Calls</span>
+            <span>Tokens Saved</span>
+            <span>Avg Latency</span>
+            <span>Success</span>
+          </div>
+          {tools.filter(t => !t.tool.includes('session') && !t.tool.includes('Gate')).slice(0, 12).map((t) => (
+            <div key={t.tool} className={styles.savingsTableRow}>
+              <code className={styles.savingsToolName}>{t.tool.replace('cortex_', '')}</code>
+              <span>{t.totalCalls}</span>
+              <span style={{ color: '#22c55e', fontWeight: 600 }}>{formatNumber(t.estimatedTokensSaved)}</span>
+              <span>{t.avgLatencyMs ? `${t.avgLatencyMs}ms` : '—'}</span>
+              <span>{t.successRate}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function UsagePage() {
   const { data: summary, isLoading: summaryLoading, mutate: mutateSummary } = useSWR('usage-summary', getUsageSummary, {
     refreshInterval: 30000,
@@ -167,6 +237,9 @@ export default function UsagePage() {
     <DashboardLayout title="Usage" subtitle="Token consumption and API request analytics">
       {/* Budget Alert */}
       <BudgetAlert />
+
+      {/* Cortex Tool Savings */}
+      <CortexSavingsSection />
 
       {/* Stats Row */}
       <div className={styles.statsGrid}>
