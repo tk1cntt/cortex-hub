@@ -376,25 +376,39 @@ export function registerCodeTools(server: McpServer, env: Env) {
         const data = await response.json() as { success?: boolean; data?: unknown }
         const repoData = data?.data
 
-        // Format as a readable table for agents
-        const lines: string[] = ['📦 **Indexed Repositories**\n']
+        const lines: string[] = ['📦 Indexed Repositories\n']
 
-        if (Array.isArray(repoData)) {
-          // If repos is an array of objects
+        if (Array.isArray(repoData) && repoData.length > 0) {
+          // Deduplicate by name (GitNexus may return multiple entries per repo)
+          const seen = new Map<string, typeof repoData[0]>()
           for (const repo of repoData) {
             const name = typeof repo === 'string' ? repo : (repo.name ?? repo.repo ?? 'unknown')
-            const projectId = repo.projectId ?? repo.project_id ?? ''
-            const slug = repo.slug ?? ''
-            const symbols = repo.symbols ?? repo.symbol_count ?? ''
-            lines.push(`  • **${name}** → projectId: \`${projectId || '(auto)'}\` | slug: \`${slug || name}\` | symbols: ${symbols || '?'}`)
+            const key = name.toLowerCase()
+            if (!seen.has(key) || (repo.symbols && repo.symbols !== '?')) {
+              seen.set(key, repo)
+            }
           }
-        } else if (typeof repoData === 'object' && repoData !== null) {
-          // If repos is a raw text / object response
-          lines.push(JSON.stringify(repoData, null, 2))
+
+          // Format as clean table
+          lines.push('| # | Repository | Project ID | Symbols |')
+          lines.push('|---|-----------|-----------|---------|')
+
+          let idx = 0
+          for (const [, repo] of seen) {
+            idx++
+            const name = typeof repo === 'string' ? repo : (repo.name ?? 'unknown')
+            const pid = repo.projectId ?? repo.project_id ?? '(auto)'
+            const symbols = repo.symbols ?? repo.symbol_count ?? '?'
+            lines.push(`| ${idx} | **${name}** | \`${pid}\` | ${symbols} |`)
+          }
+
+          lines.push('')
+          lines.push(`Total: ${seen.size} repositories indexed.`)
+        } else {
+          lines.push('No indexed repositories found.')
         }
 
-        lines.push('\n💡 Use the `projectId` value when calling cortex_code_search, cortex_code_context, cortex_code_impact, or cortex_cypher.')
-        lines.push('💡 If projectId is "(auto)", try passing the repo slug or name directly as projectId.')
+        lines.push('\n💡 Pass the `Project ID` to cortex_code_search, cortex_code_context, cortex_code_impact, or cortex_cypher.')
 
         return {
           content: [{ type: 'text' as const, text: lines.join('\n') }],
