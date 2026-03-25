@@ -56,7 +56,7 @@ services:
         limits:
           memory: 256M
     healthcheck:
-      test: ["CMD-SHELL", "(echo > /dev/tcp/localhost/8317) 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8317/v1/models > /dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
