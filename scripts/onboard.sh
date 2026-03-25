@@ -52,6 +52,7 @@ TOOL_REGISTRY=(
     "windsurf|Windsurf|$HOME/.codeium/windsurf/mcp_config.json|mcpServers"
     "vscode|VS Code (Copilot)|__vscode_mcp__|servers"
     "antigravity|Antigravity (Gemini)|$HOME/.gemini/antigravity/mcp_config.json|mcpServers"
+    "codex|OpenAI Codex|__codex_toml__|mcp_servers"
     "bot|Headless Bot (OpenClaw, API)|__bot__|__none__"
 )
 
@@ -68,6 +69,9 @@ resolve_config_path() {
         __vscode_mcp__)
             # Per-project config
             echo ".vscode/mcp.json"
+            ;;
+        __codex_toml__)
+            echo "$HOME/.codex/config.toml"
             ;;
         __bot__)
             echo "__bot__"
@@ -183,6 +187,12 @@ detect_tools() {
         DETECTED_TOOLS+=("antigravity")
         echo -e "    ${GREEN}Found: Antigravity (Gemini)${NC}"
     fi
+
+    # OpenAI Codex
+    if command -v codex >/dev/null 2>&1 || [ -d "$HOME/.codex" ]; then
+        DETECTED_TOOLS+=("codex")
+        echo -e "    ${GREEN}Found: OpenAI Codex${NC}"
+    fi
 }
 
 detect_tools
@@ -210,11 +220,12 @@ else
     echo "  4) Windsurf"
     echo "  5) VS Code (Copilot)"
     echo "  6) Antigravity (Gemini)"
-    echo "  7) Headless Bot (OpenClaw, Telegram, API)"
-    echo "  8) All tools"
+    echo "  7) OpenAI Codex"
+    echo "  8) Headless Bot (OpenClaw, Telegram, API)"
+    echo "  9) All tools"
     echo ""
 
-    if prompt_user -rp "  Select option(s) [1-8, comma-separated]: " TOOL_CHOICE; then
+    if prompt_user -rp "  Select option(s) [1-9, comma-separated]: " TOOL_CHOICE; then
         IFS=',' read -ra CHOICES <<< "$TOOL_CHOICE"
         for choice in "${CHOICES[@]}"; do
             choice="$(echo "$choice" | xargs)"
@@ -225,8 +236,9 @@ else
                 4) SELECTED_TOOLS+=("windsurf") ;;
                 5) SELECTED_TOOLS+=("vscode") ;;
                 6) SELECTED_TOOLS+=("antigravity") ;;
-                7) SELECTED_TOOLS+=("bot") ;;
-                8) SELECTED_TOOLS=("claude" "cursor" "windsurf" "vscode" "antigravity") ;;
+                7) SELECTED_TOOLS+=("codex") ;;
+                8) SELECTED_TOOLS+=("bot") ;;
+                9) SELECTED_TOOLS=("claude" "cursor" "windsurf" "vscode" "antigravity" "codex") ;;
                 *) echo -e "${YELLOW}  Skipping unknown option: $choice${NC}" ;;
             esac
         done
@@ -288,7 +300,11 @@ inject_mcp_config() {
 
     # Create empty config if it doesn't exist
     if [ ! -f "$config_path" ]; then
-        echo "{}" > "$config_path"
+        if [ "$tool_key" = "codex" ]; then
+            echo "" > "$config_path"
+        else
+            echo "{}" > "$config_path"
+        fi
         echo -e "    Created $config_path"
     fi
 
@@ -329,6 +345,20 @@ config['$config_key']['cortex-hub'] = {
 with open(path, 'w') as f: json.dump(config, f, indent=2)
 print('    Injected cortex-hub into $config_key')
 "
+    elif [ "$tool_key" = "codex" ]; then
+        # OpenAI Codex: ~/.codex/config.toml uses TOML format
+        # We append the TOML section if it's not already there.
+        if ! grep -q "\\[mcp_servers\\.cortex-hub\\]" "$config_path"; then
+            echo "" >> "$config_path"
+            echo "[mcp_servers.cortex-hub]" >> "$config_path"
+            echo "command = \"npx\"" >> "$config_path"
+            echo "args = [\"-y\", \"mcp-remote\", \"$MCP_URL\", \"--header\", \"Authorization: Bearer $HUB_API_KEY\"]" >> "$config_path"
+            echo "[mcp_servers.cortex-hub.env]" >> "$config_path"
+            echo "HUB_API_KEY = \"$HUB_API_KEY\"" >> "$config_path"
+            echo "    Injected cortex-hub into [mcp_servers]"
+        else
+            echo "    cortex-hub MCP configuration already exists in $config_path"
+        fi
     else
         # Cursor, Windsurf, Antigravity: standard mcpServers format
         python3 -c "
@@ -561,6 +591,10 @@ for tool_key in "${SELECTED_TOOLS[@]}"; do
             ;;
         windsurf)
             inject_instructions_to_file ".windsurfrules" "windsurf" ".windsurfrules"
+            ;;
+        codex)
+            mkdir -p .codex
+            inject_instructions_to_file ".codex/instructions.md" "codex" ".codex/instructions.md"
             ;;
         vscode)
             mkdir -p .vscode
