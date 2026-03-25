@@ -84,8 +84,8 @@
 }
 
 .trendColumn:hover .trendBar {
-  background: linear-gradient(180deg, var(--accent-primary), color-mix(in srgb, var(--accent-primary) 30%, transparent));
-  box-shadow: 0 0 16px color-mix(in srgb, var(--accent-primary) 30%, transparent);
+  background: linear-gradient(180deg, var(--accent-primary), rgba(124, 92, 252, 0.3));
+  box-shadow: 0 0 16px rgba(124, 92, 252, 0.3);
   border-top-color: var(--accent-primary);
 }
 
@@ -110,15 +110,17 @@
   display: flex;
   align-items: flex-end;
   padding: 0 4px;
+  height: 100%;
+  min-height: 0;
 }
 
 .trendBar {
   width: 100%;
-  background: linear-gradient(180deg, var(--primary), color-mix(in srgb, var(--primary) 10%, transparent));
+  background: linear-gradient(180deg, var(--accent-primary), rgba(124, 92, 252, 0.1));
   border-radius: 4px 4px 0 0;
   min-height: 4px;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  border-top: 1px solid var(--primary);
+  border-top: 1px solid var(--accent-primary);
   position: relative;
 }
 
@@ -192,13 +194,13 @@
 }
 
 .heatmapLevel0 { background-color: var(--bg-tertiary); }
-.heatmapLevel1 { background-color: color-mix(in srgb, var(--primary) 25%, var(--bg-tertiary)); border-color: transparent; }
-.heatmapLevel2 { background-color: color-mix(in srgb, var(--primary) 50%, var(--bg-tertiary)); border-color: transparent; }
-.heatmapLevel3 { background-color: color-mix(in srgb, var(--primary) 75%, var(--bg-tertiary)); border-color: transparent; }
+.heatmapLevel1 { background-color: rgba(124, 92, 252, 0.3); border-color: transparent; }
+.heatmapLevel2 { background-color: rgba(124, 92, 252, 0.6); border-color: transparent; }
+.heatmapLevel3 { background-color: rgba(124, 92, 252, 0.9); border-color: transparent; }
 .heatmapLevel4 { 
   background-color: var(--accent-primary); 
   border-color: transparent;
-  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-primary) 40%, transparent); 
+  box-shadow: 0 0 6px rgba(124, 92, 252, 0.5); 
 }
 
 .heatmapLegend {
