@@ -324,7 +324,7 @@ config['$config_key']['cortex-hub'] = {
         'HUB_API_KEY': '$HUB_API_KEY'
     }
 }
-with open(path, 'w') as f: json.dump(config, f, indent=2)
+with open(path, 'w', encoding='utf-8') as f: json.dump(config, f, indent=2)
 print('    Injected cortex-hub into $config_key')
 "
     elif [ "$tool_key" = "vscode" ]; then
@@ -342,7 +342,7 @@ config['$config_key']['cortex-hub'] = {
         'HUB_API_KEY': '$HUB_API_KEY'
     }
 }
-with open(path, 'w') as f: json.dump(config, f, indent=2)
+with open(path, 'w', encoding='utf-8') as f: json.dump(config, f, indent=2)
 print('    Injected cortex-hub into $config_key')
 "
     elif [ "$tool_key" = "codex" ]; then
@@ -373,7 +373,7 @@ config['$config_key']['cortex-hub'] = {
         'HUB_API_KEY': '$HUB_API_KEY'
     }
 }
-with open(path, 'w') as f: json.dump(config, f, indent=2)
+with open(path, 'w', encoding='utf-8') as f: json.dump(config, f, indent=2)
 print('    Injected cortex-hub into $config_key')
 "
     fi
@@ -618,7 +618,7 @@ marker = '$CORTEX_MARKER'
 pattern = re.escape(marker) + r'.*?' + re.escape(marker)
 replacement = '''$ANTIGRAVITY_CONTENT'''
 new_content = re.sub(pattern, replacement.strip(), content, flags=re.DOTALL)
-with open('$GEMINI_FILE', 'w') as f:
+with open('$GEMINI_FILE', 'w', encoding='utf-8') as f:
     f.write(new_content)
 print('    Updated cortex section in AGENTS.md (preserved other content)')
 "
@@ -854,7 +854,7 @@ lines.append('            -d \"{\\\"repo\\\":\\\"\$REPO\\\",\\\"branch\\\":\\\"\
 lines.append('            > /dev/null 2>&1 || true')
 lines.append('        fi')
 
-with open('lefthook.yml', 'w') as f:
+with open('lefthook.yml', 'w', encoding='utf-8') as f:
     f.write('\n'.join(lines) + '\n')
 print('Generated lefthook.yml')
 "
@@ -1044,7 +1044,7 @@ if os.path.exists(settings_path):
 
 existing['hooks'] = hooks_config['hooks']
 
-with open(settings_path, 'w') as f:
+with open(settings_path, 'w', encoding='utf-8') as f:
     json.dump(existing, f, indent=2)
     f.write('\n')
 "
@@ -1251,7 +1251,7 @@ if os.path.exists(settings_path):
 
 existing['hooks'] = hooks_config['hooks']
 
-with open(settings_path, 'w') as f:
+with open(settings_path, 'w', encoding='utf-8') as f:
     json.dump(existing, f, indent=2)
     f.write('\n')
 "
