@@ -415,6 +415,170 @@ $agentRulesContent = @"
 $agentRulesContent | Out-File -FilePath $agentRulesPath -Encoding utf8
 Write-Ok "Generated $agentRulesPath"
 
+# -- Step 7.5: Install Claude Code Enforcement Hooks (Windows) --
+Write-Host ""
+Write-Step "Setting up Claude Code enforcement hooks..."
+
+$CLAUDE_DIR = ".claude"
+$CLAUDE_HOOKS_DIR = "$CLAUDE_DIR\hooks"
+$CLAUDE_SETTINGS = "$CLAUDE_DIR\settings.json"
+
+$installClaudeHooks = $false
+foreach ($tool in $selectedTools) {
+    if ($tool -eq "claude") {
+        $installClaudeHooks = $true
+        break
+    }
+}
+
+if ($installClaudeHooks) {
+    if (-not (Test-Path $CLAUDE_HOOKS_DIR)) {
+        New-Item -ItemType Directory -Path $CLAUDE_HOOKS_DIR -Force | Out-Null
+    }
+
+    # Hook 1: session-init.ps1
+    $hook1Str = @"
+`$CortexStateDir = ".\.cortex\.session-state"
+if (`$env:CLAUDE_PROJECT_DIR) { `$CortexStateDir = "`$env:CLAUDE_PROJECT_DIR\.cortex\.session-state" }
+if (-not (Test-Path `$CortexStateDir)) { New-Item -ItemType Directory -Path `$CortexStateDir -Force | Out-Null }
+"cortex_session_start is REQUIRED" | Out-File -FilePath "`$CortexStateDir\session-init-reminder" -Encoding utf8
+Remove-Item "`$CortexStateDir\session-started" -ErrorAction SilentlyContinue
+Remove-Item "`$CortexStateDir\session-ended" -ErrorAction SilentlyContinue
+exit 0
+"@
+    $hook1Str | Out-File -FilePath "$CLAUDE_HOOKS_DIR\session-init.ps1" -Encoding utf8
+
+    # Hook 2: enforce-commit.ps1
+    $hook2Str = @"
+`$CortexStateDir = ".\.cortex\.session-state"
+if (`$env:CLAUDE_PROJECT_DIR) { `$CortexStateDir = "`$env:CLAUDE_PROJECT_DIR\.cortex\.session-state" }
+`$InputData = [Console]::In.ReadToEnd() | ConvertFrom-Json
+`$Command = `$InputData.tool_input.command
+if (`$Command -match "git commit") {
+    if (-not (Test-Path "`$CortexStateDir\quality-gates-passed")) {
+        Write-Error "BLOCKED: Cannot commit! You must run verify commands (pnpm build, typecheck, lint) completely before committing. No shortcuts!"
+        exit 1
+    }
+}
+exit 0
+"@
+    $hook2Str | Out-File -FilePath "$CLAUDE_HOOKS_DIR\enforce-commit.ps1" -Encoding utf8
+
+    # Hook 3: track-quality.ps1
+    $hook3Str = @"
+`$CortexStateDir = ".\.cortex\.session-state"
+if (`$env:CLAUDE_PROJECT_DIR) { `$CortexStateDir = "`$env:CLAUDE_PROJECT_DIR\.cortex\.session-state" }
+`$InputData = [Console]::In.ReadToEnd() | ConvertFrom-Json
+`$ToolName = `$InputData.tool_name
+if (`$ToolName -eq "Bash") {
+    `$Command = `$InputData.tool_input.command
+    if (-not (Test-Path `$CortexStateDir)) { New-Item -ItemType Directory -Path `$CortexStateDir -Force | Out-Null }
+    if (`$Command -match "pnpm build") { New-Item "`$CortexStateDir\gate-build" -Force | Out-Null }
+    if (`$Command -match "pnpm typecheck") { New-Item "`$CortexStateDir\gate-typecheck" -Force | Out-Null }
+    if (`$Command -match "pnpm lint") { New-Item "`$CortexStateDir\gate-lint" -Force | Out-Null }
+    
+    if ((Test-Path "`$CortexStateDir\gate-build") -and (Test-Path "`$CortexStateDir\gate-typecheck") -and (Test-Path "`$CortexStateDir\gate-lint")) {
+        New-Item "`$CortexStateDir\quality-gates-passed" -Force | Out-Null
+    }
+}
+if (`$ToolName -match "cortex_session_start") { New-Item "`$CortexStateDir\session-started" -Force | Out-Null }
+if (`$ToolName -match "cortex_session_end") { New-Item "`$CortexStateDir\session-ended" -Force | Out-Null }
+exit 0
+"@
+    $hook3Str | Out-File -FilePath "$CLAUDE_HOOKS_DIR\track-quality.ps1" -Encoding utf8
+
+    # Hook 4: session-end-check.ps1
+    $hook4Str = @"
+`$CortexStateDir = ".\.cortex\.session-state"
+if (`$env:CLAUDE_PROJECT_DIR) { `$CortexStateDir = "`$env:CLAUDE_PROJECT_DIR\.cortex\.session-state" }
+if ((Test-Path "`$CortexStateDir\session-started") -and (-not (Test-Path "`$CortexStateDir\session-ended"))) {
+    Write-Host "WARNING: cortex_session_end has not been called. Call it with sessionId and summary before ending."
+}
+exit 0
+"@
+    $hook4Str | Out-File -FilePath "$CLAUDE_HOOKS_DIR\session-end-check.ps1" -Encoding utf8
+
+    # Hook 5: enforce-session.ps1
+    $hook5Str = @"
+`$CortexStateDir = ".\.cortex\.session-state"
+if (`$env:CLAUDE_PROJECT_DIR) { `$CortexStateDir = "`$env:CLAUDE_PROJECT_DIR\.cortex\.session-state" }
+if (Test-Path "`$CortexStateDir\session-started") { exit 0 }
+
+`$InputData = [Console]::In.ReadToEnd() | ConvertFrom-Json
+`$ToolName = `$InputData.tool_name
+
+if (`$ToolName -match "^(Edit|Write|NotebookEdit)$") {
+    Write-Error "BLOCKED: Call cortex_session_start before editing files. Session not started."
+    exit 2
+}
+elseif (`$ToolName -eq "Bash") {
+    `$Command = `$InputData.tool_input.command
+    if (`$Command -match "^(ls|cat|head|tail|pwd|which|echo|git (status|log|diff|branch|remote)|pnpm (build|typecheck|lint|test)|curl|python)") {
+        exit 0
+    }
+    if (`$Command -match "(git (add|commit|push|reset)|rm |mv |cp |mkdir |touch |chmod |sed -i|> )") {
+        Write-Error "BLOCKED: Call cortex_session_start before modifying files. Session not started."
+        exit 2
+    }
+}
+exit 0
+"@
+    $hook5Str | Out-File -FilePath "$CLAUDE_HOOKS_DIR\enforce-session.ps1" -Encoding utf8
+
+    # Merge hooks into settings.json
+    $pyScriptHooks = @"
+import json, os
+settings_path = '$CLAUDE_SETTINGS'.replace('\\\\', '/')
+hooks_config = {
+    'hooks': {
+        'SessionStart': [{
+            'matcher': '',
+            'hooks': [{'type': 'command', 'command': 'powershell.exe -ExecutionPolicy Bypass -File .claude/hooks/session-init.ps1'}]
+        }],
+        'PreToolUse': [
+            {
+                'matcher': 'Edit|Write|NotebookEdit|Bash',
+                'hooks': [{'type': 'command', 'command': 'powershell.exe -ExecutionPolicy Bypass -File .claude/hooks/enforce-session.ps1'}]
+            },
+            {
+                'matcher': 'Bash',
+                'hooks': [{'type': 'command', 'command': 'powershell.exe -ExecutionPolicy Bypass -File .claude/hooks/enforce-commit.ps1'}]
+            }
+        ],
+        'PostToolUse': [{
+            'matcher': '',
+            'hooks': [{'type': 'command', 'command': 'powershell.exe -ExecutionPolicy Bypass -File .claude/hooks/track-quality.ps1'}]
+        }],
+        'Stop': [{
+            'matcher': '',
+            'hooks': [{'type': 'command', 'command': 'powershell.exe -ExecutionPolicy Bypass -File .claude/hooks/session-end-check.ps1'}]
+        }]
+    }
+}
+existing = {}
+if os.path.exists(settings_path):
+    try:
+        with open(settings_path, encoding='utf-8-sig') as f:
+            existing = json.load(f)
+    except:
+        pass
+existing['hooks'] = hooks_config['hooks']
+with open(settings_path, 'w', encoding='utf-8') as f:
+    json.dump(existing, f, indent=2)
+    f.write('\n')
+"@
+
+    $pyFile = [System.IO.Path]::GetTempFileName() + ".py"
+    $pyScriptHooks | Out-File -FilePath $pyFile -Encoding utf8
+    try { python3 $pyFile } catch { try { python $pyFile } catch { } }
+    Remove-Item $pyFile -ErrorAction SilentlyContinue
+
+    Write-Ok "Claude Code PowerShell hooks installed"
+}
+else {
+    Write-Warn "Claude Code not selected — skipping hooks"
+}
+
 # -- Step 8: Generate IDE instruction files --
 $cortexMarker = "<!-- cortex-hub:auto-mcp -->"
 
