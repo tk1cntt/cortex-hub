@@ -109,14 +109,14 @@ graph TB
 Internet
   │
   ├── cortex-mcp.jackle.dev ──── Hub MCP Server (Hono, Streamable HTTP)
-  ├── cortex-api.jackle.dev ──── Dashboard API  (Hono + SQLite + mem9)
-  └── hub.jackle.dev ─────────── Dashboard UI   (Next.js static export)
+  └── hub.jackle.dev ─────────── Dashboard UI (Nginx proxied to /api/)
                                     │
                               Cloudflare Tunnel
                                     │
                           ┌─────────┼─────────┐
                           │  Docker Compose    │
-                          │  ├─ cortex-api     │  ← API + mem9 in-process
+                          │  ├─ dashboard-web  │  ← Nginx (UI + API Proxy)
+                          │  ├─ cortex-api     │  ← Internal API + mem9
                           │  ├─ cortex-mcp     │  ← 17 MCP tools
                           │  ├─ qdrant         │  ← vectors + knowledge
                           │  ├─ gitnexus       │  ← AST code graph
@@ -204,6 +204,8 @@ One agent picks up where another left off:
 - **Auto-expiry** — stale handoffs expire after 7 days
 
 ### 📊 Dashboard
+
+![Cortex Hub Usage Analytics](docs/assets/dashboard-usage.png)
 
 Real-time monitoring and management (13 pages):
 
@@ -481,7 +483,7 @@ cortex-hub/
 - ✅ Usage logging per agent, model, day
 
 **Developer Experience**
-- ✅ Universal onboarding: supports Claude Code, Cursor, Windsurf, VS Code, Gemini, headless bots
+- ✅ Universal onboarding: supports Claude Code, Cursor, Windsurf, VS Code, Gemini, OpenAI Codex, headless bots
 - ✅ **Windows support**: `onboard.ps1` — full PowerShell equivalent of `onboard.sh`
 - ✅ Remote install: `bash <(curl ...)` or `iwr | .\onboard.ps1` — no clone needed
 - ✅ Lefthook git hooks auto-generated from `project-profile.json`
