@@ -906,10 +906,10 @@ if [ "$INSTALL_CLAUDE_HOOKS" = true ]; then
     cat > "$CLAUDE_HOOKS_DIR/session-init.sh" <<'HOOKEOF'
 #!/bin/bash
 # Cortex Session Init — Injects mandatory reminder + resets session markers.
-CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 mkdir -p "$CORTEX_STATE_DIR"
 rm -f "$CORTEX_STATE_DIR/session-started" "$CORTEX_STATE_DIR/quality-gates-passed" \
-      "$CORTEX_STATE_DIR/gate-build" "$CORTEX_STATE_DIR/gate-typecheck" "$CORTEX_STATE_DIR/gate-lint" \
       "$CORTEX_STATE_DIR/session-ended" 2>/dev/null
 cat <<'MSG'
 MANDATORY SESSION PROTOCOL — You MUST complete these steps NOW before any other work:
@@ -927,10 +927,11 @@ HOOKEOF
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 if [[ ! "$COMMAND" =~ ^git\ (commit|push) ]]; then exit 0; fi
-CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 if [[ "$COMMAND" =~ ^git\ commit ]]; then
   if [ ! -f "$CORTEX_STATE_DIR/quality-gates-passed" ]; then
-    echo "Quality gates not passed. Run: pnpm build && pnpm typecheck && pnpm lint first, then call cortex_quality_report." >&2
+    echo "Quality gates not passed! You MUST call cortex_quality_report before committing." >&2
     exit 2
   fi
 fi
@@ -943,18 +944,15 @@ HOOKEOF
     # ── Hook 3: track-quality.sh — Track quality gate passes + MCP calls ──
     cat > "$CLAUDE_HOOKS_DIR/track-quality.sh" <<'HOOKEOF'
 #!/bin/bash
-# Cortex Quality Tracker — Marks gates as passed when build/typecheck/lint succeed.
+# Cortex Quality Tracker — Marks gates as passed when quality is reported.
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
-CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 mkdir -p "$CORTEX_STATE_DIR"
-[[ "$COMMAND" =~ pnpm\ build ]] && touch "$CORTEX_STATE_DIR/gate-build"
-[[ "$COMMAND" =~ pnpm\ typecheck ]] && touch "$CORTEX_STATE_DIR/gate-typecheck"
-[[ "$COMMAND" =~ pnpm\ lint ]] && touch "$CORTEX_STATE_DIR/gate-lint"
-if [ -f "$CORTEX_STATE_DIR/gate-build" ] && [ -f "$CORTEX_STATE_DIR/gate-typecheck" ] && [ -f "$CORTEX_STATE_DIR/gate-lint" ]; then
-  touch "$CORTEX_STATE_DIR/quality-gates-passed"
-fi
+
+[[ "$TOOL_NAME" =~ cortex_quality_report ]] && touch "$CORTEX_STATE_DIR/quality-gates-passed"
 [[ "$TOOL_NAME" =~ cortex_session_start ]] && touch "$CORTEX_STATE_DIR/session-started"
 [[ "$TOOL_NAME" =~ cortex_session_end ]] && touch "$CORTEX_STATE_DIR/session-ended"
 exit 0
@@ -964,7 +962,8 @@ HOOKEOF
     cat > "$CLAUDE_HOOKS_DIR/session-end-check.sh" <<'HOOKEOF'
 #!/bin/bash
 # Cortex Session End Check — Warns if cortex_session_end not called.
-CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 if [ -f "$CORTEX_STATE_DIR/session-started" ] && [ ! -f "$CORTEX_STATE_DIR/session-ended" ]; then
   echo "WARNING: cortex_session_end has not been called. Call it with sessionId and summary before ending."
 fi
@@ -976,7 +975,8 @@ HOOKEOF
 #!/bin/bash
 # Cortex Session Enforcement — HARD BLOCK.
 # Blocks Edit, Write, Bash (file-modifying) if cortex_session_start hasn't been called.
-CORTEX_STATE_DIR="${CLAUDE_PROJECT_DIR:-.}/.cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 if [ -f "$CORTEX_STATE_DIR/session-started" ]; then exit 0; fi
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
@@ -1007,29 +1007,33 @@ HOOKEOF
 import json, os
 
 settings_path = '$CLAUDE_SETTINGS'
+
+def get_sh_cmd(hook_file):
+    return f'bash -c \\'bash \\"$(git rev-parse --show-toplevel 2>/dev/null || echo \\".\\")\\"/.claude/hooks/{hook_file}\\''
+
 hooks_config = {
     'hooks': {
         'SessionStart': [{
             'matcher': '',
-            'hooks': [{'type': 'command', 'command': 'bash ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-init.sh'}]
+            'hooks': [{'type': 'command', 'command': get_sh_cmd('session-init.sh')}]
         }],
         'PreToolUse': [
             {
                 'matcher': 'Edit|Write|NotebookEdit|Bash',
-                'hooks': [{'type': 'command', 'command': 'bash ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/enforce-session.sh'}]
+                'hooks': [{'type': 'command', 'command': get_sh_cmd('enforce-session.sh')}]
             },
             {
                 'matcher': 'Bash',
-                'hooks': [{'type': 'command', 'command': 'bash ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/enforce-commit.sh'}]
+                'hooks': [{'type': 'command', 'command': get_sh_cmd('enforce-commit.sh')}]
             }
         ],
         'PostToolUse': [{
             'matcher': '',
-            'hooks': [{'type': 'command', 'command': 'bash ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/track-quality.sh'}]
+            'hooks': [{'type': 'command', 'command': get_sh_cmd('track-quality.sh')}]
         }],
         'Stop': [{
             'matcher': '',
-            'hooks': [{'type': 'command', 'command': 'bash ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/session-end-check.sh'}]
+            'hooks': [{'type': 'command', 'command': get_sh_cmd('session-end-check.sh')}]
         }]
     }
 }
@@ -1084,10 +1088,10 @@ if [ "$INSTALL_GEMINI_HOOKS" = true ]; then
     cat > "$GEMINI_HOOKS_DIR/session-init.sh" <<'HOOKEOF'
 #!/bin/bash
 # Cortex Session Init (Gemini) — Resets session markers + injects reminder.
-CORTEX_STATE_DIR=".cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 mkdir -p "$CORTEX_STATE_DIR"
 rm -f "$CORTEX_STATE_DIR/session-started" "$CORTEX_STATE_DIR/quality-gates-passed" \
-      "$CORTEX_STATE_DIR/gate-build" "$CORTEX_STATE_DIR/gate-typecheck" "$CORTEX_STATE_DIR/gate-lint" \
       "$CORTEX_STATE_DIR/session-ended" 2>/dev/null
 cat <<'MSG'
 {"systemMessage": "MANDATORY: Call cortex_session_start(repo, mode: 'development', agentId: 'antigravity') NOW before any work."}
@@ -1108,11 +1112,12 @@ if [[ "$TOOL_NAME" != "run_shell_command" ]] && [[ "$TOOL_NAME" != "shell" ]]; t
   exit 0
 fi
 
-CORTEX_STATE_DIR=".cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 
 if [[ "$COMMAND" =~ ^git\ commit ]]; then
   if [ ! -f "$CORTEX_STATE_DIR/quality-gates-passed" ]; then
-    echo '{"decision":"deny","reason":"Quality gates not passed. Run: pnpm build && pnpm typecheck && pnpm lint first."}'
+    echo '{"decision":"deny","reason":"Quality gates not passed! You MUST call cortex_quality_report before committing."}'
     exit 0
   fi
 fi
@@ -1124,22 +1129,16 @@ HOOKEOF
     # ── Hook 3: track-quality.sh — Track quality gate passes + MCP calls ──
     cat > "$GEMINI_HOOKS_DIR/track-quality.sh" <<'HOOKEOF'
 #!/bin/bash
-# Cortex Quality Tracker (Gemini) — Marks gates as passed after successful commands.
+# Cortex Quality Tracker (Gemini) — Marks gates as passed after successful quality report.
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
-CORTEX_STATE_DIR=".cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 mkdir -p "$CORTEX_STATE_DIR"
 
-# Track shell command results
-[[ "$COMMAND" =~ pnpm\ build ]] && touch "$CORTEX_STATE_DIR/gate-build"
-[[ "$COMMAND" =~ pnpm\ typecheck ]] && touch "$CORTEX_STATE_DIR/gate-typecheck"
-[[ "$COMMAND" =~ pnpm\ lint ]] && touch "$CORTEX_STATE_DIR/gate-lint"
-if [ -f "$CORTEX_STATE_DIR/gate-build" ] && [ -f "$CORTEX_STATE_DIR/gate-typecheck" ] && [ -f "$CORTEX_STATE_DIR/gate-lint" ]; then
-  touch "$CORTEX_STATE_DIR/quality-gates-passed"
-fi
-
 # Track MCP tool calls
+[[ "$TOOL_NAME" =~ cortex_quality_report ]] && touch "$CORTEX_STATE_DIR/quality-gates-passed"
 [[ "$TOOL_NAME" =~ cortex_session_start ]] && touch "$CORTEX_STATE_DIR/session-started"
 [[ "$TOOL_NAME" =~ cortex_session_end ]] && touch "$CORTEX_STATE_DIR/session-ended"
 
@@ -1151,9 +1150,10 @@ HOOKEOF
     cat > "$GEMINI_HOOKS_DIR/session-end-check.sh" <<'HOOKEOF'
 #!/bin/bash
 # Cortex Session End Check (Gemini) — Warns if session_end not called.
-CORTEX_STATE_DIR=".cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 if [ -f "$CORTEX_STATE_DIR/session-started" ] && [ ! -f "$CORTEX_STATE_DIR/session-ended" ]; then
-  echo '{"systemMessage":"WARNING: cortex_session_end not called. Call it with sessionId and summary."}'
+  echo '{"systemMessage":"WARNING: cortex_session_end not called. Call it with sessionId and summary for grading."}'
 else
   echo '{}'
 fi
@@ -1165,7 +1165,8 @@ HOOKEOF
 #!/bin/bash
 # Cortex Session Enforcement (Gemini) — HARD BLOCK.
 # Blocks write_file, edit_file, run_shell_command (modifying) without session.
-CORTEX_STATE_DIR=".cortex/.session-state"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CORTEX_STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 if [ -f "$CORTEX_STATE_DIR/session-started" ]; then
   echo '{"decision":"allow"}'
   exit 0
@@ -1173,11 +1174,11 @@ fi
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)
 case "$TOOL_NAME" in
-  write_file|edit_file|create_file|insert_text)
+  write_file|edit_file|create_file|insert_text|multi_replace_file_content|replace_file_content)
     echo '{"decision":"deny","reason":"BLOCKED: Call cortex_session_start before editing files. Session not started."}'
     exit 0
     ;;
-  run_shell_command|shell)
+  run_shell_command|shell|run_command)
     COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null)
     if [[ "$COMMAND" =~ (git\ (add|commit|push)|rm\ |mv\ |cp\ |mkdir\ ) ]]; then
       echo '{"decision":"deny","reason":"BLOCKED: Call cortex_session_start before modifying files. Session not started."}'
@@ -1196,29 +1197,33 @@ HOOKEOF
 import json, os
 
 settings_path = '$GEMINI_SETTINGS'
+
+def get_sh_cmd(hook_file):
+    return f'bash -c \\'bash \\"$(git rev-parse --show-toplevel 2>/dev/null || echo \\".\\")\\"/.gemini/hooks/{hook_file}\\''
+
 hooks_config = {
     'hooks': {
         'SessionStart': [{
             'hooks': [{
                 'type': 'command',
-                'command': '.gemini/hooks/session-init.sh',
+                'command': get_sh_cmd('session-init.sh'),
                 'name': 'cortex_session_init'
             }]
         }],
         'BeforeTool': [
             {
-                'matcher': 'write_file|edit_file|create_file|insert_text|run_shell_command|shell',
+                'matcher': 'write_file|edit_file|create_file|insert_text|run_shell_command|shell|multi_replace_file_content|replace_file_content|run_command',
                 'hooks': [{
                     'type': 'command',
-                    'command': '.gemini/hooks/enforce-session.sh',
+                    'command': get_sh_cmd('enforce-session.sh'),
                     'name': 'cortex_enforce_session'
                 }]
             },
             {
-                'matcher': 'run_shell_command|shell',
+                'matcher': 'run_shell_command|shell|run_command',
                 'hooks': [{
                     'type': 'command',
-                    'command': '.gemini/hooks/enforce-commit.sh',
+                    'command': get_sh_cmd('enforce-commit.sh'),
                     'name': 'cortex_enforce_commit'
                 }]
             }
@@ -1227,14 +1232,14 @@ hooks_config = {
             'matcher': '.*',
             'hooks': [{
                 'type': 'command',
-                'command': '.gemini/hooks/track-quality.sh',
+                'command': get_sh_cmd('track-quality.sh'),
                 'name': 'cortex_track_quality'
             }]
         }],
         'SessionEnd': [{
             'hooks': [{
                 'type': 'command',
-                'command': '.gemini/hooks/session-end-check.sh',
+                'command': get_sh_cmd('session-end-check.sh'),
                 'name': 'cortex_session_end_check'
             }]
         }]
