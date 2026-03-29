@@ -29,9 +29,7 @@ function Write-Ok    { param([string]$msg) Write-Host "[cortex] $msg" -Foregroun
 function Write-Warn  { param([string]$msg) Write-Host "[cortex] $msg" -ForegroundColor Yellow }
 function Write-Err   { param([string]$msg) Write-Host "[cortex] $msg" -ForegroundColor Red }
 
-# Resolve python command (python3 on Unix, python on Windows)
-$PythonCmd = if (Get-Command python3 -ErrorAction SilentlyContinue) { "python3" } elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { $null }
-if (-not $PythonCmd) { Write-Warn "Python not found — some features may not work"; $PythonCmd = "python" }
+
 
 # ── Find project root ──
 $ProjectDir = git rev-parse --show-toplevel 2>$null
@@ -126,26 +124,27 @@ if ((Test-Path $ClaudeJson) -and (Select-String -Path $ClaudeJson -Pattern "cort
         $McpUrl = if ($env:HUB_MCP_URL) { $env:HUB_MCP_URL } else { $MCP_URL_DEFAULT }
         Write-Info "Configuring MCP in ~/.claude.json..."
 
-        $env:_CORTEX_MCP_URL = $McpUrl
-        $env:_CORTEX_API_KEY = $ApiKey
-        & $PythonCmd -c "import json,os;p=os.path.join(os.environ['USERPROFILE'],'.claude.json');c=json.load(open(p)) if os.path.exists(p) else {};c.setdefault('mcpServers',{});c['mcpServers']['cortex-hub']={'command':'npx','args':['-y','mcp-remote',os.environ['_CORTEX_MCP_URL'],'--header','Authorization:$'+'{AUTH_HEADER}'],'env':{'AUTH_HEADER':'Bearer '+os.environ['_CORTEX_API_KEY']}};json.dump(c,open(p,'w'),indent=2)"
-        Remove-Item Env:\_CORTEX_MCP_URL, Env:\_CORTEX_API_KEY -ErrorAction SilentlyContinue
-        $McpConfigured = $true
-        Write-Ok "MCP: configured with provided API key"
-
-        # Configure other IDEs — reusable function
+        # Pure PowerShell JSON merge — no Python needed
         function Set-McpConfig {
             param([string]$Path, [string]$RootKey, [string]$Label)
             $dir = Split-Path $Path -Parent
-            if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-            $env:_MCP_PATH = ($Path -replace '\\', '/')
-            $env:_MCP_KEY = $RootKey
-            $env:_MCP_URL = $McpUrl
-            $env:_MCP_APIKEY = $ApiKey
-            & $PythonCmd -c "import json,os;p=os.environ['_MCP_PATH'];k=os.environ['_MCP_KEY'];c=json.load(open(p)) if os.path.exists(p) else {};c.setdefault(k,{});c[k]['cortex-hub']={'command':'npx','args':['-y','mcp-remote',os.environ['_MCP_URL'],'--header','Authorization:$'+'{AUTH_HEADER}'],'env':{'AUTH_HEADER':'Bearer '+os.environ['_MCP_APIKEY']}};json.dump(c,open(p,'w'),indent=2)"
-            Remove-Item Env:\_MCP_PATH, Env:\_MCP_KEY, Env:\_MCP_URL, Env:\_MCP_APIKEY -ErrorAction SilentlyContinue
+            if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+            $config = @{}
+            if (Test-Path $Path) {
+                try { $config = Get-Content $Path -Raw | ConvertFrom-Json -AsHashtable } catch { $config = @{} }
+            }
+            if (-not $config.ContainsKey($RootKey)) { $config[$RootKey] = @{} }
+            $config[$RootKey]["cortex-hub"] = @{
+                command = "npx"
+                args = @("-y", "mcp-remote", $McpUrl, "--header", "Authorization:`${AUTH_HEADER}")
+                env = @{ AUTH_HEADER = "Bearer $ApiKey" }
+            }
+            $config | ConvertTo-Json -Depth 5 | Out-File -FilePath $Path -Encoding utf8
             Write-Ok "MCP: configured $Label"
         }
+
+        Set-McpConfig -Path $ClaudeJson -RootKey "mcpServers" -Label "Claude Code"
+        $McpConfigured = $true
 
         if (Test-IDESelected "cursor") {
             Set-McpConfig -Path (Join-Path $env:USERPROFILE ".cursor\mcp.json") -RootKey "mcpServers" -Label "Cursor"
@@ -227,7 +226,7 @@ if (-not (Test-Path ".cortex\project-profile.json") -or $Force) {
         else { $PkgManager = "npm" }
         $DetectedStacks += "node:$PkgManager"
 
-        $scripts = & $PythonCmd -c "import json; s=json.load(open('package.json',encoding='utf-8-sig')).get('scripts',{}); print(' '.join(s.keys()))" 2>$null
+        $scripts = try { ((Get-Content "package.json" -Raw | ConvertFrom-Json).scripts | Get-Member -MemberType NoteProperty).Name -join " " } catch { "" }
         foreach ($s in @("build", "typecheck", "lint")) {
             if ($scripts -match "\b$s\b") {
                 $PreCommitCmds += "`"$PkgManager $s`""
