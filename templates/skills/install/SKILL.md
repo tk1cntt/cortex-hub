@@ -13,10 +13,11 @@ argument-hint: [--force | --check | --tools claude,gemini]
 
 ## Run
 
-Always download the latest install script from GitHub (source of truth):
+Always download the latest install script from GitHub (source of truth).
+Append a cache-busting timestamp to bypass GitHub CDN cache:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/install.sh -o /tmp/cortex-install.sh && bash /tmp/cortex-install.sh $ARGUMENTS
+curl -fsSL "https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/install.sh?t=$(date +%s)" -o /tmp/cortex-install.sh && bash /tmp/cortex-install.sh $ARGUMENTS
 ```
 
 If curl fails (no internet / private repo), tell the user and suggest:
@@ -29,7 +30,7 @@ Cannot download install.sh from GitHub. Either:
 
 ### Windows PowerShell
 ```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/install.ps1" -OutFile "$env:TEMP\cortex-install.ps1"; & "$env:TEMP\cortex-install.ps1" $ARGUMENTS
+$ts = [int](Get-Date -UFormat %s); Invoke-WebRequest -Uri "https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/install.ps1?t=$ts" -OutFile "$env:TEMP\cortex-install.ps1"; & "$env:TEMP\cortex-install.ps1" $ARGUMENTS
 ```
 
 ## After Setup
