@@ -29,6 +29,10 @@ function Write-Ok    { param([string]$msg) Write-Host "[cortex] $msg" -Foregroun
 function Write-Warn  { param([string]$msg) Write-Host "[cortex] $msg" -ForegroundColor Yellow }
 function Write-Err   { param([string]$msg) Write-Host "[cortex] $msg" -ForegroundColor Red }
 
+# Resolve python command (python3 on Unix, python on Windows)
+$PythonCmd = if (Get-Command python3 -ErrorAction SilentlyContinue) { "python3" } elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { $null }
+if (-not $PythonCmd) { Write-Warn "Python not found — some features may not work"; $PythonCmd = "python" }
+
 # ── Find project root ──
 $ProjectDir = git rev-parse --show-toplevel 2>$null
 if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
@@ -124,7 +128,7 @@ if ((Test-Path $ClaudeJson) -and (Select-String -Path $ClaudeJson -Pattern "cort
 
         $env:_CORTEX_MCP_URL = $McpUrl
         $env:_CORTEX_API_KEY = $ApiKey
-        python3 -c "import json,os;p=os.path.join(os.environ['USERPROFILE'],'.claude.json');c=json.load(open(p)) if os.path.exists(p) else {};c.setdefault('mcpServers',{});c['mcpServers']['cortex-hub']={'command':'npx','args':['-y','mcp-remote',os.environ['_CORTEX_MCP_URL'],'--header','Authorization:$'+'{AUTH_HEADER}'],'env':{'AUTH_HEADER':'Bearer '+os.environ['_CORTEX_API_KEY']}};json.dump(c,open(p,'w'),indent=2)"
+        & $PythonCmd -c "import json,os;p=os.path.join(os.environ['USERPROFILE'],'.claude.json');c=json.load(open(p)) if os.path.exists(p) else {};c.setdefault('mcpServers',{});c['mcpServers']['cortex-hub']={'command':'npx','args':['-y','mcp-remote',os.environ['_CORTEX_MCP_URL'],'--header','Authorization:$'+'{AUTH_HEADER}'],'env':{'AUTH_HEADER':'Bearer '+os.environ['_CORTEX_API_KEY']}};json.dump(c,open(p,'w'),indent=2)"
         Remove-Item Env:\_CORTEX_MCP_URL, Env:\_CORTEX_API_KEY -ErrorAction SilentlyContinue
         $McpConfigured = $true
         Write-Ok "MCP: configured with provided API key"
@@ -138,7 +142,7 @@ if ((Test-Path $ClaudeJson) -and (Select-String -Path $ClaudeJson -Pattern "cort
             $env:_MCP_KEY = $RootKey
             $env:_MCP_URL = $McpUrl
             $env:_MCP_APIKEY = $ApiKey
-            python3 -c "import json,os;p=os.environ['_MCP_PATH'];k=os.environ['_MCP_KEY'];c=json.load(open(p)) if os.path.exists(p) else {};c.setdefault(k,{});c[k]['cortex-hub']={'command':'npx','args':['-y','mcp-remote',os.environ['_MCP_URL'],'--header','Authorization:$'+'{AUTH_HEADER}'],'env':{'AUTH_HEADER':'Bearer '+os.environ['_MCP_APIKEY']}};json.dump(c,open(p,'w'),indent=2)"
+            & $PythonCmd -c "import json,os;p=os.environ['_MCP_PATH'];k=os.environ['_MCP_KEY'];c=json.load(open(p)) if os.path.exists(p) else {};c.setdefault(k,{});c[k]['cortex-hub']={'command':'npx','args':['-y','mcp-remote',os.environ['_MCP_URL'],'--header','Authorization:$'+'{AUTH_HEADER}'],'env':{'AUTH_HEADER':'Bearer '+os.environ['_MCP_APIKEY']}};json.dump(c,open(p,'w'),indent=2)"
             Remove-Item Env:\_MCP_PATH, Env:\_MCP_KEY, Env:\_MCP_URL, Env:\_MCP_APIKEY -ErrorAction SilentlyContinue
             Write-Ok "MCP: configured $Label"
         }
@@ -223,7 +227,7 @@ if (-not (Test-Path ".cortex\project-profile.json") -or $Force) {
         else { $PkgManager = "npm" }
         $DetectedStacks += "node:$PkgManager"
 
-        $scripts = python3 -c "import json; s=json.load(open('package.json',encoding='utf-8-sig')).get('scripts',{}); print(' '.join(s.keys()))" 2>$null
+        $scripts = & $PythonCmd -c "import json; s=json.load(open('package.json',encoding='utf-8-sig')).get('scripts',{}); print(' '.join(s.keys()))" 2>$null
         foreach ($s in @("build", "typecheck", "lint")) {
             if ($scripts -match "\b$s\b") {
                 $PreCommitCmds += "`"$PkgManager $s`""
