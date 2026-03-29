@@ -337,14 +337,17 @@ fi
 # Phase 3: Detect Project Stack
 # ══════════════════════════════════════════════
 if [ ! -f ".cortex/project-profile.json" ] || [ "$FORCE" = "true" ]; then
-  info "Detecting project stack..."
+  info "Detecting project stacks..."
 
+  # Smart detection: scan ALL stacks present in the project
+  # Each stack gets its own pipeline with glob filter (only runs when relevant files change)
+  DETECTED_STACKS=()
   PKG_MANAGER="unknown"
   PRE_COMMIT_CMDS=""
   FULL_CMDS=""
 
+  # ── Node.js ──
   if [ -f "package.json" ]; then
-    # Node.js project
     if [ -f "pnpm-lock.yaml" ] || [ -f "pnpm-workspace.yaml" ]; then
       PKG_MANAGER="pnpm"
     elif [ -f "yarn.lock" ]; then
@@ -352,8 +355,8 @@ if [ ! -f ".cortex/project-profile.json" ] || [ "$FORCE" = "true" ]; then
     else
       PKG_MANAGER="npm"
     fi
+    DETECTED_STACKS+=("node:$PKG_MANAGER")
 
-    # Detect available scripts
     SCRIPTS=""
     if command -v python3 >/dev/null 2>&1; then
       SCRIPTS=$(python3 -c "import json; s=json.load(open('package.json',encoding='utf-8-sig')).get('scripts',{}); print(' '.join(s.keys()))" 2>/dev/null || true)
@@ -369,53 +372,73 @@ if [ ! -f ".cortex/project-profile.json" ] || [ "$FORCE" = "true" ]; then
         FULL+=("\"$PKG_MANAGER $script\"")
       fi
     done
-    if echo "$SCRIPTS" | grep -qw "test"; then
-      FULL+=("\"$PKG_MANAGER test\"")
-    fi
-
+    echo "$SCRIPTS" | grep -qw "test" && FULL+=("\"$PKG_MANAGER test\"")
     PRE_COMMIT_CMDS=$(IFS=,; echo "${PRE_COMMIT[*]}")
     FULL_CMDS=$(IFS=,; echo "${FULL[*]}")
-
-  elif [ -f "go.mod" ]; then
-    PKG_MANAGER="go"
-    PRE_COMMIT_CMDS='"go build ./...","go vet ./..."'
-    FULL_CMDS='"go build ./...","go vet ./...","go test ./..."'
-
-  elif [ -f "Cargo.toml" ]; then
-    PKG_MANAGER="cargo"
-    PRE_COMMIT_CMDS='"cargo build","cargo clippy"'
-    FULL_CMDS='"cargo build","cargo clippy","cargo test"'
-
-  elif [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
-    PKG_MANAGER="pip"
-    PRE_COMMIT_CMDS='"python -m py_compile *.py"'
-    FULL_CMDS='"python -m py_compile *.py","python -m pytest"'
-
-  elif ls *.csproj >/dev/null 2>&1 || ls *.sln >/dev/null 2>&1; then
-    PKG_MANAGER="dotnet"
-    PRE_COMMIT_CMDS='"dotnet build"'
-    FULL_CMDS='"dotnet build","dotnet test"'
-
-  elif find . -maxdepth 2 -name "*.sln" 2>/dev/null | grep -q .; then
-    PKG_MANAGER="dotnet-mixed"
-    SLN_PATH=$(find . -maxdepth 2 -name "*.sln" 2>/dev/null | head -1)
-    SLN_DIR=$(dirname "$SLN_PATH")
-    PRE_COMMIT_CMDS="\"dotnet build $SLN_PATH\""
-    FULL_CMDS="\"dotnet build $SLN_PATH\",\"dotnet test $SLN_PATH\""
   fi
 
-  # Mixed/unknown projects: no verify commands = no lefthook blocking
-  if [ "$PKG_MANAGER" = "unknown" ]; then
-    warn "Stack: could not detect project type — no quality gates configured"
-    warn "  Edit .cortex/project-profile.json manually to add verify commands"
+  # ── Go ──
+  if [ -f "go.mod" ]; then
+    PKG_MANAGER="go"
+    DETECTED_STACKS+=("go")
+  fi
+
+  # ── Rust ──
+  if [ -f "Cargo.toml" ]; then
+    PKG_MANAGER="cargo"
+    DETECTED_STACKS+=("rust")
+  fi
+
+  # ── Python (only if has manifest, not just .py files) ──
+  if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "Pipfile" ]; then
+    DETECTED_STACKS+=("python")
+    [ "$PKG_MANAGER" = "unknown" ] && PKG_MANAGER="pip"
+  fi
+
+  # ── .NET (root or subdirectory) ──
+  if ls *.csproj >/dev/null 2>&1 || ls *.sln >/dev/null 2>&1; then
+    DETECTED_STACKS+=("dotnet:root")
+    [ "$PKG_MANAGER" = "unknown" ] && PKG_MANAGER="dotnet"
+  elif find . -maxdepth 2 -name "*.sln" 2>/dev/null | grep -q .; then
+    SLN_PATH=$(find . -maxdepth 2 -name "*.sln" 2>/dev/null | head -1)
+    DETECTED_STACKS+=("dotnet:$SLN_PATH")
+    [ "$PKG_MANAGER" = "unknown" ] && PKG_MANAGER="dotnet-mixed"
+  fi
+
+  # ── Godot ──
+  if find . -maxdepth 2 -name "project.godot" 2>/dev/null | grep -q .; then
+    GODOT_DIR=$(dirname "$(find . -maxdepth 2 -name "project.godot" 2>/dev/null | head -1)")
+    DETECTED_STACKS+=("godot:$GODOT_DIR")
+  fi
+
+  # ── Scattered Python scripts (no manifest) ──
+  if ! printf '%s\n' "${DETECTED_STACKS[@]}" 2>/dev/null | grep -q "python" && find . -maxdepth 2 -name "*.py" 2>/dev/null | grep -q .; then
+    DETECTED_STACKS+=("python-scripts")
+  fi
+
+  if [ ${#DETECTED_STACKS[@]} -eq 0 ]; then
+    warn "Stack: no recognized project types found"
+  elif [ ${#DETECTED_STACKS[@]} -eq 1 ]; then
+    ok "Stack: ${DETECTED_STACKS[0]}"
+  else
+    ok "Stack: mixed project — ${DETECTED_STACKS[*]}"
+  fi
+
+  # Generate profile
+  STACKS_JSON=$(printf '"%s",' "${DETECTED_STACKS[@]}" | sed 's/,$//')
+  if [ -z "$PRE_COMMIT_CMDS" ] && [ ${#DETECTED_STACKS[@]} -gt 0 ]; then
+    # For non-node projects, leave verify empty — lefthook will use glob-based pipelines
+    PRE_COMMIT_CMDS=""
+    FULL_CMDS=""
   fi
 
   cat > .cortex/project-profile.json << EOF
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "project_name": "$(basename "$PROJECT_DIR")",
   "fingerprint": {
     "package_manager": "$PKG_MANAGER",
+    "stacks": [${STACKS_JSON}],
     "detected_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   },
   "verify": {
@@ -426,7 +449,7 @@ if [ ! -f ".cortex/project-profile.json" ] || [ "$FORCE" = "true" ]; then
   }
 }
 EOF
-  ok "Profile: .cortex/project-profile.json created ($PKG_MANAGER)"
+  ok "Profile: .cortex/project-profile.json created (${DETECTED_STACKS[*]:-unknown})"
 else
   ok "Profile: already exists"
 fi
@@ -891,67 +914,180 @@ PYEOF2
 fi
 
 # ══════════════════════════════════════════════
-# Phase 5: Lefthook Setup
+# Phase 5: Lefthook Setup (smart glob-based pipelines)
 # ══════════════════════════════════════════════
 if [ ! -f "lefthook.yml" ] || [ "$FORCE" = "true" ]; then
-  # Read verify commands from profile
+  # Read detected stacks from profile
+  STACKS_FROM_PROFILE=""
   if [ -f ".cortex/project-profile.json" ] && command -v python3 >/dev/null 2>&1; then
-    VERIFY_CMDS=$(python3 -c "
+    STACKS_FROM_PROFILE=$(python3 -c "
 import json
 p = json.load(open('.cortex/project-profile.json'))
-cmds = p.get('verify',{}).get('pre_commit',[])
-for c in cmds:
-    parts = c.split()
-    name = '_'.join(parts)
-    print(f'    {name}:')
-    print(f'      run: {c}')
-" 2>/dev/null || true)
-    FULL_CMDS=$(python3 -c "
-import json
-p = json.load(open('.cortex/project-profile.json'))
-cmds = p.get('verify',{}).get('full',[])
-for c in cmds:
-    parts = c.split()
-    name = '_'.join(parts)
-    print(f'    {name}:')
-    print(f'      run: {c}')
+stacks = p.get('fingerprint',{}).get('stacks',[])
+print(' '.join(stacks))
 " 2>/dev/null || true)
   fi
 
-  if [ -n "${VERIFY_CMDS:-}" ]; then
-    cat > lefthook.yml << EOF
-pre-commit:
-  parallel: true
-  commands:
-${VERIFY_CMDS}
+  # Generate lefthook.yml with per-stack glob-filtered commands
+  # Each command only runs when files matching its glob are staged
+  {
+    echo "# Auto-generated by cortex install.sh — per-stack pipelines"
+    echo "# Each command only runs when relevant files are changed (glob filter)"
+    echo ""
+    echo "pre-commit:"
+    echo "  parallel: true"
+    echo "  commands:"
 
-pre-push:
-  parallel: true
-  commands:
-${FULL_CMDS}
+    HOOK_COUNT=0
 
-post-push:
-  commands:
-    notify_cortex:
-      run: |
-        if [ -n "\$CORTEX_API_URL" ]; then
-          BRANCH=\$(git rev-parse --abbrev-ref HEAD)
-          REPO=\$(git remote get-url origin 2>/dev/null || echo "")
-          COMMIT_SHA=\$(git rev-parse HEAD)
-          COMMIT_MSG=\$(git log -1 --pretty=%s)
-          curl -s -X POST "\$CORTEX_API_URL/api/webhooks/local-push" \\
-            -H "Content-Type: application/json" \\
-            -d "{\"repo\":\"\$REPO\",\"branch\":\"\$BRANCH\",\"commitSha\":\"\$COMMIT_SHA\",\"commitMessage\":\"\$COMMIT_MSG\"}" \\
-            > /dev/null 2>&1 || true
-        fi
-EOF
-    ok "Lefthook: lefthook.yml generated (with quality gates)"
-  else
-    # No verify commands — still create post-push notification
-    cat > lefthook.yml << 'EOF'
-# No quality gates detected for this project type.
-# Edit .cortex/project-profile.json to add verify commands, then re-run /install --force
+    for stack in $STACKS_FROM_PROFILE; do
+      case "$stack" in
+        node:pnpm|node:npm|node:yarn)
+          PM="${stack#node:}"
+          # Read available scripts from profile pre_commit
+          if [ -f ".cortex/project-profile.json" ]; then
+            PRE_CMDS=$(python3 -c "
+import json
+p = json.load(open('.cortex/project-profile.json'))
+for c in p.get('verify',{}).get('pre_commit',[]):
+    print(c)
+" 2>/dev/null || true)
+            if [ -n "$PRE_CMDS" ]; then
+              while IFS= read -r cmd; do
+                CMD_NAME=$(echo "$cmd" | tr ' ' '_')
+                echo "    ${CMD_NAME}:"
+                echo "      glob: \"**/*.{ts,tsx,js,jsx,json,css,scss}\""
+                echo "      run: $cmd"
+                HOOK_COUNT=$((HOOK_COUNT + 1))
+              done <<< "$PRE_CMDS"
+            fi
+          fi
+          ;;
+        go)
+          echo "    go_build:"
+          echo "      glob: \"**/*.go\""
+          echo "      run: go build ./..."
+          echo "    go_vet:"
+          echo "      glob: \"**/*.go\""
+          echo "      run: go vet ./..."
+          HOOK_COUNT=$((HOOK_COUNT + 2))
+          ;;
+        rust)
+          echo "    cargo_build:"
+          echo "      glob: \"**/*.rs\""
+          echo "      run: cargo build"
+          echo "    cargo_clippy:"
+          echo "      glob: \"**/*.rs\""
+          echo "      run: cargo clippy --all-targets"
+          HOOK_COUNT=$((HOOK_COUNT + 2))
+          ;;
+        python)
+          echo "    python_check:"
+          echo "      glob: \"**/*.py\""
+          echo "      run: python3 -m py_compile {staged_files}"
+          HOOK_COUNT=$((HOOK_COUNT + 1))
+          ;;
+        python-scripts)
+          echo "    python_syntax:"
+          echo "      glob: \"**/*.py\""
+          echo "      run: python3 -m py_compile {staged_files}"
+          HOOK_COUNT=$((HOOK_COUNT + 1))
+          ;;
+        dotnet:root)
+          echo "    dotnet_build:"
+          echo "      glob: \"**/*.{cs,csproj,sln}\""
+          echo "      run: dotnet build"
+          HOOK_COUNT=$((HOOK_COUNT + 1))
+          ;;
+        dotnet:*)
+          SLN="${stack#dotnet:}"
+          SLN_DIR=$(dirname "$SLN")
+          echo "    dotnet_build:"
+          echo "      glob: \"${SLN_DIR}/**/*.{cs,csproj,sln}\""
+          echo "      run: dotnet build $SLN"
+          HOOK_COUNT=$((HOOK_COUNT + 1))
+          ;;
+        godot:*)
+          GDIR="${stack#godot:}"
+          echo "    godot_check:"
+          echo "      glob: \"${GDIR}/**/*.{gd,tscn,tres}\""
+          echo "      run: echo 'Godot files changed — verify in editor'"
+          HOOK_COUNT=$((HOOK_COUNT + 1))
+          ;;
+      esac
+    done
 
+    if [ "$HOOK_COUNT" -eq 0 ]; then
+      echo "    noop:"
+      echo "      run: \"true\"  # No stacks detected — add commands manually"
+    fi
+
+    # pre-push: same + tests
+    echo ""
+    echo "pre-push:"
+    echo "  parallel: true"
+    echo "  commands:"
+
+    for stack in $STACKS_FROM_PROFILE; do
+      case "$stack" in
+        node:*)
+          PM="${stack#node:}"
+          if [ -f ".cortex/project-profile.json" ]; then
+            FULL_CMDS_LIST=$(python3 -c "
+import json
+p = json.load(open('.cortex/project-profile.json'))
+for c in p.get('verify',{}).get('full',[]):
+    print(c)
+" 2>/dev/null || true)
+            if [ -n "$FULL_CMDS_LIST" ]; then
+              while IFS= read -r cmd; do
+                CMD_NAME=$(echo "$cmd" | tr ' ' '_')
+                echo "    ${CMD_NAME}:"
+                echo "      glob: \"**/*.{ts,tsx,js,jsx,json,css,scss}\""
+                echo "      run: $cmd"
+              done <<< "$FULL_CMDS_LIST"
+            fi
+          fi
+          ;;
+        go)
+          echo "    go_build:"
+          echo "      glob: \"**/*.go\""
+          echo "      run: go build ./..."
+          echo "    go_test:"
+          echo "      glob: \"**/*.go\""
+          echo "      run: go test ./..."
+          ;;
+        rust)
+          echo "    cargo_build:"
+          echo "      glob: \"**/*.rs\""
+          echo "      run: cargo build"
+          echo "    cargo_test:"
+          echo "      glob: \"**/*.rs\""
+          echo "      run: cargo test"
+          ;;
+        python)
+          echo "    python_test:"
+          echo "      glob: \"**/*.py\""
+          echo "      run: python3 -m pytest"
+          ;;
+        dotnet:root)
+          echo "    dotnet_test:"
+          echo "      glob: \"**/*.{cs,csproj,sln}\""
+          echo "      run: dotnet test"
+          ;;
+        dotnet:*)
+          SLN="${stack#dotnet:}"
+          SLN_DIR=$(dirname "$SLN")
+          echo "    dotnet_test:"
+          echo "      glob: \"${SLN_DIR}/**/*.{cs,csproj,sln}\""
+          echo "      run: dotnet test $SLN"
+          ;;
+      esac
+    done
+
+    # post-push: cortex notification
+    echo ""
+    cat << 'POSTPUSH'
 post-push:
   commands:
     notify_cortex:
@@ -966,10 +1102,10 @@ post-push:
             -d "{\"repo\":\"$REPO\",\"branch\":\"$BRANCH\",\"commitSha\":\"$COMMIT_SHA\",\"commitMessage\":\"$COMMIT_MSG\"}" \
             > /dev/null 2>&1 || true
         fi
-EOF
-    warn "Lefthook: no quality gates (unknown project type) — post-push only"
-    warn "  Edit .cortex/project-profile.json to add verify commands"
-  fi
+POSTPUSH
+  } > lefthook.yml
+
+  ok "Lefthook: smart pipelines generated ($HOOK_COUNT checks, glob-filtered)"
 
   # Install lefthook if available
   if command -v lefthook >/dev/null 2>&1; then
