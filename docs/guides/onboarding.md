@@ -24,15 +24,15 @@ AI Agent → MCP Server (Bearer token) → Dashboard API → Backend Services
 
 ```bash
 # From cortex-hub repo
-bash scripts/install-global.sh
+bash scripts/install.sh
 
 # Or via curl (no clone needed)
-curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/main/scripts/install-global.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/install.sh | bash
 ```
 
 This installs:
 - `/install` slash command globally (works in any project)
-- MCP config in `~/.claude.json` (prompts for API key)
+- MCP config in `~/.claude.json` (reads API key from `HUB_API_KEY` env or `.env` file)
 
 ### 2. Per-Project Setup
 
@@ -102,6 +102,71 @@ bash scripts/install.sh --force
 
 **Runtime hooks** = automated enforcement (blocks edits without session, blocks commits without quality gates).
 **Instruction-only** = guidance via markdown files (no automated blocking, relies on agent compliance + server-side scoring).
+
+---
+
+## Supported Project Types
+
+`install.sh` auto-detects **all** stacks present in the repo and generates smart, glob-filtered pipelines. Each pipeline only runs when files matching its pattern are changed.
+
+### Single-Stack Projects
+
+| Stack | Detected by | Pre-commit | Pre-push | Glob filter |
+|-------|-------------|------------|----------|-------------|
+| **Node.js** (pnpm/npm/yarn) | `package.json` | build, typecheck, lint | + test | `**/*.{ts,tsx,js,jsx,json,css,scss}` |
+| **Go** | `go.mod` | build, vet | + test | `**/*.go` |
+| **Rust** | `Cargo.toml` | build, clippy | + test | `**/*.rs` |
+| **Python** | `requirements.txt`, `pyproject.toml`, `setup.py`, `Pipfile` | py_compile | + pytest | `**/*.py` |
+| **.NET** | `*.csproj`, `*.sln` (root) | dotnet build | + test | `**/*.{cs,csproj,sln}` |
+| **.NET** (subdirectory) | `*.sln` (depth 2) | dotnet build path/to.sln | + test | `path/**/*.{cs,csproj,sln}` |
+| **Godot** | `project.godot` (depth 2) | info message | — | `path/**/*.{gd,tscn,tres}` |
+| **Python scripts** (no manifest) | `*.py` files exist but no `requirements.txt` etc. | py_compile {staged_files} | — | `**/*.py` |
+
+### Mixed / Monorepo Projects
+
+For repos with multiple stacks (e.g., a C# server + Python tools + Godot client), `install.sh` detects **all** stacks and generates a combined `lefthook.yml`:
+
+```yaml
+# Example: yulgang-re-tools (Python + .NET + Godot)
+pre-commit:
+  parallel: true
+  commands:
+    python_check:
+      glob: "**/*.py"                                    # only when .py changes
+      run: python3 -m py_compile {staged_files}
+    dotnet_build:
+      glob: "yulgang-server/**/*.{cs,csproj,sln}"       # only when .cs changes
+      run: dotnet build ./yulgang-server/Yulgang.sln
+    godot_check:
+      glob: "godot-client/**/*.{gd,tscn,tres}"          # only when .gd changes
+      run: echo 'Godot files changed — verify in editor'
+```
+
+**Key behavior:**
+- Commit a `.md` file → **no pipeline runs** (no matching glob)
+- Commit a `.py` file → only Python check runs
+- Commit `.py` + `.cs` files → both Python and .NET run **in parallel**
+- Each stack is independent — a failing .NET build does not block a Python-only commit
+
+### Custom Quality Gates
+
+For projects not auto-detected, edit `.cortex/project-profile.json` manually:
+
+```json
+{
+  "schema_version": "2.0",
+  "fingerprint": {
+    "stacks": ["custom"],
+    "package_manager": "custom"
+  },
+  "verify": {
+    "pre_commit": ["make lint", "make build"],
+    "full": ["make lint", "make build", "make test"]
+  }
+}
+```
+
+Then run `/install --force` to regenerate `lefthook.yml`.
 
 ---
 
@@ -189,4 +254,4 @@ curl -s -X POST 'https://cortex-mcp.jackle.dev/mcp' \
 | Hooks not enforcing | Check `.cortex/.hooks-version` — run `/install` to update |
 | Post-push webhook not firing | Set `CORTEX_API_URL` env var, or use default (cortex-api.jackle.dev) |
 | Windows hooks not working | Use `.\scripts\install.ps1` to generate PS1 hooks |
-| `/install` not found | Run `bash scripts/install-global.sh` first |
+| `/install` not found | Run `bash scripts/install.sh` from cortex-hub repo first |
