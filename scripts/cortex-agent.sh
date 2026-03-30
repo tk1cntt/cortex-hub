@@ -331,7 +331,7 @@ execute_task_claude() {
   if command -v claude >/dev/null 2>&1; then
     (
       cd "$working_dir"
-      claude -p "$prompt" --permission-mode accept 2>&1 | tee "$output_file"
+      claude -p "$prompt" --permission-mode auto 2>&1 | tee "$output_file"
     )
     local exit_code=$?
     log_info "Claude finished task $task_id (exit=$exit_code)"
@@ -684,7 +684,7 @@ run_agent() {
             local task_id engine prompt working_dir
             task_id=$(json_get "$payload" "o.taskId||(o.task&&o.task.id)||''")
             engine=$(json_get "$payload" "o.engine||(o.task&&o.task.engine)||'claude'")
-            prompt=$(json_get "$payload" "o.prompt||(o.task&&o.task.prompt)||(o.task&&o.task.description)||''")
+            prompt=$(json_get "$payload" "o.prompt||o.description||(o.task&&(o.task.prompt||o.task.description))||o.title||''")
             working_dir=$(json_get "$payload" "o.workingDir||(o.task&&o.task.workingDir)||''")
             [ -z "$working_dir" ] && working_dir="$PROJECT_ROOT"
 
@@ -696,7 +696,7 @@ run_agent() {
             log_info "Task assigned: $task_id (engine=$engine)"
 
             # Report task accepted
-            ws_send "{\"type\":\"send\",\"payload\":{\"type\":\"task.accepted\",\"taskId\":\"$task_id\",\"agentId\":\"$AGENT_ID\",\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}}"
+            ws_send "{\"type\":\"task.accept\",\"taskId\":\"$task_id\",\"agentId\":\"$AGENT_ID\",\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}"
 
             # Execute task in background subshell
             (
@@ -713,7 +713,7 @@ run_agent() {
               [ "$exit_code" -ne 0 ] && status="failed"
 
               # Report task complete/failed back via WebSocket
-              echo "{\"type\":\"send\",\"payload\":{\"type\":\"task.complete\",\"taskId\":\"$task_id\",\"agentId\":\"$AGENT_ID\",\"status\":\"$status\",\"exitCode\":$exit_code,\"result\":\"$result\",\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}}" >&7
+              echo "{\"type\":\"task.complete\",\"taskId\":\"$task_id\",\"result\":\"$result\",\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}" >&7
 
               log_info "Task $task_id $status (exit=$exit_code)"
             ) &
