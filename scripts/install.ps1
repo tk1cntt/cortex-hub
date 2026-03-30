@@ -21,7 +21,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $HOOKS_VERSION = 4
-$HOOKS_MINOR = 0
+$HOOKS_MINOR = 1
 $LATEST_VERSION = "$HOOKS_VERSION.$HOOKS_MINOR"
 $MCP_URL_DEFAULT = "https://cortex-mcp.jackle.dev/mcp"
 
