@@ -538,4 +538,51 @@
 @media (max-width: 1024px) {
   .statsGrid { grid-template-columns: repeat(2, 1fr); }
   .tasksGrid { grid-template-columns: 1fr; }
+  .agentsGrid { grid-template-columns: 1fr; }
+}
+
+/* Agents Grid */
+.agentsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+
+.agentCard {
+  padding: var(--space-3) !important;
+}
+
+.agentHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.agentDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agentOnline {
+  background: var(--status-healthy);
+  box-shadow: 0 0 6px var(--status-healthy);
+}
+
+.agentIdle {
+  background: var(--status-warning);
+}
+
+.agentOffline {
+  background: var(--text-tertiary);
+}
+
+.agentMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
 }
