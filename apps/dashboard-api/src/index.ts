@@ -106,10 +106,13 @@ app.use('/*', serveStatic({
 }))
 
 // SPA fallback: serve index.html for unmatched client-side routes
-app.get('*', serveStatic({
-  root: './public',
-  rewriteRequestPath: () => '/index.html'
-}))
+// SKIP /api/* and /health — let Hono return 404 for unmatched API routes
+app.get('*', async (c, next) => {
+  if (c.req.path.startsWith('/api/') || c.req.path === '/health') {
+    return next()
+  }
+  return serveStatic({ root: './public', rewriteRequestPath: () => '/index.html' })(c, next)
+})
 
 const port = Number(process.env.PORT) || 4000
 
