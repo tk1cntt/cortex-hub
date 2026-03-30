@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
 import type { Server } from 'http'
+import { createHash } from 'node:crypto'
 import { db } from '../db/client.js'
 
 interface ConnectedAgent {
@@ -32,10 +33,11 @@ export function setupConductorWebSocket(server: Server) {
       return
     }
 
-    // Validate API key against stored keys
+    // Validate API key against stored keys (hash the raw key first)
+    const keyHash = createHash('sha256').update(apiKey).digest('hex')
     const keyRow = db
-      .prepare('SELECT name FROM api_keys WHERE id = ? OR key_hash = ?')
-      .get(apiKey, apiKey) as { name: string } | undefined
+      .prepare('SELECT name FROM api_keys WHERE key_hash = ?')
+      .get(keyHash) as { name: string } | undefined
 
     if (!keyRow) {
       ws.close(4003, 'Invalid apiKey')

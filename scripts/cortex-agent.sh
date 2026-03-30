@@ -557,11 +557,24 @@ run_agent() {
   local api_key="${CORTEX_HUB_API_KEY:-}"
   local node_resolve_paths="$PROJECT_ROOT/node_modules"
 
-  # Append apiKey as query parameter if available
+  # Append apiKey and agentId as query parameters
+  local qs=""
   if [ -n "$api_key" ]; then
+    qs="apiKey=${api_key}"
+  fi
+  if [ -n "$AGENT_ID" ]; then
+    qs="${qs:+${qs}&}agentId=${AGENT_ID}"
+  fi
+  if [ -n "$AGENT_HOSTNAME" ]; then
+    qs="${qs:+${qs}&}hostname=${AGENT_HOSTNAME}"
+  fi
+  if [ -n "$AGENT_IDE" ]; then
+    qs="${qs:+${qs}&}ide=${AGENT_IDE}"
+  fi
+  if [ -n "$qs" ]; then
     case "$hub_url" in
-      *\?*) hub_url="${hub_url}&apiKey=${api_key}" ;;
-      *)    hub_url="${hub_url}?apiKey=${api_key}" ;;
+      *\?*) hub_url="${hub_url}&${qs}" ;;
+      *)    hub_url="${hub_url}?${qs}" ;;
     esac
   fi
 
