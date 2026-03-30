@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server'
+import { setupConductorWebSocket } from './ws/conductor.js'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { readFileSync } from 'node:fs'
@@ -116,6 +117,9 @@ app.get('*', async (c, next) => {
 
 const port = Number(process.env.PORT) || 4000
 
-serve({ fetch: app.fetch, port }, () => {
+const server = serve({ fetch: app.fetch, port }, () => {
   logger.info(`Dashboard API listening on http://localhost:${port}`)
 })
+
+// WebSocket for Conductor real-time agent communication
+setupConductorWebSocket(server)
