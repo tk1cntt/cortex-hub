@@ -7,7 +7,10 @@ const QDRANT_URL = () => process.env['QDRANT_URL'] || 'http://qdrant:6333'
 const MEM0_URL = () => process.env['MEM0_URL'] || 'http://mem0:8000'
 
 // ── Dashboard Stats (real data) ──
-statsRouter.get('/overview', async (c) => {
+statsRouter.get('/overview', overviewHandler)
+statsRouter.get('/overview-v2', overviewHandler) // backward compat alias
+
+async function overviewHandler(c: any) {
   try {
     const keyCount = (db.prepare('SELECT COUNT(*) as count FROM api_keys').get() as { count: number }).count
     const agentCount = (db.prepare('SELECT COUNT(DISTINCT agent_id) as count FROM query_logs').get() as { count: number }).count
@@ -55,7 +58,7 @@ statsRouter.get('/overview', async (c) => {
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }
-})
+}
 
 // ── Activity Feed (recent events) ──
 statsRouter.get('/activity', (c) => {
