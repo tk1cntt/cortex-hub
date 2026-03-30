@@ -455,6 +455,54 @@ else
 fi
 
 # ══════════════════════════════════════════════
+# Phase 3b: Agent Identity (auto-detect environment)
+# ══════════════════════════════════════════════
+IDENTITY_FILE=".cortex/agent-identity.json"
+if [ ! -f "$IDENTITY_FILE" ]; then
+  info "Generating agent identity..."
+
+  # Auto-detect environment
+  DETECT_OS="unknown"
+  case "$OSTYPE" in
+    darwin*) DETECT_OS="macOS" ;;
+    linux*)  DETECT_OS="linux" ;;
+    msys*|cygwin*|mingw*) DETECT_OS="windows" ;;
+  esac
+  DETECT_HOSTNAME=$(hostname 2>/dev/null || echo "unknown")
+  DETECT_ARCH=$(uname -m 2>/dev/null || echo "unknown")
+
+  # Detect available tools
+  DETECT_TOOLS=""
+  for tool in godot blender python3 python dotnet cargo go node pnpm npm docker ffmpeg git; do
+    command -v "$tool" >/dev/null 2>&1 && DETECT_TOOLS="${DETECT_TOOLS}\"$tool\","
+  done
+  DETECT_TOOLS="[${DETECT_TOOLS%,}]"
+
+  # Generate identity file (user should edit role/capabilities/description)
+  cat > "$IDENTITY_FILE" << IDEOF
+{
+  "schema_version": "1.0",
+  "agent_name": "$(whoami)-$(echo "$DETECT_HOSTNAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')",
+  "environment": {
+    "os": "$DETECT_OS",
+    "hostname": "$DETECT_HOSTNAME",
+    "arch": "$DETECT_ARCH",
+    "tools": $DETECT_TOOLS
+  },
+  "role": "",
+  "capabilities": [],
+  "description": "",
+  "resources": [],
+  "tags": ["$DETECT_OS"]
+}
+IDEOF
+  ok "Identity: $IDENTITY_FILE created (edit to add role/capabilities)"
+  warn "  Run: \$EDITOR $IDENTITY_FILE to set role, capabilities, description"
+else
+  ok "Identity: already exists"
+fi
+
+# ══════════════════════════════════════════════
 # Phase 4: Install Hooks (if needed)
 # ══════════════════════════════════════════════
 if [ "$NEEDS_UPDATE" = "true" ]; then

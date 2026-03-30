@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "agent_name": "tieple-tieps-macbook-pro.local",
+  "environment": {
+    "os": "macOS",
+    "hostname": "Tieps-MacBook-Pro.local",
+    "arch": "arm64",
+    "tools": ["python3","dotnet","node","pnpm","npm","docker","ffmpeg","git"]
+  },
+  "role": "",
+  "capabilities": [],
+  "description": "",
+  "resources": [],
+  "tags": ["macOS"]
+}
