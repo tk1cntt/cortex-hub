@@ -1181,6 +1181,24 @@ Then:
 - If `recentChanges.count > 0` in the response, warn the user and run `git pull`
 - Read `STATE.md` for current task progress (if it exists)
 
+### Agent Identity (send with session_start if available)
+
+Read `.cortex/agent-identity.json` and pass identity fields:
+```
+cortex_session_start(
+  repo: "__GIT_REPO__",
+  mode: "development",
+  agentId: "claude-code",
+  hostname: "<from agent-identity.json>",
+  os: "<from agent-identity.json>",
+  ide: "claude-code-cli",
+  branch: "<current git branch>",
+  role: "<from agent-identity.json>",
+  capabilities: ["<from agent-identity.json>"]
+)
+```
+This helps Dashboard identify which agent you are across multiple IDEs/machines.
+
 ### Tool Priority (MANDATORY — use cortex tools BEFORE grep/find)
 
 **ALWAYS search with cortex tools first. Only use Grep/find as fallback.**
