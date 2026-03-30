@@ -429,9 +429,15 @@ const RECONNECT_MAX = 120000;
 let reconnectTimer = null;
 let pingInterval = null;
 
+// Handle EPIPE gracefully (bash closed the pipe)
+process.stdout.on('error', (err) => {
+  if (err.code === 'EPIPE') process.exit(0);
+});
+process.on('SIGPIPE', () => process.exit(0));
+
 function emit(type, data) {
   const line = JSON.stringify({ type, ...data });
-  process.stdout.write(line + '\n');
+  try { process.stdout.write(line + '\n'); } catch (_) {}
 }
 
 function connect() {

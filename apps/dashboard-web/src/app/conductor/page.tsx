@@ -5,10 +5,12 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
 import {
   getConductorTasks,
+  getConductorAgents,
   createConductorTask,
   cancelConductorTask,
   deleteConductorTask,
   type ConductorTask,
+  type ConductorAgent,
 } from '@/lib/api'
 import styles from './page.module.css'
 
@@ -353,12 +355,17 @@ export default function ConductorPage() {
   const { data, error, isLoading, mutate } = useSWR('conductor-tasks', () => getConductorTasks({ limit: 200 }), {
     refreshInterval: 10000,
   })
+  const { data: agentsData } = useSWR('conductor-agents', getConductorAgents, {
+    refreshInterval: 5000,
+  })
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [selectedTask, setSelectedTask] = useState<ConductorTask | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
 
   const allTasks = data?.tasks ?? []
+  const agents = agentsData?.agents ?? []
+  const onlineAgents = agents.filter((a: ConductorAgent) => a.status === 'online')
 
   const filteredTasks = useMemo(() => {
     if (statusFilter === 'all') return allTasks
@@ -441,6 +448,33 @@ export default function ConductorPage() {
           </div>
         </div>
       </div>
+
+      {/* Agents Online */}
+      {agents.length > 0 && (
+        <div className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>
+              Agents <span className={styles.filterCount}>{onlineAgents.length} online</span>
+            </h2>
+          </div>
+          <div className={styles.agentsGrid}>
+            {agents.map((agent: ConductorAgent) => (
+              <div key={agent.agentId} className={`card ${styles.agentCard}`}>
+                <div className={styles.agentHeader}>
+                  <span className={`${styles.agentDot} ${agent.status === 'online' ? styles.agentOnline : agent.status === 'idle' ? styles.agentIdle : styles.agentOffline}`} />
+                  <strong>{agent.agentId}</strong>
+                </div>
+                <div className={styles.agentMeta}>
+                  {agent.project && <span>Project: {agent.project}</span>}
+                  {agent.sessionId && <span>Session: {agent.sessionId.slice(0, 12)}...</span>}
+                  <span>Queries: {agent.queryCount}</span>
+                  <span>Last: {agent.lastActivity ? new Date(agent.lastActivity).toLocaleTimeString() : '--'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tasks Section */}
       <div className={styles.section}>
