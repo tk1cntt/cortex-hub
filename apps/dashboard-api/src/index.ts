@@ -27,6 +27,7 @@ import { statsRouter as metricsRouter } from './routes/stats.js'
 import { systemRouter } from './routes/system.js'
 import { accountsRouter } from './routes/accounts.js'
 import { webhooksRouter } from './routes/webhooks.js'
+import { tasksRouter } from './routes/tasks.js'
 import { knowledgeRouter } from './routes/knowledge.js'
 
 const app = new Hono()
@@ -89,6 +90,7 @@ app.route('/api/indexing', indexingRouter)
 app.route('/api/mem9', mem9ProxyRouter)
 app.route('/api/knowledge', knowledgeRouter)
 app.route('/api/webhooks', webhooksRouter)
+app.route('/api/tasks', tasksRouter)
 
 // Serve Dashboard Web static files (Next.js static export)
 // Clean URLs: /keys → /keys.html, / → /index.html

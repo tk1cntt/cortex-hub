@@ -206,6 +206,46 @@ ON quality_reports(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_quality_reports_agent
 ON quality_reports(agent_id, created_at DESC);
 
+-- ── Conductor Tasks ──
+CREATE TABLE IF NOT EXISTS conductor_tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    project_id TEXT,
+    parent_task_id TEXT,
+    created_by_agent TEXT,
+    assigned_to_agent TEXT,
+    assigned_session_id TEXT,
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','assigned','accepted','in_progress','review','completed','failed','cancelled')),
+    priority INTEGER DEFAULT 5,
+    required_capabilities TEXT DEFAULT '[]',
+    depends_on TEXT DEFAULT '[]',
+    notify_on_complete TEXT DEFAULT '[]',
+    notified_agents TEXT DEFAULT '[]',
+    context TEXT DEFAULT '{}',
+    result TEXT,
+    completed_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    assigned_at TEXT,
+    accepted_at TEXT,
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_conductor_tasks_assigned ON conductor_tasks(assigned_to_agent, status);
+CREATE INDEX IF NOT EXISTS idx_conductor_tasks_status ON conductor_tasks(status);
+
+CREATE TABLE IF NOT EXISTS conductor_task_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    agent_id TEXT,
+    action TEXT NOT NULL,
+    message TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_conductor_task_logs_task ON conductor_task_logs(task_id);
+
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);
 

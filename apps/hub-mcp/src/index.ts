@@ -13,6 +13,8 @@ import { registerQualityTools } from './tools/quality.js'
 import { registerSessionTools } from './tools/session.js'
 import { registerChangeTools } from './tools/changes.js'
 import { registerAnalyticsTools } from './tools/analytics.js'
+import { registerTaskTools } from './tools/tasks.js'
+import { registerConductorTools } from './tools/conductor.js'
 import { validateApiKey } from './middleware/auth.js'
 import { telemetryStorage } from './api-call.js'
 import type { Env } from './types.js'
@@ -135,6 +137,8 @@ function createMcpServer(env: Env) {
   registerSessionTools(server, env)
   registerChangeTools(server, env)
   registerAnalyticsTools(server, env)
+  registerTaskTools(server, env)
+  registerConductorTools(server, env)
   return server
 }
 
