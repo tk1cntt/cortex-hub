@@ -1,12 +1,21 @@
 #!/bin/bash
+# Cortex Session Enforcement (v4.0)
+# - HARD BLOCK Edit/Write without session
+# - BLOCK Grep and search-Bash until cortex discovery tools used once
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 if [ -f "$STATE_DIR/session-started" ]; then
   if [ ! -f "$STATE_DIR/discovery-used" ]; then
     INPUT_PEEK=$(cat)
     PEEK_TOOL=$(echo "$INPUT_PEEK" | jq -r '.tool_name // empty' 2>/dev/null || true)
+    PEEK_CMD=$(echo "$INPUT_PEEK" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
     if [[ "$PEEK_TOOL" = "Grep" ]]; then
-      echo "HINT: Use cortex_code_search BEFORE grep." >&2
+      echo "BLOCKED: Use cortex_code_search or cortex_knowledge_search FIRST. Grep unlocked after using cortex discovery tools." >&2
+      exit 2
+    fi
+    if [[ "$PEEK_TOOL" = "Bash" ]] && [[ "$PEEK_CMD" =~ ^(find |grep |rg |ag ) ]]; then
+      echo "BLOCKED: Use cortex_code_search FIRST. find/grep unlocked after cortex discovery tools." >&2
+      exit 2
     fi
   fi
   exit 0
@@ -22,6 +31,4 @@ case "$TOOL_NAME" in
     [[ "$COMMAND" =~ (git\ (add|commit|push|reset)|rm\ |mv\ |cp\ |mkdir\ |touch\ |chmod\ |sed\ -i) ]] && { echo "BLOCKED: Call cortex_session_start first." >&2; exit 2; }
     exit 0 ;;
 esac
-
-# All other tools — allow
 exit 0

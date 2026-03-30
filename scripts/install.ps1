@@ -338,31 +338,36 @@ if ($NeedsUpdate) {
         if (-not (Test-Path $hooksDir)) { New-Item -ItemType Directory -Path $hooksDir -Force | Out-Null }
         if (-not (Test-Path ".cortex\.session-state")) { New-Item -ItemType Directory -Path ".cortex\.session-state" -Force | Out-Null }
 
-        # session-init.ps1
+        # session-init.ps1 (v4.0: touch session-started immediately, don't delete it)
         @'
 $ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (git rev-parse --show-toplevel 2>$null) }
 if (-not $ProjectDir) { $ProjectDir = "." }
 $StateDir = Join-Path $ProjectDir ".cortex\.session-state"
 if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Path $StateDir -Force | Out-Null }
-@("session-started","quality-gates-passed","gate-build","gate-typecheck","gate-lint","session-ended") | ForEach-Object {
+New-Item (Join-Path $StateDir "session-started") -Force | Out-Null
+@("quality-gates-passed","gate-build","gate-typecheck","gate-lint","session-ended","discovery-used") | ForEach-Object {
     Remove-Item (Join-Path $StateDir $_) -ErrorAction SilentlyContinue
 }
-Write-Output "MANDATORY SESSION PROTOCOL: Call cortex_session_start before any work."
+Write-Output "HARD REQUIREMENT: Call cortex_session_start IMMEDIATELY. Grep/find BLOCKED until cortex discovery tools used."
 exit 0
 '@ | Out-File -FilePath "$hooksDir\session-init.ps1" -Encoding utf8
 
-        # enforce-session.ps1
+        # enforce-session.ps1 (v4.0: BLOCK Grep/find until discovery tools used)
         @'
 $ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (git rev-parse --show-toplevel 2>$null) }
 if (-not $ProjectDir) { $ProjectDir = "." }
 $StateDir = Join-Path $ProjectDir ".cortex\.session-state"
 if (Test-Path (Join-Path $StateDir "session-started")) {
-    # Nudge: hint if Grep used before cortex discovery tools
     if (-not (Test-Path (Join-Path $StateDir "discovery-used"))) {
         try {
             $peek = [Console]::In.ReadToEnd() | ConvertFrom-Json
             if ($peek.tool_name -eq "Grep") {
-                Write-Host "HINT: Use cortex_code_search BEFORE grep." -ForegroundColor Yellow
+                Write-Error "BLOCKED: Use cortex_code_search FIRST. Grep unlocked after cortex discovery tools."
+                exit 2
+            }
+            if ($peek.tool_name -eq "Bash" -and $peek.tool_input.command -match "^(find |grep |rg |ag )") {
+                Write-Error "BLOCKED: Use cortex_code_search FIRST."
+                exit 2
             }
         } catch {}
     }

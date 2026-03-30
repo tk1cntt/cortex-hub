@@ -522,39 +522,35 @@ if [ "$NEEDS_UPDATE" = "true" ]; then
   # ── session-init.sh ──
   cat > .claude/hooks/session-init.sh << 'HOOKEOF'
 #!/bin/bash
-# Cortex Session Init (v3) — Resets session markers + prints mandatory reminder
+# Cortex Session Init (v4.0) — Creates session marker + resets quality gates
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 mkdir -p "$STATE_DIR"
-rm -f "$STATE_DIR/session-started" "$STATE_DIR/quality-gates-passed" \
+touch "$STATE_DIR/session-started"
+rm -f "$STATE_DIR/quality-gates-passed" \
       "$STATE_DIR/gate-build" "$STATE_DIR/gate-typecheck" "$STATE_DIR/gate-lint" \
-      "$STATE_DIR/session-ended" 2>/dev/null
-cat <<'MSG'
-⚠️ HARD REQUIREMENT — BLOCKING ⚠️
-You MUST call cortex_session_start IMMEDIATELY as your very first action.
-ALL file edits and modifications are BLOCKED until you do this.
-
-Steps:
-1. Call cortex_session_start(repo: "<git remote url>", mode: "development", agentId: "claude-code")
-2. If recentChanges.count > 0 → warn user and git pull
-3. Read STATE.md if it exists
-
-FAILURE TO COMPLY: Your Edit/Write/Bash tools WILL return exit code 2 (blocked).
-This is enforced by hooks — not optional.
-MSG
+      "$STATE_DIR/session-ended" "$STATE_DIR/discovery-used" 2>/dev/null
+echo "HARD REQUIREMENT: Call cortex_session_start IMMEDIATELY. Grep/find BLOCKED until cortex discovery tools used."
 HOOKEOF
 
   # ── enforce-session.sh ──
   cat > .claude/hooks/enforce-session.sh << 'HOOKEOF'
 #!/bin/bash
+# Cortex Session Enforcement (v4.0) — BLOCK Grep/find until discovery tools used
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 if [ -f "$STATE_DIR/session-started" ]; then
   if [ ! -f "$STATE_DIR/discovery-used" ]; then
     INPUT_PEEK=$(cat)
     PEEK_TOOL=$(echo "$INPUT_PEEK" | jq -r '.tool_name // empty' 2>/dev/null || true)
+    PEEK_CMD=$(echo "$INPUT_PEEK" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
     if [[ "$PEEK_TOOL" = "Grep" ]]; then
-      echo "HINT: Use cortex_code_search BEFORE grep." >&2
+      echo "BLOCKED: Use cortex_code_search or cortex_knowledge_search FIRST. Grep unlocked after using cortex discovery tools." >&2
+      exit 2
+    fi
+    if [[ "$PEEK_TOOL" = "Bash" ]] && [[ "$PEEK_CMD" =~ ^(find |grep |rg |ag ) ]]; then
+      echo "BLOCKED: Use cortex_code_search FIRST. find/grep unlocked after cortex discovery tools." >&2
+      exit 2
     fi
   fi
   exit 0
@@ -570,8 +566,6 @@ case "$TOOL_NAME" in
     [[ "$COMMAND" =~ (git\ (add|commit|push|reset)|rm\ |mv\ |cp\ |mkdir\ |touch\ |chmod\ |sed\ -i) ]] && { echo "BLOCKED: Call cortex_session_start first." >&2; exit 2; }
     exit 0 ;;
 esac
-
-# All other tools — allow
 exit 0
 HOOKEOF
 
