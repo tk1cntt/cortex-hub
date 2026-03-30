@@ -214,6 +214,29 @@ function getOnlineAgents(owner: string) {
   return result
 }
 
+/** Get ALL connected agents (for dashboard API) */
+export function getAllConnectedAgents() {
+  const result: Array<{
+    agentId: string
+    apiKeyOwner: string
+    hostname?: string
+    ide?: string
+    connectedAt: string
+    lastPing: string
+  }> = []
+  for (const [, agent] of agents) {
+    result.push({
+      agentId: agent.agentId,
+      apiKeyOwner: agent.apiKeyOwner,
+      hostname: agent.hostname,
+      ide: agent.ide,
+      connectedAt: agent.connectedAt.toISOString(),
+      lastPing: agent.lastPing.toISOString(),
+    })
+  }
+  return result
+}
+
 /** Push a task assignment notification to a connected agent. Returns true if delivered. */
 export function notifyTaskAssigned(
   apiKeyOwner: string,

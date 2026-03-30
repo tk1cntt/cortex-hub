@@ -1,8 +1,22 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
 import { randomUUID } from 'crypto'
+import { getAllConnectedAgents } from '../ws/conductor.js'
 
 export const conductorRouter = new Hono()
+
+// ── Connected agents (real-time from WebSocket) ──
+conductorRouter.get('/agents', (c) => {
+  try {
+    const connected = getAllConnectedAgents()
+    return c.json({
+      agents: connected,
+      online: connected.length,
+    })
+  } catch (error) {
+    return c.json({ agents: [], online: 0, error: String(error) }, 500)
+  }
+})
 
 // ── Types (matches schema.sql conductor_tasks) ──
 interface TaskRow {

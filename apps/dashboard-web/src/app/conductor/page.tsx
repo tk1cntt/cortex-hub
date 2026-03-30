@@ -365,7 +365,7 @@ export default function ConductorPage() {
 
   const allTasks = data?.tasks ?? []
   const agents = agentsData?.agents ?? []
-  const onlineAgents = agents.filter((a: ConductorAgent) => a.status === 'online')
+  const onlineCount = agentsData?.online ?? agents.length
 
   const filteredTasks = useMemo(() => {
     if (statusFilter === 'all') return allTasks
@@ -454,21 +454,21 @@ export default function ConductorPage() {
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>
-              Agents <span className={styles.filterCount}>{onlineAgents.length} online</span>
+              Agents <span className={styles.filterCount}>{onlineCount} online</span>
             </h2>
           </div>
           <div className={styles.agentsGrid}>
             {agents.map((agent: ConductorAgent) => (
               <div key={agent.agentId} className={`card ${styles.agentCard}`}>
                 <div className={styles.agentHeader}>
-                  <span className={`${styles.agentDot} ${agent.status === 'online' ? styles.agentOnline : agent.status === 'idle' ? styles.agentIdle : styles.agentOffline}`} />
+                  <span className={`${styles.agentDot} ${styles.agentOnline}`} />
                   <strong>{agent.agentId}</strong>
                 </div>
                 <div className={styles.agentMeta}>
-                  {agent.project && <span>Project: {agent.project}</span>}
-                  {agent.sessionId && <span>Session: {agent.sessionId.slice(0, 12)}...</span>}
-                  <span>Queries: {agent.queryCount}</span>
-                  <span>Last: {agent.lastActivity ? new Date(agent.lastActivity).toLocaleTimeString() : '--'}</span>
+                  {agent.hostname && <span>Host: {agent.hostname}</span>}
+                  {agent.ide && <span>IDE: {agent.ide}</span>}
+                  <span>Owner: {agent.apiKeyOwner}</span>
+                  <span>Connected: {new Date(agent.connectedAt).toLocaleTimeString()}</span>
                 </div>
               </div>
             ))}

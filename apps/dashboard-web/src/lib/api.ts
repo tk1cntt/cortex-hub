@@ -885,26 +885,21 @@ export async function getTaskLogs(id: string) {
 // ── Conductor Types ──
 export interface ConductorAgent {
   agentId: string
-  queryCount: number
-  lastActivity: string
-  toolsUsed: string[]
-  status: 'online' | 'idle' | 'offline'
-  // Session identity
-  hostname: string | null
-  os: string | null
-  ide: string | null
-  branch: string | null
-  role: string | null
-  capabilities: string[]
-  project: string | null
-  sessionId: string | null
-  sessionStatus: string | null
-  // Active tasks
-  activeTasks: Array<{ id: string; title: string; status: string }>
+  apiKeyOwner: string
+  hostname?: string
+  ide?: string
+  connectedAt: string
+  lastPing: string
+  // Legacy fields (from stats endpoint, may be undefined)
+  queryCount?: number
+  lastActivity?: string
+  status?: 'online' | 'idle' | 'offline'
+  project?: string | null
+  sessionId?: string | null
 }
 
 export async function getConductorAgents() {
-  return apiFetch<{ agents: ConductorAgent[] }>('/api/metrics/conductor/agents')
+  return apiFetch<{ agents: ConductorAgent[]; online: number }>('/api/conductor/agents')
 }
 
 export async function getConductorTasks(options?: { limit?: number; status?: string; assignedTo?: string }) {
