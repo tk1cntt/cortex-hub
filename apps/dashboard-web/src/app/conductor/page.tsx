@@ -10,7 +10,7 @@ import {
   createConductorTask,
   type ConductorTask,
   type ConductorAgent,
-  type ConductorTaskStats,
+  type ConductorTaskStats as _ConductorTaskStats,
 } from '@/lib/api'
 import { config } from '@/lib/config'
 import styles from './page.module.css'
@@ -314,14 +314,14 @@ export default function ConductorPage() {
   )
 
   const allTasks = tasksData?.tasks ?? []
-  const stats: ConductorTaskStats = statsData?.stats ?? {
+  const stats = (statsData?.stats ?? {
     pending: 0,
     assigned: 0,
     accepted: 0,
     in_progress: 0,
     completed: 0,
     failed: 0,
-  }
+  }) as Record<string, number>
   const agents = agentsData?.agents ?? []
 
   const filteredTasks = useMemo(() => {
@@ -335,9 +335,9 @@ export default function ConductorPage() {
     return allTasks
   }, [allTasks, statusFilter])
 
-  const pendingCount = stats.pending + stats.assigned
-  const activeCount = stats.accepted + stats.in_progress
-  const completedCount = stats.completed
+  const pendingCount = (stats.pending || 0) + (stats.assigned || 0)
+  const activeCount = (stats.accepted || 0) + (stats.in_progress || 0)
+  const completedCount = stats.completed || 0
 
   const filterTabs: { key: StatusFilter; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: allTasks.length },

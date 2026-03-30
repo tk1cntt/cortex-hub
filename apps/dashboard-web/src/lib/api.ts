@@ -912,3 +912,31 @@ export async function getConductorTasks(limit = 50, owner?: string) {
     `/api/metrics/conductor/tasks?${params.toString()}`
   )
 }
+
+// ── Conductor Task Stats ──
+export interface ConductorTaskStats {
+  [key: string]: number
+  pending: number
+  active: number
+  completed: number
+  total: number
+}
+
+export async function getConductorTaskStats() {
+  return apiFetch<{ stats: ConductorTaskStats; tasks: ConductorTask[] }>('/api/metrics/conductor/tasks')
+}
+
+export async function createConductorTask(data: {
+  title: string
+  description?: string
+  assignTo?: string
+  priority?: number
+}) {
+  const res = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Failed to create task')
+  return res.json()
+}

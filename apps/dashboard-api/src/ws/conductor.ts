@@ -1,6 +1,7 @@
+// @ts-expect-error ws module
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
-import type { Server } from 'node:http'
+import type { Server } from 'http'
 import { db } from '../db/client.js'
 
 interface ConnectedAgent {
@@ -81,7 +82,7 @@ export function setupConductorWebSocket(server: Server) {
     console.log(`[ws] Agent connected: ${agentId} (${apiKeyOwner})`)
 
     // Handle incoming messages
-    ws.on('message', (data) => {
+    ws.on('message', (data: Buffer) => {
       try {
         const msg = JSON.parse(data.toString())
         handleMessage(agent, msg)

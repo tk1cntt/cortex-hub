@@ -122,4 +122,5 @@ const server = serve({ fetch: app.fetch, port }, () => {
 })
 
 // WebSocket for Conductor real-time agent communication
-setupConductorWebSocket(server)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+setupConductorWebSocket(server as any)
