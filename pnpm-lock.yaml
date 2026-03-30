@@ -133,6 +133,9 @@ importers:
       hono:
         specifier: ^4.7.0
         version: 4.12.8
+      ws:
+        specifier: ^8.20.0
+        version: 8.20.0
       zod:
         specifier: ^4.3.6
         version: 4.3.6
