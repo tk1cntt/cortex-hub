@@ -219,6 +219,23 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       })
       break
 
+    case 'agent.register': {
+      // Handle registration message from cortex-agent.sh (capabilities + metadata)
+      const regCaps = validateCapabilities(msg['capabilities'])
+      if (regCaps.length > 0) agent.capabilities = regCaps
+      if (msg['hostname']) agent.hostname = msg['hostname'] as string
+      if (msg['ide']) agent.ide = msg['ide'] as string
+      if (msg['platform'] || msg['os']) agent.platform = (msg['platform'] || msg['os']) as string
+      broadcastToOwner(agent.apiKeyOwner, {
+        type: 'agent.capabilities_updated',
+        agentId: agent.agentId,
+        capabilities: agent.capabilities,
+        timestamp: new Date().toISOString(),
+      }, agent.agentId)
+      console.log(`[ws] Agent registered: ${agent.agentId} capabilities=[${agent.capabilities.join(',')}]`)
+      break
+    }
+
     case 'capabilities.update': {
       // Allow agents to update their capabilities at runtime (validated)
       const validated = validateCapabilities(msg['capabilities'])

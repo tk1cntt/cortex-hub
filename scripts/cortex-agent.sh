@@ -726,6 +726,13 @@ run_agent() {
   if [ -n "$AGENT_IDE" ]; then
     qs="${qs:+${qs}&}ide=${AGENT_IDE}"
   fi
+  if [ -n "$AGENT_CAPABILITIES" ] && [ "$AGENT_CAPABILITIES" != "[]" ]; then
+    local encoded_caps
+    encoded_caps=$(node -e "console.log(encodeURIComponent('$AGENT_CAPABILITIES'))" 2>/dev/null || echo "")
+    if [ -n "$encoded_caps" ]; then
+      qs="${qs:+${qs}&}capabilities=${encoded_caps}"
+    fi
+  fi
   if [ -n "$qs" ]; then
     case "$hub_url" in
       *\?*) hub_url="${hub_url}&${qs}" ;;
