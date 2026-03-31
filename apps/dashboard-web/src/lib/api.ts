@@ -888,6 +888,8 @@ export interface ConductorAgent {
   apiKeyOwner: string
   hostname?: string
   ide?: string
+  platform?: string
+  capabilities?: string[]
   connectedAt: string
   lastPing: string
   // Legacy fields (from stats endpoint, may be undefined)
@@ -971,5 +973,51 @@ export interface ConductorActivity {
 
 export async function getConductorActivity(limit = 30) {
   return apiFetch<{ activity: ConductorActivity[] }>(`/api/conductor/activity?limit=${limit}`)
+}
+
+// ── Hub Configuration ──
+export async function getHubConfig() {
+  return apiFetch<Record<string, string>>('/api/settings/hub-config')
+}
+
+export async function updateHubConfig(data: { hub_name?: string; hub_description?: string }) {
+  return apiFetch<{ success: boolean; updated: Record<string, string> }>('/api/settings/hub-config', {
+    method: 'PUT',
+    body: data,
+  })
+}
+
+// ── Notification Preferences ──
+export async function getNotificationPreferences() {
+  return apiFetch<Record<string, boolean>>('/api/settings/notifications')
+}
+
+export async function updateNotificationPreferences(data: Record<string, boolean>) {
+  return apiFetch<{ success: boolean; updated: Record<string, boolean> }>('/api/settings/notifications', {
+    method: 'PUT',
+    body: data,
+  })
+}
+
+// ── System Info ──
+export interface SystemInfo {
+  hostname: string
+  platform: string
+  arch: string
+  nodeVersion: string
+  uptime: number
+  processUptime: number
+  memory: {
+    total: number
+    free: number
+    used: number
+    percent: number
+  }
+  cpuCores: number
+  loadAvg: number[]
+}
+
+export async function getSystemInfo() {
+  return apiFetch<SystemInfo>('/api/settings/system-info')
 }
 

@@ -141,9 +141,32 @@ CREATE TABLE IF NOT EXISTS conductor_task_logs (
 
 CREATE INDEX IF NOT EXISTS idx_conductor_task_logs_task ON conductor_task_logs(task_id);
 
+-- ── Hub Configuration ──
+CREATE TABLE IF NOT EXISTS hub_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Insert defaults
+INSERT OR IGNORE INTO hub_config (key, value) VALUES ('hub_name', 'Cortex Hub');
+INSERT OR IGNORE INTO hub_config (key, value) VALUES ('hub_description', 'Self-hosted MCP Intelligence Platform');
+
+-- ── Notification Preferences ──
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    key TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 1,
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('agent_disconnect', 1);
+INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('quality_gate_failure', 1);
+INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('task_assignment', 1);
+INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('session_handoff', 1);
+
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);
 
 -- Insert default organization
-INSERT OR IGNORE INTO organizations (id, name, slug, description) 
+INSERT OR IGNORE INTO organizations (id, name, slug, description)
 VALUES ('org-default', 'Personal', 'personal', 'Default personal organization');

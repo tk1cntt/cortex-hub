@@ -1,9 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
-import { getSettings, restartService } from '@/lib/api'
+import {
+  getSettings,
+  getHubConfig,
+  updateHubConfig,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+  getSystemInfo,
+  restartService,
+} from '@/lib/api'
 import { config } from '@/lib/config'
 import styles from './page.module.css'
 
@@ -90,6 +98,21 @@ function ConfirmDialog({
   )
 }
 
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const mins = Math.floor((seconds % 3600) / 60)
+  if (days > 0) return `${days}d ${hours}h ${mins}m`
+  if (hours > 0) return `${hours}h ${mins}m`
+  return `${mins}m`
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`
+  return `${bytes} B`
+}
+
 const SERVICE_ICONS: Record<string, string> = {
   cliproxy: '🤖',
   qdrant: '🔮',
@@ -104,8 +127,31 @@ const SERVICE_LABELS: Record<string, string> = {
   dashboardApi: 'Dashboard API',
 }
 
+const NOTIFICATION_LABELS: Record<string, { label: string; description: string }> = {
+  agent_disconnect: {
+    label: 'Agent Disconnect',
+    description: 'Alert when a connected agent goes offline unexpectedly',
+  },
+  quality_gate_failure: {
+    label: 'Quality Gate Failure',
+    description: 'Alert when a quality gate check fails (grade D or below)',
+  },
+  task_assignment: {
+    label: 'Task Assignment',
+    description: 'Alert when a new task is assigned to an agent',
+  },
+  session_handoff: {
+    label: 'Session Handoff',
+    description: 'Alert when a session is handed off between agents',
+  },
+}
+
 export default function SettingsPage() {
   const { data, error, isLoading } = useSWR('settings', getSettings)
+  const { data: hubConfig, mutate: mutateHubConfig } = useSWR('hub-config', getHubConfig)
+  const { data: notifPrefs, mutate: mutateNotifPrefs } = useSWR('notif-prefs', getNotificationPreferences)
+  const { data: systemInfo } = useSWR('system-info', getSystemInfo, { refreshInterval: 30000 })
+
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [showClearDialog, setShowClearDialog] = useState(false)
   const [restartingService, setRestartingService] = useState<string | null>(null)
@@ -114,11 +160,49 @@ export default function SettingsPage() {
     message: string
   } | null>(null)
 
+  // Hub config form state
+  const [hubName, setHubName] = useState('')
+  const [hubDescription, setHubDescription] = useState('')
+  const [hubSaving, setHubSaving] = useState(false)
+  const [hubDirty, setHubDirty] = useState(false)
+
+  // Sync hub config from API
+  useEffect(() => {
+    if (hubConfig) {
+      setHubName(hubConfig.hub_name ?? 'Cortex Hub')
+      setHubDescription(hubConfig.hub_description ?? '')
+      setHubDirty(false)
+    }
+  }, [hubConfig])
+
   const dockerServices: DockerServiceProps[] = [
     { containerName: 'cortex-llm-proxy', label: 'CLIProxy (LLM)', icon: '🤖' },
     { containerName: 'cortex-qdrant', label: 'Qdrant Vector DB', icon: '🔮' },
     { containerName: 'cortex-gitnexus', label: 'GitNexus (Code Intelligence)', icon: '🧬' },
   ]
+
+  async function handleSaveHubConfig() {
+    setHubSaving(true)
+    try {
+      await updateHubConfig({ hub_name: hubName, hub_description: hubDescription })
+      await mutateHubConfig()
+      setHubDirty(false)
+      setActionStatus({ type: 'success', message: 'Hub configuration saved.' })
+    } catch (err) {
+      setActionStatus({ type: 'error', message: `Save failed: ${err instanceof Error ? err.message : String(err)}` })
+    } finally {
+      setHubSaving(false)
+    }
+  }
+
+  async function handleToggleNotification(key: string, enabled: boolean) {
+    try {
+      await updateNotificationPreferences({ [key]: enabled })
+      await mutateNotifPrefs()
+    } catch (err) {
+      setActionStatus({ type: 'error', message: `Failed to update: ${err instanceof Error ? err.message : String(err)}` })
+    }
+  }
 
   async function handleRestart(containerName: string) {
     setRestartingService(containerName)
@@ -169,7 +253,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <DashboardLayout title="Settings" subtitle="Runtime configuration and service endpoints">
+    <DashboardLayout title="Settings" subtitle="Hub configuration, notifications, and system info">
       {/* Action Status Toast */}
       {actionStatus && (
         <div
@@ -190,6 +274,113 @@ export default function SettingsPage() {
           </button>
         </div>
       )}
+
+      {/* Hub Configuration */}
+      <div className={styles.section}>
+        <h2 className={styles.sectionTitle}>Hub Configuration</h2>
+        <div className={`card ${styles.hubConfigCard}`}>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>Hub Name</label>
+            <input
+              type="text"
+              className={styles.formInput}
+              value={hubName}
+              onChange={(e) => { setHubName(e.target.value); setHubDirty(true) }}
+              placeholder="Cortex Hub"
+              maxLength={100}
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label className={styles.formLabel}>Description</label>
+            <textarea
+              className={styles.formTextarea}
+              value={hubDescription}
+              onChange={(e) => { setHubDescription(e.target.value); setHubDirty(true) }}
+              placeholder="A brief description of this hub instance"
+              rows={3}
+              maxLength={500}
+            />
+          </div>
+          <div className={styles.formActions}>
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveHubConfig}
+              disabled={!hubDirty || hubSaving}
+            >
+              {hubSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+            {hubDirty && (
+              <span className={styles.unsavedHint}>Unsaved changes</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Notification Preferences */}
+      <div className={styles.section}>
+        <h2 className={styles.sectionTitle}>Notification Preferences</h2>
+        <div className={`card ${styles.notificationsCard}`}>
+          {Object.entries(NOTIFICATION_LABELS).map(([key, { label, description }]) => (
+            <div key={key} className={styles.notifRow}>
+              <div className={styles.notifInfo}>
+                <span className={styles.notifLabel}>{label}</span>
+                <span className={styles.notifDesc}>{description}</span>
+              </div>
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={notifPrefs?.[key] ?? true}
+                  onChange={(e) => handleToggleNotification(key, e.target.checked)}
+                />
+                <span className={styles.toggleSlider} />
+              </label>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* System Info */}
+      <div className={styles.section}>
+        <h2 className={styles.sectionTitle}>System Info</h2>
+        <div className={`card ${styles.systemInfoCard}`}>
+          <div className={styles.systemGrid}>
+            <div className={styles.systemItem}>
+              <span className={styles.systemLabel}>Hostname</span>
+              <code className={styles.systemValue}>{systemInfo?.hostname ?? '...'}</code>
+            </div>
+            <div className={styles.systemItem}>
+              <span className={styles.systemLabel}>Platform</span>
+              <code className={styles.systemValue}>{systemInfo ? `${systemInfo.platform} (${systemInfo.arch})` : '...'}</code>
+            </div>
+            <div className={styles.systemItem}>
+              <span className={styles.systemLabel}>Node.js</span>
+              <code className={styles.systemValue}>{systemInfo?.nodeVersion ?? '...'}</code>
+            </div>
+            <div className={styles.systemItem}>
+              <span className={styles.systemLabel}>System Uptime</span>
+              <code className={styles.systemValue}>{systemInfo ? formatUptime(systemInfo.uptime) : '...'}</code>
+            </div>
+            <div className={styles.systemItem}>
+              <span className={styles.systemLabel}>Process Uptime</span>
+              <code className={styles.systemValue}>{systemInfo ? formatUptime(systemInfo.processUptime) : '...'}</code>
+            </div>
+            <div className={styles.systemItem}>
+              <span className={styles.systemLabel}>CPU Cores</span>
+              <code className={styles.systemValue}>{systemInfo?.cpuCores ?? '...'}</code>
+            </div>
+            <div className={styles.systemItem}>
+              <span className={styles.systemLabel}>Memory</span>
+              <code className={styles.systemValue}>
+                {systemInfo ? `${formatBytes(systemInfo.memory.used)} / ${formatBytes(systemInfo.memory.total)} (${systemInfo.memory.percent}%)` : '...'}
+              </code>
+            </div>
+            <div className={styles.systemItem}>
+              <span className={styles.systemLabel}>Load Average</span>
+              <code className={styles.systemValue}>{systemInfo?.loadAvg?.join(', ') ?? '...'}</code>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Environment Info */}
       <div className={styles.section}>

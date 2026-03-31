@@ -1,7 +1,5 @@
 #!/bin/bash
-# Cortex Session Enforcement (v4.0)
-# - HARD BLOCK Edit/Write without session
-# - BLOCK Grep and search-Bash until cortex discovery tools used once
+# Cortex Session Enforcement (v4.0) — BLOCK Grep/find until discovery tools used
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
 if [ -f "$STATE_DIR/session-started" ]; then

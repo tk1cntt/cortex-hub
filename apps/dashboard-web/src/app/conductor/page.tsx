@@ -16,6 +16,13 @@ import styles from './page.module.css'
 
 // ── Types ──
 type StatusFilter = 'all' | 'pending' | 'assigned' | 'accepted' | 'in_progress' | 'review' | 'completed' | 'failed' | 'cancelled'
+type ViewMode = 'list' | 'pipeline'
+
+interface TaskTreeNode {
+  task: ConductorTask
+  children: TaskTreeNode[]
+  depth: number
+}
 
 // ── Helpers ──
 function formatTimeAgo(dateStr: string): string {
@@ -35,6 +42,50 @@ function formatJson(value: string | null): string {
   } catch {
     return value
   }
+}
+
+/** Build a tree from flat task list using parent_task_id */
+function buildTaskTree(tasks: ConductorTask[]): TaskTreeNode[] {
+  const taskMap = new Map<string, TaskTreeNode>()
+  const roots: TaskTreeNode[] = []
+
+  // Create nodes
+  for (const task of tasks) {
+    taskMap.set(task.id, { task, children: [], depth: 0 })
+  }
+
+  // Link parent → children
+  for (const task of tasks) {
+    const node = taskMap.get(task.id)!
+    if (task.parent_task_id && taskMap.has(task.parent_task_id)) {
+      const parent = taskMap.get(task.parent_task_id)!
+      node.depth = parent.depth + 1
+      parent.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+
+  // Sort children by priority then created_at
+  function sortChildren(nodes: TaskTreeNode[]) {
+    nodes.sort((a, b) => a.task.priority - b.task.priority || a.task.created_at.localeCompare(b.task.created_at))
+    for (const node of nodes) sortChildren(node.children)
+  }
+  sortChildren(roots)
+  return roots
+}
+
+/** Flatten tree into ordered list with depth info for rendering */
+function flattenTree(nodes: TaskTreeNode[]): TaskTreeNode[] {
+  const result: TaskTreeNode[] = []
+  function walk(list: TaskTreeNode[]) {
+    for (const node of list) {
+      result.push(node)
+      walk(node.children)
+    }
+  }
+  walk(nodes)
+  return result
 }
 
 // ── Components ──
@@ -207,6 +258,47 @@ function TaskDetail({
             </div>
           )}
 
+          {/* Delegation Flow */}
+          {(task.created_by_agent || task.assigned_to_agent || task.completed_by) && (
+            <div className={styles.detailSection}>
+              <h3 className={styles.detailSectionTitle}>Delegation Flow</h3>
+              <div className={styles.delegationFlow}>
+                {task.created_by_agent && (
+                  <div className={styles.delegationStep}>
+                    <span className={styles.delegationLabel}>Created by</span>
+                    <code className={styles.delegationAgent}>{task.created_by_agent}</code>
+                  </div>
+                )}
+                {task.assigned_to_agent && (
+                  <>
+                    <span className={styles.delegationArrow}>{'\u2193'}</span>
+                    <div className={styles.delegationStep}>
+                      <span className={styles.delegationLabel}>Assigned to</span>
+                      <code className={styles.delegationAgent}>{task.assigned_to_agent}</code>
+                    </div>
+                  </>
+                )}
+                {task.completed_by && (
+                  <>
+                    <span className={styles.delegationArrow}>{'\u2193'}</span>
+                    <div className={`${styles.delegationStep} ${styles.delegationStepDone}`}>
+                      <span className={styles.delegationLabel}>Completed by</span>
+                      <code className={styles.delegationAgent}>{task.completed_by}</code>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Parent Task Link */}
+          {task.parent_task_id && (
+            <div className={styles.detailRow}>
+              <span className={styles.detailLabel}>Parent Task</span>
+              <code className={styles.detailValue}>{task.parent_task_id}</code>
+            </div>
+          )}
+
           {/* Title & Description */}
           <div className={styles.detailSection}>
             <h3 className={styles.detailSectionTitle}>Title</h3>
@@ -360,6 +452,154 @@ function CreateTaskForm({
   )
 }
 
+/** Pipeline tree row — shows task with indentation and connector lines */
+function PipelineRow({
+  node,
+  onSelect,
+  isLast,
+}: {
+  node: TaskTreeNode
+  onSelect: () => void
+  isLast: boolean
+}) {
+  const { task, children, depth } = node
+  const hasChildren = children.length > 0
+
+  return (
+    <div
+      className={styles.pipelineRow}
+      onClick={onSelect}
+      style={{ paddingLeft: `${depth * 28 + 16}px` }}
+    >
+      {/* Connector */}
+      {depth > 0 && (
+        <span className={styles.pipelineConnector}>
+          {isLast ? '\u2514' : '\u251C'}\u2500
+        </span>
+      )}
+
+      {/* Status dot */}
+      <span className={`${styles.pipelineDot} ${
+        task.status === 'completed' ? styles.dotCompleted
+        : task.status === 'in_progress' ? styles.dotInProgress
+        : task.status === 'failed' ? styles.dotFailed
+        : styles.dotPending
+      }`} />
+
+      {/* Title */}
+      <span className={styles.pipelineTitle}>
+        {hasChildren && <span className={styles.pipelineExpandIcon}>{'\u25BC'}</span>}
+        {task.title}
+      </span>
+
+      {/* Agent flow: created_by → assigned_to → completed_by */}
+      <span className={styles.pipelineFlow}>
+        {task.created_by_agent && (
+          <code className={styles.flowAgent}>{task.created_by_agent}</code>
+        )}
+        {task.assigned_to_agent && (
+          <>
+            <span className={styles.flowArrow}>{'\u2192'}</span>
+            <code className={styles.flowAgent}>{task.assigned_to_agent}</code>
+          </>
+        )}
+        {task.completed_by && task.completed_by !== task.assigned_to_agent && (
+          <>
+            <span className={styles.flowArrow}>{'\u2192'}</span>
+            <code className={styles.flowAgentDone}>{task.completed_by}</code>
+          </>
+        )}
+      </span>
+
+      <StatusBadge status={task.status} />
+    </div>
+  )
+}
+
+/** Pipeline view — renders task tree with delegation arrows */
+function PipelineView({
+  tasks,
+  onSelectTask,
+}: {
+  tasks: ConductorTask[]
+  onSelectTask: (task: ConductorTask) => void
+}) {
+  const tree = useMemo(() => buildTaskTree(tasks), [tasks])
+  const flat = useMemo(() => flattenTree(tree), [tree])
+
+  if (flat.length === 0) {
+    return (
+      <div className={`card ${styles.emptyState}`}>
+        <p>No tasks with parent-child relationships found.</p>
+      </div>
+    )
+  }
+
+  // Group: root tasks with children first, then orphans
+  const withChildren = flat.filter((n) => n.depth === 0 && n.children.length > 0)
+  const rootIds = new Set(withChildren.map((n) => n.task.id))
+  const pipelineTasks = flat.filter((n) => rootIds.has(n.task.id) || (n.depth > 0 && hasAncestorIn(n, rootIds, flat)))
+  const orphans = flat.filter((n) => n.depth === 0 && n.children.length === 0)
+
+  function hasAncestorIn(node: TaskTreeNode, ids: Set<string>, allNodes: TaskTreeNode[]): boolean {
+    // Walk up via parent_task_id
+    let parentId = node.task.parent_task_id
+    while (parentId) {
+      if (ids.has(parentId)) return true
+      const parent = allNodes.find((n) => n.task.id === parentId)
+      parentId = parent?.task.parent_task_id ?? null
+    }
+    return false
+  }
+
+  return (
+    <div>
+      {/* Pipeline tasks (trees) */}
+      {pipelineTasks.length > 0 && (
+        <div className={`card ${styles.pipelineCard}`}>
+          <div className={styles.pipelineHeader}>
+            <h3 className={styles.pipelineHeaderTitle}>Task Pipeline</h3>
+            <span className={styles.pipelineHeaderCount}>{pipelineTasks.length} tasks in {withChildren.length} pipelines</span>
+          </div>
+          {pipelineTasks.map((node) => {
+            // Check if last sibling at this depth
+            const siblings = pipelineTasks.filter((n) =>
+              n.depth === node.depth && n.task.parent_task_id === node.task.parent_task_id
+            )
+            const isLast = siblings[siblings.length - 1]?.task.id === node.task.id
+            return (
+              <PipelineRow
+                key={node.task.id}
+                node={node}
+                onSelect={() => onSelectTask(node.task)}
+                isLast={isLast}
+              />
+            )
+          })}
+        </div>
+      )}
+
+      {/* Standalone tasks */}
+      {orphans.length > 0 && (
+        <div className={`card ${styles.pipelineCard}`} style={{ marginTop: 'var(--space-4)' }}>
+          <div className={styles.pipelineHeader}>
+            <h3 className={styles.pipelineHeaderTitle}>Standalone Tasks</h3>
+            <span className={styles.pipelineHeaderCount}>{orphans.length}</span>
+          </div>
+          {orphans.map((node) => (
+            <PipelineRow
+              key={node.task.id}
+              node={node}
+              onSelect={() => onSelectTask(node.task)}
+              isLast
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ConductorPage() {
   const { data, error, isLoading, mutate } = useSWR('conductor-tasks', () => getConductorTasks({ limit: 200 }), {
     refreshInterval: 10000,
@@ -369,6 +609,7 @@ export default function ConductorPage() {
   })
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [selectedTask, setSelectedTask] = useState<ConductorTask | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
 
@@ -479,6 +720,14 @@ export default function ConductorPage() {
                   <span>Owner: {agent.apiKeyOwner}</span>
                   <span>Connected: {new Date(agent.connectedAt).toLocaleTimeString()}</span>
                 </div>
+                {/* Agent capabilities */}
+                {agent.capabilities && agent.capabilities.length > 0 && (
+                  <div className={styles.agentCaps}>
+                    {agent.capabilities.map((cap) => (
+                      <span key={cap} className={styles.capBadge}>{cap}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -490,6 +739,23 @@ export default function ConductorPage() {
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Tasks</h2>
           <div className={styles.headerActions}>
+            {/* View mode toggle */}
+            <div className={styles.viewToggle}>
+              <button
+                className={`${styles.viewToggleBtn} ${viewMode === 'list' ? styles.viewToggleActive : ''}`}
+                onClick={() => setViewMode('list')}
+                title="List view"
+              >
+                List
+              </button>
+              <button
+                className={`${styles.viewToggleBtn} ${viewMode === 'pipeline' ? styles.viewToggleActive : ''}`}
+                onClick={() => setViewMode('pipeline')}
+                title="Pipeline view"
+              >
+                Pipeline
+              </button>
+            </div>
             <button
               className="btn btn-primary btn-sm"
               onClick={() => setShowCreateForm(true)}
@@ -524,7 +790,9 @@ export default function ConductorPage() {
           <div className={styles.errorBanner}>Failed to load tasks</div>
         )}
 
-        {filteredTasks.length === 0 && !isLoading ? (
+        {viewMode === 'pipeline' ? (
+          <PipelineView tasks={filteredTasks} onSelectTask={setSelectedTask} />
+        ) : filteredTasks.length === 0 && !isLoading ? (
           <div className={`card ${styles.emptyState}`}>
             <span className={styles.emptyIcon}>T</span>
             <p>
