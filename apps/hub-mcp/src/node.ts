@@ -87,10 +87,13 @@ server.on('upgrade', async (req: IncomingMessage, socket, head) => {
 
         // Bidirectional relay
         clientWs.on('message', (data: Buffer) => {
+          console.log(`[WS Proxy] Client → Upstream: ${data.toString().substring(0, 120)}`)
           if (upstream.readyState === WS.OPEN) upstream.send(data)
         })
         upstream.on('message', (data: Buffer) => {
+          console.log(`[WS Proxy] Upstream → Client: ${data.toString().substring(0, 120)}`)
           if (clientWs.readyState === WS.OPEN) clientWs.send(data)
+          else console.log(`[WS Proxy] DROPPED — clientWs not OPEN (state=${clientWs.readyState})`)
         })
 
         clientWs.on('close', (code: number) => {

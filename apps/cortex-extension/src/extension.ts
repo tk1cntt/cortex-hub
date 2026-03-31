@@ -38,6 +38,141 @@ function forwardToWebview(type: 'newTask' | 'taskUpdate', payload: Record<string
   CortexPanel.currentPanel?.postMessage(message)
 }
 
+// Track active tasks waiting for review
+const pendingReviews = new Map<string, { taskId: string; plan: string; stopAcceptor: () => void }>()
+
+/** Auto-accept Antigravity steps (file edits, terminal commands) for autonomous task execution */
+function startAutoAcceptor(taskId: string, logFn: (msg: string) => void): () => void {
+  if (!antigravitySdk) return () => {}
+
+  let running = true
+  const poll = async () => {
+    while (running) {
+      try {
+        await antigravitySdk.cascade.acceptStep().catch(() => {})
+        await antigravitySdk.cascade.acceptTerminalCommand().catch(() => {})
+        await antigravitySdk.cascade.acceptCommand().catch(() => {})
+      } catch {
+        // no pending steps
+      }
+      await new Promise(r => setTimeout(r, 1500))
+    }
+  }
+
+  logFn(`Auto-acceptor started for task ${taskId}`)
+  poll()
+  return () => { running = false }
+}
+
+/** Monitor Antigravity for plan output, then submit for review before proceeding */
+function startPlanMonitor(taskId: string, logFn: (msg: string) => void): () => void {
+  if (!antigravitySdk) return () => {}
+
+  let running = true
+  let planDetected = false
+
+  const poll = async () => {
+    while (running && !planDetected) {
+      try {
+        // Check if step requires input (plan approval)
+        const sessions = await antigravitySdk.cascade.getSessions()
+        if (sessions && sessions.length > 0) {
+          const latest = sessions[0]
+          // Detect plan by checking step count changes or title patterns
+          if (latest.stepCount > 0 && latest.title) {
+            // Read the latest session content to find plan
+            // For now, detect via step count stabilization (agent stopped generating)
+            const prevCount = latest.stepCount
+            await new Promise(r => setTimeout(r, 5000))
+            if (!running) break
+            const refreshed = (await antigravitySdk.cascade.getSessions())?.[0]
+            if (refreshed && refreshed.stepCount === prevCount && prevCount > 0) {
+              // Agent stopped — plan is ready, submit for review
+              planDetected = true
+              logFn(`Plan detected for task ${taskId} (${prevCount} steps). Submitting for review...`)
+
+              const planSummary = `[Plan Review Request]\nTask: ${taskId}\nAgent: Anti-01\nSteps: ${prevCount}\nSession: ${latest.title}`
+
+              // Create review sub-task for codex-review via WS
+              client?.send({
+                type: 'task.create',
+                title: `[Review] ${latest.title || taskId}`,
+                description: planSummary,
+                assignTo: 'codex-review',
+                parentTaskId: taskId,
+                priority: 1,
+                context: JSON.stringify({ reviewType: 'plan', originalTaskId: taskId }),
+              })
+
+              // Store pending review so we can proceed when approved
+              pendingReviews.set(taskId, {
+                taskId,
+                plan: planSummary,
+                stopAcceptor: () => {},
+              })
+
+              logFn(`Review task created for codex-review — waiting for approval`)
+            }
+          }
+        }
+      } catch {
+        // ignore monitor errors
+      }
+      await new Promise(r => setTimeout(r, 3000))
+    }
+  }
+
+  logFn(`Plan monitor started for task ${taskId}`)
+  poll()
+  return () => { running = false }
+}
+
+/** Proceed with plan after reviewer approves — auto-click Proceed via SDK */
+async function proceedAfterApproval(taskId: string, logFn: (msg: string) => void): Promise<void> {
+  if (!antigravitySdk) return
+
+  logFn(`Review approved for task ${taskId} — auto-proceeding via SDK`)
+
+  try {
+    // Accept the plan step (clicks "Proceed")
+    await antigravitySdk.cascade.acceptStep()
+    logFn(`Plan accepted via SDK for task ${taskId}`)
+
+    // Start auto-acceptor for implementation phase
+    const stop = startAutoAcceptor(taskId, logFn)
+    const pending = pendingReviews.get(taskId)
+    if (pending) {
+      pending.stopAcceptor = stop
+    }
+  } catch (e) {
+    logFn(`Failed to proceed: ${e instanceof Error ? e.message : String(e)}`)
+    // Fallback: try sendPrompt to continue
+    try {
+      await antigravitySdk.cascade.sendPrompt('Proceed with the implementation plan.')
+      startAutoAcceptor(taskId, logFn)
+    } catch {
+      logFn(`Fallback sendPrompt also failed`)
+    }
+  }
+}
+
+/** Send reviewer feedback back to Antigravity chat for plan revision */
+async function sendReviewFeedback(taskId: string, feedback: string, logFn: (msg: string) => void): Promise<void> {
+  if (!antigravitySdk) return
+
+  logFn(`Sending reviewer feedback for task ${taskId}`)
+  try {
+    await antigravitySdk.cascade.sendPrompt(
+      `[Reviewer Feedback]\n\n${feedback}\n\nPlease revise your plan based on this feedback.`
+    )
+    logFn(`Feedback sent to Antigravity — waiting for revised plan`)
+    // Restart plan monitor for the revised plan
+    startPlanMonitor(taskId, logFn)
+  } catch (e) {
+    logFn(`Failed to send feedback: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
 /** Execute a task by injecting prompt into IDE's AI chat */
 async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: string) => void): Promise<void> {
   logFn(`Executing task ${taskId} via IDE chat...`)
@@ -47,14 +182,16 @@ async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: st
     try {
       await antigravitySdk.cascade.sendPrompt(prompt)
       logFn(`Task prompt sent via Antigravity SDK (cascade.sendPrompt)`)
+      // Start plan monitor — will pause for review before proceeding
+      startPlanMonitor(taskId, logFn)
       return
     } catch (e) {
       logFn(`Antigravity SDK sendPrompt failed: ${e instanceof Error ? e.message : String(e)}`)
-      // Try headless cascade as fallback
       try {
         const cascadeId = await antigravitySdk.ls.createCascade({ text: prompt })
         await antigravitySdk.ls.focusCascade(cascadeId)
         logFn(`Task prompt sent via Antigravity SDK (ls.createCascade) — cascade ${cascadeId}`)
+        startPlanMonitor(taskId, logFn)
         return
       } catch (e2) {
         logFn(`Antigravity SDK createCascade failed: ${e2 instanceof Error ? e2.message : String(e2)}`)
@@ -62,30 +199,22 @@ async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: st
     }
   }
 
-  // Strategy 2: VS Code chat commands (works in VS Code Copilot, Cursor, possibly Antigravity)
-  const chatCommands = [
-    'workbench.action.chat.open',
-    'agent.openChat',
-  ]
-
+  // Strategy 2: VS Code chat commands
+  const chatCommands = ['workbench.action.chat.open', 'agent.openChat']
   for (const cmd of chatCommands) {
     try {
       await vscode.commands.executeCommand(cmd, { query: prompt, isPartialQuery: false })
       logFn(`Task prompt sent via ${cmd}`)
       return
     } catch {
-      // Try next command
+      // Try next
     }
   }
 
   // Strategy 3: Clipboard fallback
   logFn('All chat injection methods failed, using clipboard fallback')
   await vscode.env.clipboard.writeText(prompt)
-  try {
-    await vscode.commands.executeCommand('workbench.action.chat.open')
-  } catch {
-    // ignore
-  }
+  try { await vscode.commands.executeCommand('workbench.action.chat.open') } catch { /* ignore */ }
   vscode.window.showInformationMessage('Cortex: Task prompt copied — paste into AI chat (Cmd+V)')
 }
 
@@ -214,16 +343,46 @@ export function activate(context: vscode.ExtensionContext): void {
       })
     })
 
-    // Forward task.completed to webview
+    // Forward task.completed to webview + handle review approvals
     client.on('task.completed', (msg: Record<string, unknown>) => {
-      log(`Task completed: ${msg['taskId']} by ${msg['agentId']}`)
+      const completedTaskId = msg['taskId'] as string
+      const completedBy = msg['agentId'] as string
+      const result = msg['result'] as Record<string, unknown> | undefined
+      log(`Task completed: ${completedTaskId} by ${completedBy}`)
       forwardToWebview('taskUpdate', msg)
+
+      // Check if this is a review task completion → approve/reject the parent
+      const parentTaskId = (msg['parentTaskId'] as string) ?? (result?.['originalTaskId'] as string)
+      const reviewResult = (result?.['verdict'] as string) ?? (result?.['status'] as string) ?? 'approved'
+      const feedback = (result?.['feedback'] as string) ?? (result?.['message'] as string) ?? ''
+
+      if (parentTaskId && pendingReviews.has(parentTaskId)) {
+        if (reviewResult === 'approved' || reviewResult === 'approve') {
+          log(`Review APPROVED for task ${parentTaskId} by ${completedBy}`)
+          vscode.window.showInformationMessage(`Cortex: Review approved by ${completedBy} — proceeding with plan`)
+          proceedAfterApproval(parentTaskId, log)
+          pendingReviews.delete(parentTaskId)
+        } else {
+          log(`Review REJECTED for task ${parentTaskId}: ${feedback}`)
+          vscode.window.showWarningMessage(`Cortex: Review rejected by ${completedBy} — sending feedback`)
+          sendReviewFeedback(parentTaskId, feedback || 'Reviewer requested changes. Please revise.', log)
+        }
+      }
     })
 
-    // Forward task.progress to webview
+    // Forward task.progress to webview + handle review feedback
     client.on('task.progress', (msg: Record<string, unknown>) => {
       log(`Task progress: ${msg['taskId']} — ${msg['message']} (${msg['percent'] ?? '?'}%)`)
       forwardToWebview('taskUpdate', msg)
+
+      // Check for review feedback mid-progress (reviewer sends inline feedback)
+      const progressMsg = msg['message'] as string
+      const parentTaskId = msg['parentTaskId'] as string
+      if (parentTaskId && pendingReviews.has(parentTaskId) && progressMsg?.includes('[feedback]')) {
+        const feedback = progressMsg.replace('[feedback]', '').trim()
+        log(`Inline review feedback for ${parentTaskId}: ${feedback}`)
+        sendReviewFeedback(parentTaskId, feedback, log)
+      }
     })
 
     client.on('agent.online', (msg: Record<string, unknown>) => {

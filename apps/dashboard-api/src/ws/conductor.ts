@@ -320,6 +320,53 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       break
     }
 
+    case 'task.create': {
+      // Create task via WebSocket (used by extension for review sub-tasks)
+      const title = msg['title'] as string
+      if (!title) break
+      const newId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      const assignTo = msg['assignTo'] as string | undefined
+      const parentTaskId = msg['parentTaskId'] as string | undefined
+      const description = (msg['description'] as string) ?? ''
+      const priority = (msg['priority'] as number) ?? 5
+      const context = (msg['context'] as string) ?? '{}'
+
+      db.prepare(`
+        INSERT INTO conductor_tasks
+          (id, title, description, priority, assigned_to_agent, created_by_agent,
+           parent_task_id, context, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(newId, title, description, priority, assignTo ?? null, agent.agentId,
+        parentTaskId ?? null, context, assignTo ? 'assigned' : 'pending')
+
+      console.log(`[ws] task.create: ${newId} "${title}" by ${agent.agentId} → ${assignTo ?? 'unassigned'}`)
+
+      // Push to assigned agent
+      if (assignTo) {
+        pushTaskToAgent(assignTo, newId, title, description)
+      }
+
+      // Confirm back to creator
+      agent.ws.send(JSON.stringify({
+        type: 'task.created',
+        taskId: newId,
+        title,
+        assignedTo: assignTo,
+        parentTaskId,
+        timestamp: new Date().toISOString(),
+      }))
+
+      // Broadcast update
+      broadcastToOwner(agent.apiKeyOwner, {
+        type: 'task.assigned',
+        taskId: newId,
+        title,
+        description,
+        timestamp: new Date().toISOString(),
+      }, assignTo ? undefined : agent.agentId)
+      break
+    }
+
     case 'message': {
       // Agent-to-agent messaging (same owner only)
       const targetId = msg['to'] as string | undefined

@@ -122,7 +122,9 @@ tasksRouter.post('/', async (c) => {
       ).run(id, createdByAgent ?? null, 'assigned', `Assigned to ${assignTo}`)
 
       // Push real-time WebSocket notification to the assigned agent
-      pushTaskToAgent(assignTo, id, title, description ?? '')
+      console.log(`[tasks] Pushing task ${id} to agent "${assignTo}"`)
+      const pushed = pushTaskToAgent(assignTo, id, title, description ?? '')
+      console.log(`[tasks] pushTaskToAgent result: ${pushed}`)
     }
 
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id)
