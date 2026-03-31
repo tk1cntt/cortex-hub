@@ -4,6 +4,9 @@ import { ConductorClient, type ConnectionState } from './ws-client.js'
 import { CortexWebviewProvider, CortexPanel } from './webview/panel.js'
 // hub-api.ts no longer needed — all data fetched via WS
 
+// Antigravity SDK — optional, only available in Antigravity IDE
+let antigravitySdk: any = null
+
 let client: ConductorClient | null = null
 let statusBarItem: vscode.StatusBarItem
 let sidebarProvider: CortexWebviewProvider | null = null
@@ -35,53 +38,55 @@ function forwardToWebview(type: 'newTask' | 'taskUpdate', payload: Record<string
   CortexPanel.currentPanel?.postMessage(message)
 }
 
-/** Execute a task by sending prompt to IDE's built-in AI (Language Model API) */
-async function executeTaskInChat(prompt: string, taskId: string): Promise<void> {
-  try {
-    // Try VS Code Language Model API (works in VS Code 1.90+, Antigravity, Cursor)
-    const output = vscode.window.createOutputChannel('Cortex Agent')
-    output.appendLine(`[executeTask] Querying available LM models...`)
-    const models = await vscode.lm.selectChatModels()
-    output.appendLine(`[executeTask] Found ${models.length} model(s): ${models.map(m => m.id).join(', ')}`)
-    if (models.length > 0) {
-      const model = models[0]
-      output.appendLine(`[executeTask] Using model: ${model.id}`)
-      output.appendLine(`[executeTask] Sending prompt (${prompt.length} chars)...`)
-      const messages = [vscode.LanguageModelChatMessage.User(prompt)]
-      const response = await model.sendRequest(messages)
+/** Execute a task by injecting prompt into IDE's AI chat */
+async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: string) => void): Promise<void> {
+  logFn(`Executing task ${taskId} via IDE chat...`)
 
-      let result = ''
-      for await (const chunk of response.text) {
-        result += chunk
-        output.append(chunk)
-      }
-      output.appendLine(`\n[executeTask] Done — ${result.length} chars response`)
-
-      // Report completion
-      client?.completeTask(taskId, result.slice(0, 2000))
-      vscode.window.showInformationMessage(`Cortex: Task ${taskId.slice(-8)} completed via ${model.id}`)
+  // Strategy 1: Antigravity SDK — direct prompt injection via Language Server
+  if (antigravitySdk) {
+    try {
+      await antigravitySdk.cascade.sendPrompt(prompt)
+      logFn(`Task prompt sent via Antigravity SDK (cascade.sendPrompt)`)
       return
+    } catch (e) {
+      logFn(`Antigravity SDK sendPrompt failed: ${e instanceof Error ? e.message : String(e)}`)
+      // Try headless cascade as fallback
+      try {
+        const cascadeId = await antigravitySdk.ls.createCascade({ text: prompt })
+        await antigravitySdk.ls.focusCascade(cascadeId)
+        logFn(`Task prompt sent via Antigravity SDK (ls.createCascade) — cascade ${cascadeId}`)
+        return
+      } catch (e2) {
+        logFn(`Antigravity SDK createCascade failed: ${e2 instanceof Error ? e2.message : String(e2)}`)
+      }
     }
-    output.appendLine(`[executeTask] No LM models available, falling back to clipboard`)
-  } catch (e: unknown) {
-    const err = e instanceof Error ? e.message : String(e)
-    const output = vscode.window.createOutputChannel('Cortex Agent')
-    output.appendLine(`[executeTask] LM API error: ${err}`)
   }
 
-  // Fallback: copy prompt to clipboard + open chat panel
+  // Strategy 2: VS Code chat commands (works in VS Code Copilot, Cursor, possibly Antigravity)
+  const chatCommands = [
+    'workbench.action.chat.open',
+    'agent.openChat',
+  ]
+
+  for (const cmd of chatCommands) {
+    try {
+      await vscode.commands.executeCommand(cmd, { query: prompt, isPartialQuery: false })
+      logFn(`Task prompt sent via ${cmd}`)
+      return
+    } catch {
+      // Try next command
+    }
+  }
+
+  // Strategy 3: Clipboard fallback
+  logFn('All chat injection methods failed, using clipboard fallback')
   await vscode.env.clipboard.writeText(prompt)
-  // Try common chat commands
   try {
     await vscode.commands.executeCommand('workbench.action.chat.open')
   } catch {
-    try {
-      await vscode.commands.executeCommand('antigravity.openChat')
-    } catch {
-      // ignore
-    }
+    // ignore
   }
-  vscode.window.showInformationMessage('Cortex: Task prompt copied to clipboard. Paste into AI chat to execute.')
+  vscode.window.showInformationMessage('Cortex: Task prompt copied — paste into AI chat (Cmd+V)')
 }
 
 /** Request data via WS — server responds with data.response */
@@ -91,6 +96,26 @@ function refreshHubData(): void {
 
 export function activate(context: vscode.ExtensionContext): void {
   const config = getConfig()
+
+  // Initialize Antigravity SDK if running in Antigravity IDE
+  if (config.ide === 'antigravity') {
+    try {
+      // Dynamic import — antigravity-sdk is optional peer dependency
+      const { AntigravitySDK } = require('antigravity-sdk') as { AntigravitySDK: any }
+      const sdk = new AntigravitySDK(context)
+      sdk.initialize().then(() => {
+        antigravitySdk = sdk
+        context.subscriptions.push(sdk)
+        vscode.window.showInformationMessage('Cortex: Antigravity SDK initialized — auto-prompt enabled')
+      }).catch((err: Error) => {
+        // SDK not available — fall back to command-based approach
+        const out = vscode.window.createOutputChannel('Cortex Agent')
+        out.appendLine(`[Antigravity SDK] Init failed: ${err.message}`)
+      })
+    } catch {
+      // antigravity-sdk not installed — silent fallback
+    }
+  }
 
   // Status bar — shows agent ID + connection state
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100)
@@ -184,7 +209,7 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage(`Cortex: Executing "${title}"`)
 
       const prompt = `[Cortex Task ${taskId}]\n\n${description}`
-      executeTaskInChat(prompt, taskId).catch((e) => {
+      executeTaskInChat(prompt, taskId, log).catch((e) => {
         log(`Task execution error: ${e instanceof Error ? e.message : String(e)}`)
       })
     })

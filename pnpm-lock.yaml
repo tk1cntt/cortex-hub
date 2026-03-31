@@ -54,6 +54,10 @@ importers:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+    optionalDependencies:
+      antigravity-sdk:
+        specifier: ^1.7.0
+        version: 1.7.0(@types/vscode@1.110.0)
 
   apps/dashboard-api:
     dependencies:
@@ -1405,6 +1409,12 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
+  antigravity-sdk@1.7.0:
+    resolution: {integrity: sha512-aPhIym0oEThRLWTCojGGBBNcaAPqDxz5/sQoyY2Hsq2KmRtNBimgzyQEJ6dqtQCECRfSpJWEk/oscKFlIQUlGQ==}
+    engines: {node: '>=16.0.0'}
+    peerDependencies:
+      '@types/vscode': ^1.85.0
+
   anymatch@3.1.3:
     resolution: {integrity: sha512-KMReFUr0B4t+D+OBkjR3KYqvocp2XaSzO55UcB6mgQMd3KbcE+mWTyvVV7D/zsdEbNnV6acZUutkiHQXvTr1Rw==}
     engines: {node: '>= 8'}
@@ -2576,6 +2586,9 @@ packages:
   source-map@0.6.1:
     resolution: {integrity: sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g==}
     engines: {node: '>=0.10.0'}
+
+  sql.js@1.14.1:
+    resolution: {integrity: sha512-gcj8zBWU5cFsi9WUP+4bFNXAyF1iRpA3LLyS/DP5xlrNzGmPIizUeBggKa8DbDwdqaKwUcTEnChtd2grWo/x/A==}
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
@@ -3795,6 +3808,12 @@ snapshots:
       color-convert: 2.0.1
 
   ansi-styles@6.2.3: {}
+
+  antigravity-sdk@1.7.0(@types/vscode@1.110.0):
+    dependencies:
+      '@types/vscode': 1.110.0
+      sql.js: 1.14.1
+    optional: true
 
   anymatch@3.1.3:
     dependencies:
@@ -5042,6 +5061,9 @@ snapshots:
   source-map-js@1.2.1: {}
 
   source-map@0.6.1: {}
+
+  sql.js@1.14.1:
+    optional: true
 
   stackback@0.0.2: {}
 

@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
+import { pushTaskToAgent } from '../ws/conductor.js'
 
 export const tasksRouter = new Hono()
 
@@ -119,6 +120,9 @@ tasksRouter.post('/', async (c) => {
       db.prepare(
         'INSERT INTO conductor_task_logs (task_id, agent_id, action, message) VALUES (?, ?, ?, ?)',
       ).run(id, createdByAgent ?? null, 'assigned', `Assigned to ${assignTo}`)
+
+      // Push real-time WebSocket notification to the assigned agent
+      pushTaskToAgent(assignTo, id, title, description ?? '')
     }
 
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id)
