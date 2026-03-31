@@ -10,6 +10,7 @@ import {
   cancelConductorTask,
   deleteConductorTask,
   type ConductorTask,
+  type ConductorTaskLog,
   type ConductorAgent,
 } from '@/lib/api'
 import styles from './page.module.css'
@@ -618,6 +619,90 @@ function PipelineRow({
   )
 }
 
+/** Timeline for a pipeline root task — fetches and renders task logs */
+function NarrativeTimeline({ taskId }: { taskId: string }) {
+  const [logs, setLogs] = useState<ConductorTaskLog[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchLogs = async () => {
+      try {
+        const res = await fetch(`/api/conductor/${taskId}`)
+        if (!res.ok || cancelled) return
+        const d = await res.json()
+        const allLogs: ConductorTaskLog[] = d.logs ?? []
+        // Filter to meaningful actions (exclude progress noise)
+        const meaningful = allLogs.filter((l) =>
+          ['created', 'delegated', 'accepted', 'completed', 'rejected', 'revision', 'assigned', 'failed', 'cancelled'].includes(l.action)
+        )
+        if (!cancelled) setLogs(meaningful)
+      } catch { /* ignore */ }
+      if (!cancelled) setLoading(false)
+    }
+    fetchLogs()
+    return () => { cancelled = true }
+  }, [taskId])
+
+  const actionDotClass = (action: string) => {
+    if (action === 'created') return styles.timelineDotCreated
+    if (action === 'delegated' || action === 'assigned') return styles.timelineDotDelegated
+    if (action === 'accepted') return styles.timelineDotAccepted
+    if (action === 'completed') return styles.timelineDotCompleted
+    if (action === 'rejected' || action === 'failed' || action === 'cancelled') return styles.timelineDotRejected
+    if (action === 'revision') return styles.timelineDotRevision
+    return styles.timelineDotProgress
+  }
+
+  const actionTextClass = (action: string) => {
+    if (action === 'created') return styles.timelineActionCreated
+    if (action === 'delegated' || action === 'assigned') return styles.timelineActionDelegated
+    if (action === 'accepted') return styles.timelineActionAccepted
+    if (action === 'completed') return styles.timelineActionCompleted
+    if (action === 'rejected' || action === 'failed' || action === 'cancelled') return styles.timelineActionRejected
+    if (action === 'revision') return styles.timelineActionRevision
+    return styles.timelineActionProgress
+  }
+
+  if (loading) {
+    return (
+      <div className={styles.timelineSection}>
+        <h4 className={styles.timelineTitle}>Timeline</h4>
+        <div className={styles.timelineLoading}>Loading timeline...</div>
+      </div>
+    )
+  }
+
+  if (logs.length === 0) return null
+
+  return (
+    <div className={styles.timelineSection}>
+      <h4 className={styles.timelineTitle}>Timeline</h4>
+      <div className={styles.timelineList}>
+        {logs.map((log) => (
+          <div key={log.id} className={styles.timelineItem}>
+            <span className={`${styles.timelineDot} ${actionDotClass(log.action)}`} />
+            <div className={styles.timelineContent}>
+              <div>
+                <span className={`${styles.timelineAction} ${actionTextClass(log.action)}`}>
+                  {log.action}
+                </span>
+                {log.agent_id && (
+                  <code className={styles.timelineAgent}>{log.agent_id}</code>
+                )}
+              </div>
+              {log.message && <div className={styles.timelineMsg}>{log.message}</div>}
+            </div>
+            <span className={styles.timelineTime}>
+              {formatTimeAgo(log.created_at)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** Pipeline view — renders task tree with delegation arrows */
 function PipelineView({
   tasks,
@@ -666,42 +751,55 @@ function PipelineView({
           {withChildren.map((rootNode) => {
             // Collect this root and all its descendants
             const subtreeFlat = flattenTree([rootNode])
-            // Build narrative steps
-            const narrativeSteps: string[] = []
             const root = rootNode.task
-            if (root.created_by_agent) {
-              narrativeSteps.push(`${root.created_by_agent} created "${root.title}"`)
-            }
-            for (const child of rootNode.children) {
-              const t = child.task
-              let step = ''
-              if (t.created_by_agent) step += `${t.created_by_agent} delegated`
-              else step += 'Delegated'
-              step += ` → ${t.assigned_to_agent ?? 'unassigned'}`
-              if (t.required_capabilities) {
-                try {
-                  const caps = JSON.parse(t.required_capabilities)
-                  if (Array.isArray(caps) && caps.length > 0) step += ` (${caps.join(', ')})`
-                } catch { /* ignore */ }
-              }
-              if (t.status === 'completed' && t.accepted_at && t.completed_at) {
-                const dur = Math.round((new Date(t.completed_at).getTime() - new Date(t.accepted_at).getTime()) / 60000)
-                step += ` → completed in ${dur}m`
-                if (t.completed_by && t.completed_by !== t.assigned_to_agent) {
-                  step += ` → reviewed by ${t.completed_by}`
-                }
-              } else if (t.status === 'in_progress') {
-                step += ' → in progress'
-              } else if (t.status === 'failed') {
-                step += ' → failed'
-              } else {
-                step += ` → ${t.status}`
-              }
-              narrativeSteps.push(step)
+            const subtaskCount = rootNode.children.length
+            const completedCount = rootNode.children.filter((c) => c.task.status === 'completed').length
+            const allComplete = subtaskCount > 0 && completedCount === subtaskCount
+
+            // Parse required capabilities from root
+            let rootCaps: string[] = []
+            if (root.required_capabilities) {
+              try {
+                const parsed = JSON.parse(root.required_capabilities)
+                if (Array.isArray(parsed)) rootCaps = parsed
+              } catch { /* ignore */ }
             }
 
             return (
               <div key={rootNode.task.id}>
+                {/* Orchestrator Header */}
+                <div className={styles.orchestratorHeader}>
+                  <div className={styles.orchestratorInfo}>
+                    <div className={styles.orchestratorAgent}>
+                      Orchestrator: <code>{root.created_by_agent ?? 'unknown'}</code>
+                    </div>
+                    {rootCaps.length > 0 && (
+                      <div className={styles.orchestratorCaps}>
+                        {rootCaps.map((cap) => {
+                          const capColor = ['backend','frontend','database','server'].includes(cap) ? styles.capCode
+                            : ['review','testing'].includes(cap) ? styles.capReview
+                            : ['devops','docker','deploy'].includes(cap) ? styles.capDeploy
+                            : ['design'].includes(cap) ? styles.capDesign
+                            : ['security'].includes(cap) ? styles.capSecurity : ''
+                          return <span key={cap} className={`${styles.capBadge} ${capColor}`}>{cap}</span>
+                        })}
+                      </div>
+                    )}
+                    {root.description && (
+                      <div className={styles.orchestratorOutcome}>
+                        {root.description.slice(0, 200)}{root.description.length > 200 ? '...' : ''}
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.orchestratorMeta}>
+                    <span className={`${styles.orchestratorProgress} ${allComplete ? styles.orchestratorProgressComplete : ''}`}>
+                      {completedCount}/{subtaskCount} subtasks
+                    </span>
+                    <StatusBadge status={root.status} />
+                  </div>
+                </div>
+
+                {/* Subtask rows */}
                 {subtreeFlat.map((node) => {
                   const siblings = subtreeFlat.filter((n) =>
                     n.depth === node.depth && n.task.parent_task_id === node.task.parent_task_id
@@ -716,17 +814,9 @@ function PipelineView({
                     />
                   )
                 })}
-                {/* Narrative summary */}
-                {narrativeSteps.length > 1 && (
-                  <div className={styles.pipelineNarrative}>
-                    {narrativeSteps.map((step, i) => (
-                      <span key={i} className={styles.narrativeStep}>
-                        {i > 0 && <span className={styles.narrativeArrow}> → </span>}
-                        {step}
-                      </span>
-                    ))}
-                  </div>
-                )}
+
+                {/* Narrative Timeline */}
+                <NarrativeTimeline taskId={root.id} />
               </div>
             )
           })}
@@ -909,9 +999,14 @@ export default function ConductorPage() {
   const onlineCount = agentsData?.online ?? agents.length
 
   const filteredTasks = useMemo(() => {
-    if (statusFilter === 'all') return allTasks
-    return allTasks.filter((t) => t.status === statusFilter)
-  }, [allTasks, statusFilter])
+    const byStatus = statusFilter === 'all' ? allTasks : allTasks.filter((t) => t.status === statusFilter)
+    if (viewMode === 'list') {
+      // List view: standalone tasks only (no parent_task_id)
+      return byStatus.filter((t) => !t.parent_task_id)
+    }
+    // Pipeline view: all tasks (tree built from parent_task_id relationships)
+    return byStatus
+  }, [allTasks, statusFilter, viewMode])
 
   const counts = useMemo(() => ({
     all: allTasks.length,

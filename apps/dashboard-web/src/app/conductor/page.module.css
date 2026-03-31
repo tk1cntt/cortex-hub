@@ -1289,3 +1289,205 @@
   0%, 100% { opacity: 0.8; box-shadow: none; }
   50% { opacity: 1; box-shadow: 0 0 6px rgba(59, 130, 246, 0.4); }
 }
+
+/* ── Orchestrator Header (Change 2A) ── */
+.orchestratorHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: rgba(99, 102, 241, 0.04);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.orchestratorInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.orchestratorAgent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.orchestratorAgent code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--primary);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.orchestratorOutcome {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.orchestratorCaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.orchestratorMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.orchestratorProgress {
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.orchestratorProgressComplete {
+  color: var(--status-healthy, #10b981);
+  font-weight: 600;
+}
+
+/* ── Narrative Timeline (Change 2B) ── */
+.timelineSection {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px dashed var(--border-subtle);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.timelineTitle {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 var(--space-3) 0;
+}
+
+.timelineList {
+  position: relative;
+  padding-left: 20px;
+}
+
+.timelineList::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--border-subtle);
+  border-radius: 1px;
+}
+
+.timelineItem {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  animation: fadeInUp 0.2s ease both;
+}
+
+.timelineItem:last-child {
+  padding-bottom: 0;
+}
+
+.timelineDot {
+  position: absolute;
+  left: -17px;
+  top: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-secondary);
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.timelineDotCreated { background: #6366f1; }
+.timelineDotDelegated { background: #3b82f6; }
+.timelineDotAccepted { background: #f59e0b; }
+.timelineDotCompleted { background: #10b981; }
+.timelineDotRejected { background: #ef4444; }
+.timelineDotRevision { background: #f97316; }
+.timelineDotProgress { background: var(--text-tertiary); }
+
+.timelineContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.timelineAction {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-right: var(--space-2);
+}
+
+.timelineActionCreated { color: #6366f1; }
+.timelineActionDelegated { color: #3b82f6; }
+.timelineActionAccepted { color: #f59e0b; }
+.timelineActionCompleted { color: #10b981; }
+.timelineActionRejected { color: #ef4444; }
+.timelineActionRevision { color: #f97316; }
+.timelineActionProgress { color: var(--text-tertiary); }
+
+.timelineAgent {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--accent-primary);
+  padding: 0 4px;
+  background: var(--accent-glow);
+  border-radius: var(--radius-sm);
+}
+
+.timelineMsg {
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 2px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.timelineTime {
+  font-size: 0.5625rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.timelineEmpty {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+  padding: var(--space-2) 0;
+}
+
+.timelineLoading {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  padding: var(--space-2) 0;
+  animation: pulse 1.5s infinite;
+}
