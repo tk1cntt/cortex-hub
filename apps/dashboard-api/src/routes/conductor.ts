@@ -219,8 +219,17 @@ function checkParentCompletion(parentId: string): void {
 
   if (subtasks.length === 0) return
 
-  const allComplete = subtasks.every((t) => t.status === 'completed')
-  const anyFailed = subtasks.some((t) => t.status === 'failed')
+  // Only consider non-cancelled subtasks
+  const activeSubtasks = subtasks.filter((t) => t.status !== 'cancelled')
+  if (activeSubtasks.length === 0) return
+
+  // Parent completes ONLY when ALL active subtasks are completed (no pending/blocked/in_progress)
+  const allComplete = activeSubtasks.every((t) => t.status === 'completed' || t.status === 'approved')
+  const anyPending = activeSubtasks.some((t) => ['pending', 'blocked', 'assigned', 'accepted', 'in_progress', 'review'].includes(t.status))
+  const anyFailed = activeSubtasks.some((t) => t.status === 'failed')
+
+  // Don't auto-complete if any subtask is still in progress
+  if (anyPending) return
 
   if (allComplete) {
     const subtaskResults = subtasks.map((t) => ({
