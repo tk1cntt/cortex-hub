@@ -14,7 +14,7 @@ At the START of every conversation, before doing anything else:
 
 2. If `recentChanges.count > 0` in the response, warn the user and run `git pull` before editing any affected files.
 
-3. Read `STATE.md` for current task progress.
+3. Call `cortex_knowledge_search` with query "session summary current progress next session" to find latest project progress stored by previous sessions. Also call `cortex_memory_search` to recall agent-specific context.
 
 ## Before editing shared files
 
@@ -69,7 +69,9 @@ cortex_session_start(repo: "https://github.com/lktiep/cortex-hub.git", mode: "de
 
 Then:
 - If `recentChanges.count > 0` in the response, warn the user and run `git pull`
-- Read `STATE.md` for current task progress (if it exists)
+- Call `cortex_knowledge_search` with "session summary progress next session" to restore project context from previous sessions
+- Call `cortex_memory_search` to recall agent-specific decisions and lessons
+- Summarize what you found and confirm with the user before starting work
 
 ### Agent Identity (send with session_start if available)
 
