@@ -458,7 +458,16 @@ conductorRouter.get('/:id', (c) => {
       'SELECT * FROM conductor_tasks WHERE parent_task_id = ? ORDER BY priority ASC, created_at ASC'
     ).all(id) as TaskRow[]
 
-    return c.json({ task, subtasks: subtasks.length > 0 ? subtasks : undefined })
+    // Include recent progress logs
+    const logs = db.prepare(
+      'SELECT * FROM conductor_task_logs WHERE task_id = ? ORDER BY id DESC LIMIT 30'
+    ).all(id) as { id: number; task_id: string; agent_id: string | null; action: string; message: string | null; created_at: string }[]
+
+    return c.json({
+      task,
+      subtasks: subtasks.length > 0 ? subtasks : undefined,
+      logs: logs.reverse(),
+    })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

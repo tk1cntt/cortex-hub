@@ -189,16 +189,33 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       })
       break
 
-    case 'task.progress':
+    case 'task.progress': {
+      const taskId = msg['taskId'] as string
+      const message = (msg['message'] as string || '').slice(0, 4000)
+      // Persist to task logs (keep last 50 per task)
+      if (taskId && message) {
+        db.prepare(
+          'INSERT INTO conductor_task_logs (task_id, agent_id, action, message) VALUES (?, ?, ?, ?)'
+        ).run(taskId, agent.agentId, 'progress', message)
+        // Prune old progress logs (keep last 50)
+        db.prepare(
+          "DELETE FROM conductor_task_logs WHERE task_id = ? AND action = 'progress' AND id NOT IN (SELECT id FROM conductor_task_logs WHERE task_id = ? AND action = 'progress' ORDER BY id DESC LIMIT 50)"
+        ).run(taskId, taskId)
+        // Update task status to in_progress if still accepted
+        db.prepare(
+          "UPDATE conductor_tasks SET status = 'in_progress' WHERE id = ? AND status = 'accepted'"
+        ).run(taskId)
+      }
       broadcastToOwner(agent.apiKeyOwner, {
         type: 'task.progress',
-        taskId: msg['taskId'],
+        taskId,
         agentId: agent.agentId,
-        message: msg['message'],
+        message,
         percent: msg['percent'],
         timestamp: new Date().toISOString(),
       })
       break
+    }
 
     case 'task.complete':
       db.prepare(

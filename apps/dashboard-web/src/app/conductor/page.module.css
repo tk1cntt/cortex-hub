@@ -1031,6 +1031,69 @@
   line-height: 1;
 }
 
+/* Live Output Terminal */
+.liveOutput {
+  background: #0d1117;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: #c9d1d9;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  scroll-behavior: smooth;
+}
+
+.liveOutput::-webkit-scrollbar {
+  width: 6px;
+}
+
+.liveOutput::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.liveOutput::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.liveOutputLine {
+  padding: 1px 0;
+  animation: fadeInUp 0.15s ease both;
+}
+
+.liveOutputTime {
+  color: #484f58;
+  margin-right: var(--space-2);
+  font-size: 0.625rem;
+}
+
+.liveOutputCursor {
+  color: var(--primary);
+  animation: blink 1s step-end infinite;
+}
+
+.liveOutputEmpty {
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  font-style: italic;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-subtle);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* ── Premium Animations ── */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(12px); }

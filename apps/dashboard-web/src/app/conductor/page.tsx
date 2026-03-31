@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
 import {
@@ -12,6 +12,7 @@ import {
   type ConductorTask,
   type ConductorAgent,
 } from '@/lib/api'
+import { config } from '@/lib/config'
 import styles from './page.module.css'
 
 // ── Types ──
@@ -187,6 +188,51 @@ function TaskCard({
   )
 }
 
+/** Live output panel — polls task logs and auto-scrolls */
+function LiveOutput({ taskId, isActive }: { taskId: string; isActive: boolean }) {
+  const { data } = useSWR(
+    isActive ? `task-logs-${taskId}` : null,
+    async () => {
+      const res = await fetch(`${config.api.base}/api/conductor/${taskId}`)
+      if (!res.ok) return { logs: [] }
+      const d = await res.json()
+      return { logs: d.logs ?? [] }
+    },
+    { refreshInterval: isActive ? 2000 : 0 }
+  )
+  const scrollRef = useRef<HTMLPreElement>(null)
+  const logs = data?.logs ?? []
+  const progressLogs = logs.filter((l: { action: string }) => l.action === 'progress')
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [progressLogs.length])
+
+  if (progressLogs.length === 0) {
+    return (
+      <div className={styles.liveOutputEmpty}>
+        {isActive ? 'Waiting for output...' : 'No output recorded'}
+      </div>
+    )
+  }
+
+  return (
+    <pre ref={scrollRef} className={styles.liveOutput}>
+      {progressLogs.map((log: { id: number; message: string; created_at: string }) => (
+        <div key={log.id} className={styles.liveOutputLine}>
+          <span className={styles.liveOutputTime}>
+            {new Date(log.created_at).toLocaleTimeString()}
+          </span>
+          {log.message}
+        </div>
+      ))}
+      {isActive && <span className={styles.liveOutputCursor}>▊</span>}
+    </pre>
+  )
+}
+
 function TaskDetail({
   task,
   onClose,
@@ -198,6 +244,8 @@ function TaskDetail({
   onCancel: () => void
   onDelete: () => void
 }) {
+  const isRunning = task.status === 'in_progress' || task.status === 'accepted'
+
   return (
     <div className={styles.detailOverlay} onClick={onClose}>
       <div className={styles.detailPanel} onClick={(e) => e.stopPropagation()}>
@@ -327,6 +375,14 @@ function TaskDetail({
               <pre className={styles.detailCode}>{formatJson(task.context)}</pre>
             </div>
           )}
+
+          {/* Live Output */}
+          <div className={styles.detailSection}>
+            <h3 className={styles.detailSectionTitle}>
+              {isRunning ? '● Live Output' : 'Output Log'}
+            </h3>
+            <LiveOutput taskId={task.id} isActive={isRunning} />
+          </div>
 
           {/* Actions */}
           <div className={styles.detailActions}>

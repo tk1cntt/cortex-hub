@@ -882,21 +882,47 @@ run_agent() {
             # Report task accepted
             ws_send "{\"type\":\"task.accept\",\"taskId\":\"$task_id\",\"agentId\":\"$AGENT_ID\",\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}"
 
-            # Execute task in background subshell
+            # Execute task in background subshell with live output streaming
             (
+              task_log_file="$LOG_DIR/task-${task_id}.log"
+
+              # Start output streamer: tails log file and sends progress via WS every 2s
+              (
+                sleep 1  # wait for log file to be created
+                local last_size=0
+                while true; do
+                  if [ -f "$task_log_file" ]; then
+                    local cur_size
+                    cur_size=$(wc -c < "$task_log_file" 2>/dev/null || echo 0)
+                    if [ "$cur_size" -gt "$last_size" ]; then
+                      local chunk
+                      chunk=$(tail -c $((cur_size - last_size)) "$task_log_file" 2>/dev/null | tail -c 2000 | tr '\n' '\012' | sed 's/"/\\"/g' | tr '\012' '\n')
+                      if [ -n "$chunk" ]; then
+                        echo "{\"type\":\"task.progress\",\"taskId\":\"$task_id\",\"agentId\":\"$AGENT_ID\",\"message\":\"$chunk\",\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}" >&7 2>/dev/null || true
+                      fi
+                      last_size=$cur_size
+                    fi
+                  fi
+                  sleep 2
+                done
+              ) &
+              local streamer_pid=$!
+
               exit_code=0
               execute_task "$task_id" "$engine" "$prompt" "$working_dir" && exit_code=0 || exit_code=$?
 
-              task_log_file="$LOG_DIR/task-${task_id}.log"
+              # Stop streamer
+              kill "$streamer_pid" 2>/dev/null || true
+
+              # Send final result
               result=""
               if [ -f "$task_log_file" ]; then
-                result=$(tail -c 500 "$task_log_file" | tr '\n' ' ' | sed 's/"/\\"/g')
+                result=$(tail -c 1000 "$task_log_file" | tr '\n' ' ' | sed 's/"/\\"/g')
               fi
 
               status="completed"
               [ "$exit_code" -ne 0 ] && status="failed"
 
-              # Report task complete/failed back via WebSocket
               echo "{\"type\":\"task.complete\",\"taskId\":\"$task_id\",\"result\":\"$result\",\"timestamp\":\"$(date -u '+%Y-%m-%dT%H:%M:%SZ')\"}" >&7
 
               log_info "Task $task_id $status (exit=$exit_code)"
