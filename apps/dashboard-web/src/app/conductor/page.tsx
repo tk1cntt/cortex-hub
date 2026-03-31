@@ -997,16 +997,26 @@ export default function ConductorPage() {
   const allTasks = data?.tasks ?? []
   const agents = agentsData?.agents ?? []
   const onlineCount = agentsData?.online ?? agents.length
+  const [agentsCollapsed, setAgentsCollapsed] = useState(false)
+
+  // IDs of tasks that are parents of other tasks (have children)
+  const taskIdsWithChildren = useMemo(() => {
+    const ids = new Set<string>()
+    for (const t of allTasks) {
+      if (t.parent_task_id) ids.add(t.parent_task_id)
+    }
+    return ids
+  }, [allTasks])
 
   const filteredTasks = useMemo(() => {
     const byStatus = statusFilter === 'all' ? allTasks : allTasks.filter((t) => t.status === statusFilter)
     if (viewMode === 'list') {
-      // List view: standalone tasks only (no parent_task_id)
-      return byStatus.filter((t) => !t.parent_task_id)
+      // List view: truly standalone tasks (no parent AND no children)
+      return byStatus.filter((t) => !t.parent_task_id && !taskIdsWithChildren.has(t.id))
     }
     // Pipeline view: all tasks (tree built from parent_task_id relationships)
     return byStatus
-  }, [allTasks, statusFilter, viewMode])
+  }, [allTasks, statusFilter, viewMode, taskIdsWithChildren])
 
   const counts = useMemo(() => ({
     all: allTasks.length,
@@ -1049,35 +1059,35 @@ export default function ConductorPage() {
       {/* Stats */}
       <div className={styles.statsGrid}>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>T</span>
+          <span className={styles.statIcon}>📋</span>
           <div>
             <div className={styles.statValue}>{counts.all}</div>
-            <div className={styles.statLabel}>Total Tasks</div>
+            <div className={styles.statLabel}>Total</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>P</span>
+          <span className={styles.statIcon}>⏳</span>
           <div>
             <div className={styles.statValue}>{counts.pending}</div>
             <div className={styles.statLabel}>Pending</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>R</span>
+          <span className={styles.statIcon}>⚡</span>
           <div>
             <div className={styles.statValue}>{counts.in_progress}</div>
             <div className={styles.statLabel}>Running</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>D</span>
+          <span className={styles.statIcon}>✅</span>
           <div>
             <div className={styles.statValue}>{counts.completed}</div>
             <div className={styles.statLabel}>Done</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>F</span>
+          <span className={styles.statIcon}>❌</span>
           <div>
             <div className={styles.statValue}>{counts.failed}</div>
             <div className={styles.statLabel}>Failed</div>
@@ -1089,71 +1099,77 @@ export default function ConductorPage() {
       {agents.length > 0 && (
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>
+            <h2
+              className={`${styles.sectionTitle} ${styles.sectionTitleCollapsible}`}
+              onClick={() => setAgentsCollapsed(!agentsCollapsed)}
+            >
+              <span className={`${styles.collapseIcon} ${agentsCollapsed ? styles.collapseIconClosed : ''}`}>▾</span>
               Agents <span className={styles.filterCount}>{onlineCount} online</span>
             </h2>
           </div>
-          <div className={styles.agentsGrid}>
-            {agents.map((agent: ConductorAgent) => {
-              const ideIcon = agent.ide === 'claude-code' ? 'C' : agent.ide === 'codex' ? 'X' : agent.ide === 'antigravity' ? 'G' : agent.ide === 'cursor' ? 'Cu' : 'A'
-              const ideLabel = agent.ide === 'claude-code' ? 'Claude Code' : agent.ide === 'codex' ? 'OpenAI Codex' : agent.ide === 'antigravity' ? 'Antigravity (Gemini)' : agent.ide === 'cursor' ? 'Cursor' : agent.ide ?? 'Unknown'
-              const ideColor = agent.ide === 'claude-code' ? styles.ideBlue : agent.ide === 'codex' ? styles.ideGreen : agent.ide === 'antigravity' ? styles.idePurple : agent.ide === 'cursor' ? styles.ideOrange : ''
-              const statusLabel = agent.status === 'idle' ? 'Idle' : agent.status === 'busy' ? 'Busy' : 'Online'
-              const statusClass = agent.status === 'idle' ? styles.agentOnline : agent.status === 'busy' ? styles.agentBusy : styles.agentOnline
-              const platform = agent.platform ?? (agent.hostname?.includes('Mac') ? 'macOS' : 'unknown')
+          {!agentsCollapsed && (
+            <div className={styles.agentsGrid}>
+              {agents.map((agent: ConductorAgent) => {
+                const ideIcon = agent.ide === 'claude-code' ? 'C' : agent.ide === 'codex' ? 'X' : agent.ide === 'antigravity' ? 'G' : agent.ide === 'cursor' ? 'Cu' : 'A'
+                const ideLabel = agent.ide === 'claude-code' ? 'Claude Code' : agent.ide === 'codex' ? 'OpenAI Codex' : agent.ide === 'antigravity' ? 'Antigravity (Gemini)' : agent.ide === 'cursor' ? 'Cursor' : agent.ide ?? 'Unknown'
+                const ideColor = agent.ide === 'claude-code' ? styles.ideBlue : agent.ide === 'codex' ? styles.ideGreen : agent.ide === 'antigravity' ? styles.idePurple : agent.ide === 'cursor' ? styles.ideOrange : ''
+                const statusLabel = agent.status === 'idle' ? 'Idle' : agent.status === 'busy' ? 'Busy' : 'Online'
+                const statusClass = agent.status === 'idle' ? styles.agentOnline : agent.status === 'busy' ? styles.agentBusy : styles.agentOnline
+                const platform = agent.platform ?? (agent.hostname?.includes('Mac') ? 'macOS' : 'unknown')
 
-              return (
-                <div key={agent.agentId} className={`card ${styles.agentCard} ${styles.agentCardClickable}`} onClick={() => setSelectedAgent(agent)}>
-                  <div className={styles.agentHeader}>
-                    <span className={`${styles.agentIdeIcon} ${ideColor}`}>{ideIcon}</span>
-                    <div className={styles.agentIdentity}>
-                      <strong className={styles.agentIdText}>{agent.agentId}</strong>
-                      <span className={styles.agentIdeLabel}>{ideLabel}</span>
+                return (
+                  <div key={agent.agentId} className={`card ${styles.agentCard} ${styles.agentCardClickable}`} onClick={() => setSelectedAgent(agent)}>
+                    <div className={styles.agentHeader}>
+                      <span className={`${styles.agentIdeIcon} ${ideColor}`}>{ideIcon}</span>
+                      <div className={styles.agentIdentity}>
+                        <strong className={styles.agentIdText}>{agent.agentId}</strong>
+                        <span className={styles.agentIdeLabel}>{ideLabel}</span>
+                      </div>
+                      <div className={styles.agentStatusBadge}>
+                        <span className={`${styles.agentDot} ${statusClass}`} />
+                        <span className={styles.agentStatusText}>{statusLabel}</span>
+                      </div>
                     </div>
-                    <div className={styles.agentStatusBadge}>
-                      <span className={`${styles.agentDot} ${statusClass}`} />
-                      <span className={styles.agentStatusText}>{statusLabel}</span>
+
+                    <div className={styles.agentDetails}>
+                      <div className={styles.agentDetailRow}>
+                        <span className={styles.agentDetailLabel}>Host</span>
+                        <span className={styles.agentDetailValue}>{agent.hostname ?? '-'}</span>
+                      </div>
+                      <div className={styles.agentDetailRow}>
+                        <span className={styles.agentDetailLabel}>Platform</span>
+                        <span className={styles.agentDetailValue}>{platform}</span>
+                      </div>
+                      <div className={styles.agentDetailRow}>
+                        <span className={styles.agentDetailLabel}>Owner</span>
+                        <span className={styles.agentDetailValue}>{agent.apiKeyOwner}</span>
+                      </div>
+                      <div className={styles.agentDetailRow}>
+                        <span className={styles.agentDetailLabel}>Connected</span>
+                        <span className={styles.agentDetailValue}>{new Date(agent.connectedAt).toLocaleTimeString()}</span>
+                      </div>
                     </div>
+
+                    {/* Capabilities */}
+                    {agent.capabilities && agent.capabilities.length > 0 ? (
+                      <div className={styles.agentCaps}>
+                        {agent.capabilities.map((cap) => {
+                          const capColor = ['backend','frontend','database','server'].includes(cap) ? styles.capCode
+                            : ['review','testing'].includes(cap) ? styles.capReview
+                            : ['devops','docker','deploy'].includes(cap) ? styles.capDeploy
+                            : ['design'].includes(cap) ? styles.capDesign
+                            : ['security'].includes(cap) ? styles.capSecurity : ''
+                          return <span key={cap} className={`${styles.capBadge} ${capColor}`}>{cap}</span>
+                        })}
+                      </div>
+                    ) : (
+                      <div className={styles.agentCapsEmpty}>No capabilities registered</div>
+                    )}
                   </div>
-
-                  <div className={styles.agentDetails}>
-                    <div className={styles.agentDetailRow}>
-                      <span className={styles.agentDetailLabel}>Host</span>
-                      <span className={styles.agentDetailValue}>{agent.hostname ?? '-'}</span>
-                    </div>
-                    <div className={styles.agentDetailRow}>
-                      <span className={styles.agentDetailLabel}>Platform</span>
-                      <span className={styles.agentDetailValue}>{platform}</span>
-                    </div>
-                    <div className={styles.agentDetailRow}>
-                      <span className={styles.agentDetailLabel}>Owner</span>
-                      <span className={styles.agentDetailValue}>{agent.apiKeyOwner}</span>
-                    </div>
-                    <div className={styles.agentDetailRow}>
-                      <span className={styles.agentDetailLabel}>Connected</span>
-                      <span className={styles.agentDetailValue}>{new Date(agent.connectedAt).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-
-                  {/* Capabilities */}
-                  {agent.capabilities && agent.capabilities.length > 0 ? (
-                    <div className={styles.agentCaps}>
-                      {agent.capabilities.map((cap) => {
-                        const capColor = ['backend','frontend','database','server'].includes(cap) ? styles.capCode
-                          : ['review','testing'].includes(cap) ? styles.capReview
-                          : ['devops','docker','deploy'].includes(cap) ? styles.capDeploy
-                          : ['design'].includes(cap) ? styles.capDesign
-                          : ['security'].includes(cap) ? styles.capSecurity : ''
-                        return <span key={cap} className={`${styles.capBadge} ${capColor}`}>{cap}</span>
-                      })}
-                    </div>
-                  ) : (
-                    <div className={styles.agentCapsEmpty}>No capabilities registered</div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -1163,34 +1179,39 @@ export default function ConductorPage() {
           <h2 className={styles.sectionTitle}>Tasks</h2>
           <div className={styles.headerActions}>
             {/* View mode toggle */}
-            <div className={styles.viewToggle}>
-              <button
-                className={`${styles.viewToggleBtn} ${viewMode === 'list' ? styles.viewToggleActive : ''}`}
-                onClick={() => setViewMode('list')}
-                title="List view"
-              >
-                List
-              </button>
-              <button
-                className={`${styles.viewToggleBtn} ${viewMode === 'pipeline' ? styles.viewToggleActive : ''}`}
-                onClick={() => setViewMode('pipeline')}
-                title="Pipeline view"
-              >
-                Pipeline
-              </button>
+            <div className={styles.viewToggleWrap}>
+              <div className={styles.viewToggle}>
+                <button
+                  className={`${styles.viewToggleBtn} ${viewMode === 'list' ? styles.viewToggleActive : ''}`}
+                  onClick={() => setViewMode('list')}
+                  title="Simple standalone tasks"
+                >
+                  📝 List
+                </button>
+                <button
+                  className={`${styles.viewToggleBtn} ${viewMode === 'pipeline' ? styles.viewToggleActive : ''}`}
+                  onClick={() => setViewMode('pipeline')}
+                  title="Multi-agent workflows"
+                >
+                  🔀 Pipeline
+                </button>
+              </div>
+              <span className={styles.viewToggleHint}>
+                {viewMode === 'list' ? 'Simple standalone tasks' : 'Multi-agent workflows'}
+              </span>
             </div>
             <button
               className="btn btn-primary btn-sm"
               onClick={() => setShowCreateForm(true)}
             >
-              + New Task
+              + New
             </button>
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => mutate()}
               disabled={isLoading}
             >
-              {isLoading ? 'Loading...' : 'Refresh'}
+              {isLoading ? '...' : '↻'}
             </button>
           </div>
         </div>

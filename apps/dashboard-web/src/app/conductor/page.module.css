@@ -28,13 +28,14 @@
 
 .statIcon {
   font-size: 1.5rem;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
   transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
 
 .statCard:hover .statIcon {
@@ -83,6 +84,21 @@
 .headerActions {
   display: flex;
   gap: var(--space-2);
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+/* View Toggle Wrapper */
+.viewToggleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viewToggleHint {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  padding-left: 2px;
 }
 
 /* Filter Tabs */
@@ -667,9 +683,193 @@
 }
 
 @media (max-width: 1024px) {
-  .statsGrid { grid-template-columns: repeat(2, 1fr); }
+  .statsGrid { grid-template-columns: repeat(3, 1fr); }
   .tasksGrid { grid-template-columns: 1fr; }
   .agentsGrid { grid-template-columns: 1fr; }
+}
+
+/* ── Mobile (≤768px) ── */
+@media (max-width: 768px) {
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+  }
+
+  .statCard {
+    padding: var(--space-3) var(--space-4);
+    gap: var(--space-3);
+  }
+
+  .statIcon {
+    width: 36px;
+    height: 36px;
+    font-size: 1.25rem;
+  }
+
+  .statValue { font-size: 1.25rem; }
+  .statLabel { font-size: 0.6875rem; }
+
+  .sectionHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .headerActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* Filter tabs: horizontal scroll */
+  .filterTabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: var(--space-1);
+  }
+  .filterTabs::-webkit-scrollbar { display: none; }
+  .filterTab {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Agent cards: horizontal scroll strip */
+  .agentsGrid {
+    display: flex;
+    gap: var(--space-3);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: var(--space-2);
+  }
+  .agentsGrid::-webkit-scrollbar { display: none; }
+  .agentCard {
+    min-width: 240px;
+    flex-shrink: 0;
+  }
+
+  /* Tasks: single column */
+  .tasksGrid {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  /* Detail panel: bottom sheet */
+  .detailOverlay {
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .detailPanel {
+    width: 100vw;
+    max-height: 92vh;
+    height: auto;
+    border-radius: 16px 16px 0 0;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    animation: slideUp 0.25s ease;
+  }
+
+  .detailHeader {
+    padding: var(--space-4);
+  }
+
+  .detailBody {
+    padding: var(--space-4);
+  }
+
+  /* Pipeline: reduce connector padding */
+  .pipelineRow {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .orchestratorHeader {
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .orchestratorMeta {
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* Delegation flow horizontal */
+  .pipelineFlow {
+    display: none;
+  }
+
+  /* Form panel */
+  .formPanel {
+    width: 100vw;
+    border-radius: 16px 16px 0 0;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .formOverlay {
+    align-items: flex-end;
+  }
+
+  .viewToggleHint { display: none; }
+}
+
+/* ── Small Mobile (≤480px) ── */
+@media (max-width: 480px) {
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-1);
+  }
+
+  .statCard {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .statIcon {
+    width: 30px;
+    height: 30px;
+    font-size: 1rem;
+  }
+
+  .statValue { font-size: 1rem; }
+  .statLabel { font-size: 0.5625rem; }
+
+  .section { margin-bottom: var(--space-4); }
+
+  .sectionTitle { font-size: 0.9375rem; }
+
+  .taskCardCompact {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .taskTitle {
+    font-size: 0.8125rem;
+  }
+
+  /* Pipeline connector reduced */
+  .pipelineRow {
+    min-height: 34px;
+  }
+
+  .pipelineTitle {
+    font-size: 0.75rem;
+  }
+
+  .agentCard {
+    min-width: 200px;
+  }
+
+  .detailPanel {
+    max-height: 95vh;
+  }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 
 /* Agents Grid */
@@ -696,6 +896,29 @@
 
 .agentCardClickable {
   cursor: pointer;
+}
+
+/* Collapsible Section */
+.sectionTitleCollapsible {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sectionTitleCollapsible:hover {
+  opacity: 0.8;
+}
+
+.collapseIcon {
+  font-size: 0.875rem;
+  transition: transform 0.2s ease;
+  display: inline-block;
+}
+
+.collapseIconClosed {
+  transform: rotate(-90deg);
 }
 
 /* Agent Detail Panel Identity */
