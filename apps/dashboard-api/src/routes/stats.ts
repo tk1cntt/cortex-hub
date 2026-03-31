@@ -588,7 +588,8 @@ statsRouter.get('/tool-analytics', (c) => {
       summary: {
         totalCalls,
         overallSuccessRate: totalCalls > 0 ? Math.round((totalSuccess / totalCalls) * 100 * 10) / 10 : 0,
-        estimatedTokensSaved: tools.reduce((sum, t) => sum + ((t as unknown as Record<string, number>).estimatedTokensSaved || 0), 0),
+        estimatedTokensSaved: enriched.reduce((sum, t) => sum + (t.estimatedTokensSaved || 0), 0),
+        totalComputeTokens,
         totalDataBytes: totalInputBytes + totalOutputBytes,
         activeAgents: agents.length,
       },
