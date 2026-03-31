@@ -586,3 +586,214 @@
   font-size: 0.75rem;
   color: var(--text-secondary);
 }
+
+.agentCaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.capBadge {
+  font-size: 0.625rem;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: var(--accent-glow);
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+/* View Toggle */
+.viewToggle {
+  display: flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.viewToggleBtn {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--bg-primary);
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.viewToggleBtn:not(:last-child) {
+  border-right: 1px solid var(--border-subtle);
+}
+
+.viewToggleActive {
+  background: var(--primary);
+  color: white;
+}
+
+/* Pipeline View */
+.pipelineCard {
+  padding: 0;
+  overflow: hidden;
+}
+
+.pipelineHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.pipelineHeaderTitle {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.pipelineHeaderCount {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.pipelineRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background 0.15s;
+  min-height: 40px;
+}
+
+.pipelineRow:last-child {
+  border-bottom: none;
+}
+
+.pipelineRow:hover {
+  background: var(--bg-secondary);
+}
+
+.pipelineConnector {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  white-space: pre;
+  flex-shrink: 0;
+}
+
+.pipelineDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotPending { background: var(--status-warning, #f59e0b); }
+.dotInProgress { background: var(--primary, #3b82f6); box-shadow: 0 0 6px var(--primary); animation: pulse 2s infinite; }
+.dotCompleted { background: var(--status-healthy, #10b981); }
+.dotFailed { background: var(--status-error, #ef4444); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.pipelineTitle {
+  flex: 1;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pipelineExpandIcon {
+  font-size: 0.625rem;
+  margin-right: 4px;
+  opacity: 0.5;
+}
+
+/* Delegation flow (inline in pipeline row) */
+.pipelineFlow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.flowAgent {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--accent-primary);
+  padding: 1px 5px;
+  background: var(--accent-glow);
+  border-radius: var(--radius-sm);
+}
+
+.flowAgentDone {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--status-healthy);
+  padding: 1px 5px;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: var(--radius-sm);
+}
+
+.flowArrow {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* Delegation Flow (in detail panel) */
+.delegationFlow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.delegationStep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.delegationStepDone {
+  opacity: 0.8;
+}
+
+.delegationLabel {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 80px;
+}
+
+.delegationAgent {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.delegationArrow {
+  font-size: 1rem;
+  color: var(--text-tertiary);
+  padding-left: 36px;
+  line-height: 1;
+}

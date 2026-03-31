@@ -293,35 +293,113 @@ conductorRouter.post('/auto-assign', async (c) => {
     // Filter out ineligible agents (score < 0) and sort by score descending
     const eligible = scored.filter((a) => a.score >= 0).sort((a, b) => b.score - a.score)
 
-    if (eligible.length === 0) {
+    if (eligible.length > 0) {
+      const bestAgent = eligible[0]!
+
+      // Assign the task
+      db.prepare(`
+        UPDATE conductor_tasks
+        SET assigned_to_agent = ?, assigned_at = datetime('now'), status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'pending' END
+        WHERE id = ?
+      `).run(bestAgent.agentId, taskId)
+
+      // Push notification via WebSocket
+      pushTaskToAgent(bestAgent.agentId, task.id, task.title, task.description)
+      setAgentStatus(bestAgent.agentId, 'busy')
+
+      logTaskAction(taskId, bestAgent.agentId, 'auto_assigned',
+        `Auto-assigned based on capabilities: ${requiredCapabilities.join(', ')}`)
+
+      const updatedTask = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(taskId) as TaskRow
+      return c.json({ task: updatedTask, assigned: true, agentId: bestAgent.agentId })
+    }
+
+    // ── Delegation: no single agent has ALL capabilities → split into subtasks ──
+    // Find which capabilities each agent CAN cover
+    const capCoverage = new Map<string, { agentId: string; caps: string[]; score: number }>()
+    for (const agent of connected) {
+      const matching = requiredCapabilities.filter((req) => agent.capabilities.includes(req))
+      if (matching.length > 0) {
+        capCoverage.set(agent.agentId, {
+          agentId: agent.agentId,
+          caps: matching,
+          score: matching.length + (agent.status === 'idle' ? 1 : 0),
+        })
+      }
+    }
+
+    if (capCoverage.size === 0) {
       return c.json({
-        error: 'No agents match required capabilities',
+        error: 'No agents match any required capabilities',
         assigned: false,
         requiredCapabilities,
       }, 200)
     }
 
-    const bestAgent = eligible[0]
-    if (!bestAgent) {
-      return c.json({ error: 'No eligible agents found', assigned: false }, 200)
+    // Greedy: assign capabilities to best-scoring agents until all covered
+    const uncovered = new Set(requiredCapabilities)
+    const delegation: { agentId: string; caps: string[] }[] = []
+    const sortedAgents = [...capCoverage.values()].sort((a, b) => b.score - a.score)
+
+    for (const agent of sortedAgents) {
+      if (uncovered.size === 0) break
+      const covers = agent.caps.filter((c) => uncovered.has(c))
+      if (covers.length > 0) {
+        delegation.push({ agentId: agent.agentId, caps: covers })
+        covers.forEach((c) => uncovered.delete(c))
+      }
     }
 
-    // Assign the task
+    if (uncovered.size > 0) {
+      return c.json({
+        error: `Cannot cover all capabilities. Missing: ${[...uncovered].join(', ')}`,
+        assigned: false,
+        delegation: delegation.length > 0 ? delegation : undefined,
+        requiredCapabilities,
+      }, 200)
+    }
+
+    // Create subtasks for each delegate agent
+    const subtaskIds: string[] = []
+    for (const del of delegation) {
+      const subId = generateTaskId()
+      db.prepare(`
+        INSERT INTO conductor_tasks
+          (id, title, description, priority, assigned_to_agent, created_by_agent,
+           project_id, parent_task_id, required_capabilities, status, assigned_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
+      `).run(
+        subId,
+        `[Delegated] ${task.title} — ${del.caps.join(', ')}`,
+        `Subtask delegated from ${taskId}. Required capabilities: ${del.caps.join(', ')}`,
+        task.priority,
+        del.agentId,
+        'orchestrator',
+        task.project_id,
+        taskId,
+        JSON.stringify(del.caps),
+      )
+
+      pushTaskToAgent(del.agentId, subId, `[Delegated] ${task.title}`, `Capabilities: ${del.caps.join(', ')}`)
+      setAgentStatus(del.agentId, 'busy')
+      logTaskAction(subId, del.agentId, 'delegated', `Delegated capabilities: ${del.caps.join(', ')}`)
+      subtaskIds.push(subId)
+    }
+
+    // Mark parent task as in_progress (being orchestrated)
     db.prepare(`
-      UPDATE conductor_tasks
-      SET assigned_to_agent = ?, assigned_at = datetime('now'), status = CASE WHEN status = 'blocked' THEN 'blocked' ELSE 'pending' END
-      WHERE id = ?
-    `).run(bestAgent.agentId, taskId)
-
-    // Push notification via WebSocket
-    pushTaskToAgent(bestAgent.agentId, task.id, task.title, task.description)
-    setAgentStatus(bestAgent.agentId, 'busy')
-
-    logTaskAction(taskId, bestAgent.agentId, 'auto_assigned',
-      `Auto-assigned based on capabilities: ${requiredCapabilities.join(', ')}`)
+      UPDATE conductor_tasks SET status = 'in_progress', context = ? WHERE id = ?
+    `).run(JSON.stringify({ delegatedTo: delegation, subtaskIds }), taskId)
+    logTaskAction(taskId, null, 'delegated', `Split into ${delegation.length} subtasks across ${delegation.map((d) => d.agentId).join(', ')}`)
 
     const updatedTask = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(taskId) as TaskRow
-    return c.json({ task: updatedTask, assigned: true, agentId: bestAgent.agentId })
+    return c.json({
+      task: updatedTask,
+      assigned: false,
+      delegated: true,
+      delegation,
+      subtaskIds,
+    })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

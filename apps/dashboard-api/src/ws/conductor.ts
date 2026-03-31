@@ -2,7 +2,37 @@ import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
 import type { Server } from 'http'
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { db } from '../db/client.js'
+
+// ── Load valid capabilities from templates ──
+let validCapabilityIds: Set<string> = new Set()
+try {
+  const templatesPath = resolve(process.cwd(), '../../.cortex/capability-templates.json')
+  const templates = JSON.parse(readFileSync(templatesPath, 'utf-8'))
+  validCapabilityIds = new Set(
+    (templates.available_capabilities as { id: string }[]).map((c) => c.id)
+  )
+} catch {
+  console.warn('[ws] Could not load capability-templates.json — capability validation disabled')
+}
+
+/** Validate and filter capabilities against known templates */
+function validateCapabilities(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const caps = raw.filter((c): c is string => typeof c === 'string')
+  if (validCapabilityIds.size === 0) return caps // no templates loaded, pass through
+  const valid: string[] = []
+  for (const cap of caps) {
+    if (validCapabilityIds.has(cap)) {
+      valid.push(cap)
+    } else {
+      console.warn(`[ws] Unknown capability ignored: "${cap}"`)
+    }
+  }
+  return valid
+}
 
 interface ConnectedAgent {
   ws: WebSocket
@@ -51,12 +81,13 @@ export function setupConductorWebSocket(server: Server) {
     }
     const apiKeyOwner = keyRow.name
 
-    let capabilities: string[] = []
+    let parsedCaps: unknown = []
     try {
-      capabilities = JSON.parse(capabilitiesRaw) as string[]
+      parsedCaps = JSON.parse(decodeURIComponent(capabilitiesRaw))
     } catch {
-      capabilities = []
+      try { parsedCaps = JSON.parse(capabilitiesRaw) } catch { parsedCaps = [] }
     }
+    const capabilities = validateCapabilities(parsedCaps)
 
     // Register agent connection
     const agent: ConnectedAgent = {
@@ -189,11 +220,15 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       break
 
     case 'capabilities.update': {
-      // Allow agents to update their capabilities at runtime
-      const caps = msg['capabilities']
-      if (Array.isArray(caps)) {
-        agent.capabilities = caps as string[]
-      }
+      // Allow agents to update their capabilities at runtime (validated)
+      const validated = validateCapabilities(msg['capabilities'])
+      agent.capabilities = validated
+      broadcastToOwner(agent.apiKeyOwner, {
+        type: 'agent.capabilities_updated',
+        agentId: agent.agentId,
+        capabilities: validated,
+        timestamp: new Date().toISOString(),
+      }, agent.agentId)
       break
     }
 
