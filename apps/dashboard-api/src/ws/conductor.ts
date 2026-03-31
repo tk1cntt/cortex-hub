@@ -428,6 +428,7 @@ export function pushTaskToAgent(
   title: string,
   description: string,
 ): boolean {
+  console.log(`[ws] pushTaskToAgent: looking for "${assignedTo}" in ${agents.size} agents: [${[...agents.keys()].join(', ')}]`)
   for (const [id, agent] of agents) {
     if (id === assignedTo && agent.ws.readyState === WebSocket.OPEN) {
       agent.ws.send(
@@ -439,9 +440,11 @@ export function pushTaskToAgent(
           timestamp: new Date().toISOString(),
         }),
       )
+      console.log(`[ws] pushTaskToAgent: sent task.assigned to ${assignedTo}`)
       return true
     }
   }
+  console.log(`[ws] pushTaskToAgent: agent "${assignedTo}" not found or WS not open`)
   return false
 }
 
