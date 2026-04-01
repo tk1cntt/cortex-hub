@@ -34,6 +34,24 @@ export interface StrategySubtask {
   priority?: number
 }
 
+/** Structured finding from agent research/analysis */
+export interface StructuredFinding {
+  id: string
+  title: string
+  description: string
+  severity: 'critical' | 'high' | 'medium' | 'low' | 'info'
+  category: string
+  evidence: string[]
+  proposal: string
+  effort: 'trivial' | 'small' | 'medium' | 'large'
+}
+
+/** Structured task result with findings */
+export interface StructuredTaskResult {
+  summary: string
+  findings: StructuredFinding[]
+}
+
 /** Task briefing acceptance criteria item */
 export interface AcceptanceCriterion {
   id: string
@@ -108,6 +126,16 @@ export function getResultSummary(result: string | null, maxLen = 120): string {
   try {
     const parsed = JSON.parse(result)
     if (typeof parsed === 'string') return parsed.slice(0, maxLen)
+
+    // Structured findings result
+    if (Array.isArray(parsed.findings)) {
+      const count = parsed.findings.length
+      const critical = parsed.findings.filter((f: { severity?: string }) => f.severity === 'critical').length
+      const high = parsed.findings.filter((f: { severity?: string }) => f.severity === 'high').length
+      const severityInfo = [critical > 0 && `${critical} critical`, high > 0 && `${high} high`].filter(Boolean).join(', ')
+      const prefix = severityInfo ? `${count} findings (${severityInfo})` : `${count} findings`
+      return parsed.summary ? `${prefix}: ${String(parsed.summary).slice(0, maxLen - prefix.length - 2)}` : prefix
+    }
 
     // Auto-completed parent: "All N subtasks completed"
     if (parsed.autoCompleted && Array.isArray(parsed.subtaskResults)) {

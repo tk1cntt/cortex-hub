@@ -398,6 +398,46 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       break
     }
 
+    case 'task.synthesis': {
+      // Lead Agent submits synthesis after all subtasks completed
+      const taskId = msg['taskId'] as string | undefined
+      const result = msg['result'] as Record<string, unknown> | undefined
+      if (!taskId || !result) break
+
+      const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(taskId) as Record<string, unknown> | undefined
+      if (!task || task['status'] !== 'synthesis') break
+
+      // Complete the parent task with synthesized result
+      db.prepare(`
+        UPDATE conductor_tasks
+        SET status = 'completed', completed_at = datetime('now'),
+            result = ?, completed_by = ?
+        WHERE id = ?
+      `).run(JSON.stringify(result), agent.agentId, taskId)
+
+      db.prepare(
+        'INSERT INTO conductor_task_logs (task_id, agent_id, action, message) VALUES (?, ?, ?, ?)'
+      ).run(taskId, agent.agentId, 'synthesis_completed', 'Lead Agent synthesized subtask results')
+
+      console.log(`[ws] task.synthesis: ${taskId} completed by ${agent.agentId}`)
+
+      // Broadcast completion
+      broadcastToOwner(agent.apiKeyOwner, {
+        type: 'task.completed',
+        taskId,
+        title: task['title'],
+        completedBy: agent.agentId,
+        timestamp: new Date().toISOString(),
+      })
+
+      // Resolve completion chain for the parent
+      const completedTask = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(taskId)
+      if (completedTask) {
+        resolveCompletionChain(completedTask as Parameters<typeof resolveCompletionChain>[0])
+      }
+      break
+    }
+
     case 'task.strategy': {
       // Lead Agent submits strategy for a task
       const taskId = msg['taskId'] as string | undefined
