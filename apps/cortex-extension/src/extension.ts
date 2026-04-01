@@ -43,6 +43,19 @@ function forwardToWebview(type: 'newTask' | 'taskUpdate', payload: Record<string
 // Track active tasks waiting for review
 const pendingReviews = new Map<string, { taskId: string; plan: string; stopAcceptor: () => void }>()
 
+// Task execution state — prevents hanging when new task arrives after conversation finishes
+interface QueuedTask {
+  taskId: string
+  title: string
+  description: string
+  rawMsg: Record<string, unknown>
+}
+
+let currentTaskId: string | null = null
+let conversationDone = false // true when current conversation has finished
+const taskQueue: QueuedTask[] = []
+let completionMonitorStop: (() => void) | null = null
+
 /** Auto-accept Antigravity steps (file edits, terminal commands) for autonomous task execution */
 function startAutoAcceptor(taskId: string, logFn: (msg: string) => void): () => void {
   if (!antigravitySdk) return () => {}
@@ -175,17 +188,103 @@ async function sendReviewFeedback(taskId: string, feedback: string, logFn: (msg:
   }
 }
 
-/** Execute a task by injecting prompt into IDE's AI chat */
-async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: string) => void): Promise<void> {
-  logFn(`Executing task ${taskId} via IDE chat...`)
+/** Monitor Antigravity sessions to detect when a conversation finishes */
+function startCompletionMonitor(taskId: string, logFn: (msg: string) => void): () => void {
+  if (!antigravitySdk) return () => {}
+
+  let running = true
+  let lastStepCount = 0
+  let stableChecks = 0
+
+  const poll = async () => {
+    while (running) {
+      try {
+        const sessions = await antigravitySdk.cascade.getSessions()
+        if (sessions && sessions.length > 0) {
+          const latest = sessions[0]
+          const currentSteps = latest.stepCount ?? 0
+
+          if (currentSteps > 0 && currentSteps === lastStepCount) {
+            stableChecks++
+            // If step count unchanged for ~15s (3 checks x 5s), conversation is likely done
+            if (stableChecks >= 3 && !conversationDone) {
+              conversationDone = true
+              logFn(`Conversation completed for task ${taskId} (stable at ${currentSteps} steps)`)
+              // Notify hub that task is done
+              client?.updateStatus('idle')
+              // Process next queued task if any
+              drainTaskQueue(logFn)
+            }
+          } else {
+            stableChecks = 0
+            lastStepCount = currentSteps
+          }
+        }
+      } catch {
+        // ignore monitor errors
+      }
+      await new Promise(r => setTimeout(r, 5000))
+    }
+  }
+
+  logFn(`Completion monitor started for task ${taskId}`)
+  poll()
+  return () => { running = false }
+}
+
+/** Process next task in the queue — starts a fresh conversation */
+function drainTaskQueue(logFn: (msg: string) => void): void {
+  if (taskQueue.length === 0) {
+    logFn('Task queue empty — agent idle')
+    currentTaskId = null
+    return
+  }
+
+  const next = taskQueue.shift()!
+  logFn(`Draining queue — starting task ${next.taskId}: ${next.title}`)
+  vscode.window.showInformationMessage(`Cortex: Starting next task "${next.title}"`)
+
+  const prompt = `[Cortex Task ${next.taskId}]\n\n${next.description}`
+  // Always create new conversation for queued tasks
+  executeTaskInChat(prompt, next.taskId, logFn, true).catch((e) => {
+    logFn(`Queued task execution error: ${e instanceof Error ? e.message : String(e)}`)
+  })
+}
+
+/** Execute a task by injecting prompt into IDE's AI chat.
+ *  @param forceNewConversation — if true, always create a new cascade/chat instead of sending to existing */
+async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: string) => void, forceNewConversation = false): Promise<void> {
+  logFn(`Executing task ${taskId} via IDE chat... (newConversation=${forceNewConversation})`)
+
+  // Update tracking state
+  currentTaskId = taskId
+  conversationDone = false
+  if (completionMonitorStop) { completionMonitorStop(); completionMonitorStop = null }
+  client?.updateStatus('busy')
 
   // Strategy 1: Antigravity SDK — direct prompt injection via Language Server
   if (antigravitySdk) {
+    // If forcing new conversation (previous one is done), always use createCascade
+    if (forceNewConversation) {
+      try {
+        const cascadeId = await antigravitySdk.ls.createCascade({ text: prompt })
+        await antigravitySdk.ls.focusCascade(cascadeId)
+        logFn(`New conversation created via createCascade — cascade ${cascadeId}`)
+        startPlanMonitor(taskId, logFn)
+        completionMonitorStop = startCompletionMonitor(taskId, logFn)
+        return
+      } catch (e) {
+        logFn(`createCascade failed: ${e instanceof Error ? e.message : String(e)}`)
+        // Fall through to sendPrompt
+      }
+    }
+
     try {
       await antigravitySdk.cascade.sendPrompt(prompt)
       logFn(`Task prompt sent via Antigravity SDK (cascade.sendPrompt)`)
       // Start plan monitor — will pause for review before proceeding
       startPlanMonitor(taskId, logFn)
+      completionMonitorStop = startCompletionMonitor(taskId, logFn)
       return
     } catch (e) {
       logFn(`Antigravity SDK sendPrompt failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -194,6 +293,7 @@ async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: st
         await antigravitySdk.ls.focusCascade(cascadeId)
         logFn(`Task prompt sent via Antigravity SDK (ls.createCascade) — cascade ${cascadeId}`)
         startPlanMonitor(taskId, logFn)
+        completionMonitorStop = startCompletionMonitor(taskId, logFn)
         return
       } catch (e2) {
         logFn(`Antigravity SDK createCascade failed: ${e2 instanceof Error ? e2.message : String(e2)}`)
@@ -335,24 +435,46 @@ export function activate(context: vscode.ExtensionContext): void {
 
       forwardToWebview('newTask', msg)
 
-      // Auto-accept and execute — no manual intervention needed
+      // Auto-accept always
       client?.acceptTask(taskId)
       log(`Task auto-accepted: ${taskId}`)
-      vscode.window.showInformationMessage(`Cortex: Executing "${title}"`)
 
-      const prompt = `[Cortex Task ${taskId}]\n\n${description}`
-      executeTaskInChat(prompt, taskId, log).catch((e) => {
-        log(`Task execution error: ${e instanceof Error ? e.message : String(e)}`)
-      })
+      // If no active task or conversation is done → execute immediately
+      if (!currentTaskId || conversationDone) {
+        const needsNewConversation = conversationDone && currentTaskId !== null
+        if (needsNewConversation) {
+          log(`Previous conversation done — starting fresh for task ${taskId}`)
+        }
+        vscode.window.showInformationMessage(`Cortex: Executing "${title}"`)
+
+        const prompt = `[Cortex Task ${taskId}]\n\n${description}`
+        executeTaskInChat(prompt, taskId, log, needsNewConversation).catch((e) => {
+          log(`Task execution error: ${e instanceof Error ? e.message : String(e)}`)
+        })
+      } else {
+        // Agent is busy with an active conversation — queue the task
+        taskQueue.push({ taskId, title, description, rawMsg: msg })
+        log(`Agent busy (task ${currentTaskId}) — queued task ${taskId} (queue size: ${taskQueue.length})`)
+        vscode.window.showInformationMessage(`Cortex: Task "${title}" queued (${taskQueue.length} in queue)`)
+      }
     })
 
-    // Forward task.completed to webview + handle review approvals
+    // Forward task.completed to webview + handle review approvals + drain queue
     client.on('task.completed', (msg: Record<string, unknown>) => {
       const completedTaskId = msg['taskId'] as string
       const completedBy = msg['agentId'] as string
       const result = msg['result'] as Record<string, unknown> | undefined
       log(`Task completed: ${completedTaskId} by ${completedBy}`)
       forwardToWebview('taskUpdate', msg)
+
+      // If our current task was completed (e.g. server marked it done), drain queue
+      if (completedTaskId === currentTaskId) {
+        log(`Current task ${completedTaskId} completed — marking conversation done`)
+        conversationDone = true
+        if (completionMonitorStop) { completionMonitorStop(); completionMonitorStop = null }
+        client?.updateStatus('idle')
+        drainTaskQueue(log)
+      }
 
       // Check if this is a review task completion → approve/reject the parent
       const parentTaskId = (msg['parentTaskId'] as string) ?? (result?.['originalTaskId'] as string)
@@ -562,6 +684,7 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export function deactivate(): void {
+  if (completionMonitorStop) { completionMonitorStop(); completionMonitorStop = null }
   if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
   if (client) { client.dispose(); client = null }
 }
