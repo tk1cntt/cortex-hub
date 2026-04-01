@@ -956,6 +956,33 @@ export async function deleteConductorTask(id: string) {
   return apiFetch<{ success: boolean; id: string }>(`/api/conductor/${id}`, { method: 'DELETE' })
 }
 
+/** Delete an entire pipeline: cancel pending/active tasks, then delete all (children first, then root) */
+export async function deletePipeline(rootTaskId: string, allTasks: ConductorTask[]) {
+  // Collect all tasks in this pipeline tree
+  const pipelineTaskIds: string[] = []
+  function collectChildren(parentId: string) {
+    pipelineTaskIds.push(parentId)
+    for (const t of allTasks) {
+      if (t.parent_task_id === parentId) {
+        collectChildren(t.id)
+      }
+    }
+  }
+  collectChildren(rootTaskId)
+
+  // Cancel any pending/in_progress tasks first
+  const cancellable = allTasks.filter(
+    (t) => pipelineTaskIds.includes(t.id) && ['pending', 'assigned', 'accepted', 'in_progress', 'analyzing'].includes(t.status)
+  )
+  await Promise.allSettled(cancellable.map((t) => cancelConductorTask(t.id)))
+
+  // Delete in reverse order (children first)
+  const deleteOrder = pipelineTaskIds.reverse()
+  for (const id of deleteOrder) {
+    try { await deleteConductorTask(id) } catch { /* ignore already-deleted */ }
+  }
+}
+
 export async function getConductorTaskById(id: string) {
   return apiFetch<ConductorTask>(`/api/conductor/${id}`)
 }
@@ -981,6 +1008,56 @@ export interface ConductorActivity {
 
 export async function getConductorActivity(limit = 30) {
   return apiFetch<{ activity: ConductorActivity[] }>(`/api/conductor/activity?limit=${limit}`)
+}
+
+// ── Conductor Comments ──
+export interface ConductorComment {
+  id: number
+  task_id: string
+  finding_id: string | null
+  agent_id: string | null
+  comment: string
+  comment_type: 'comment' | 'agree' | 'disagree' | 'amendment'
+  created_at: string
+}
+
+export async function getConductorComments(taskId: string) {
+  return apiFetch<{ comments: ConductorComment[] }>(`/api/conductor/${taskId}/comments`)
+}
+
+export async function submitConductorComment(
+  taskId: string,
+  comment: string,
+  findingId?: string,
+  commentType: 'comment' | 'agree' | 'disagree' | 'amendment' = 'comment'
+) {
+  return apiFetch<{ comment: ConductorComment }>(`/api/conductor/${taskId}/comments`, {
+    method: 'POST',
+    body: { comment, findingId, commentType },
+  })
+}
+
+// ── Decision Matrix ──
+export interface FindingDecision {
+  status: 'approved' | 'rejected'
+  reason?: string
+  decidedAt: string
+}
+
+export async function updateFindingDecision(
+  taskId: string,
+  findingId: string,
+  status: 'approved' | 'rejected',
+  reason?: string
+) {
+  return apiFetch<{ success: boolean; findingId: string; status: string; decisions: Record<string, FindingDecision> }>(
+    `/api/conductor/${taskId}/matrix/${findingId}`,
+    { method: 'PUT', body: { status, reason } }
+  )
+}
+
+export async function finalizeConductorTask(taskId: string) {
+  return apiFetch<{ task: ConductorTask }>(`/api/conductor/${taskId}/finalize`, { method: 'POST' })
 }
 
 // ── Hub Configuration ──

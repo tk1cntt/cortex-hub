@@ -13,18 +13,25 @@ import styles from './TaskBriefingWizard.module.css'
 
 type WizardStep = 1 | 2 | 3 | 4
 
+export interface TaskPrefill {
+  title?: string
+  description?: string
+  context?: Record<string, unknown>
+}
+
 interface Props {
   onClose: () => void
   onCreated: () => void
   agents: ConductorAgent[]
+  prefill?: TaskPrefill
 }
 
 
 
-export function TaskBriefingWizard({ onClose, onCreated, agents }: Props) {
+export function TaskBriefingWizard({ onClose, onCreated, agents, prefill }: Props) {
   // ── Step 1: Brief ──
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
+  const [title, setTitle] = useState(prefill?.title ?? '')
+  const [description, setDescription] = useState(prefill?.description ?? '')
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>([])
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [priority, setPriority] = useState(5)

@@ -1,8 +1,11 @@
 'use client'
 
-import { formatJson, getResultSummary, getTaskDuration, type ConductorTask } from './shared'
+import { useState, useCallback } from 'react'
+import { formatJson, getResultSummary, getTaskDuration, type ConductorTask, type StructuredTaskResult } from './shared'
 import { StatusBadge, PriorityBadge, ResultDisplay } from './StatusBadge'
+import { DecisionMatrix } from './DecisionMatrix'
 import { LiveOutput } from './LiveOutput'
+import type { FindingDecision } from '@/lib/api'
 import styles from '../page.module.css'
 
 export function TaskDetail({
@@ -10,13 +13,36 @@ export function TaskDetail({
   onClose,
   onCancel,
   onDelete,
+  onNewTaskFromOutcome,
 }: {
   task: ConductorTask
   onClose: () => void
   onCancel: () => void
   onDelete: () => void
+  onNewTaskFromOutcome?: (task: ConductorTask) => void
 }) {
   const isRunning = task.status === 'in_progress' || task.status === 'accepted' || task.status === 'analyzing'
+
+  // Detect structured findings for DecisionMatrix
+  const [decisionVersion, setDecisionVersion] = useState(0)
+  const refreshDecisions = useCallback(() => setDecisionVersion((v) => v + 1), [])
+
+  let structuredResult: StructuredTaskResult | null = null
+  let contextDecisions: Record<string, FindingDecision> = {}
+  try {
+    if (task.result) {
+      const parsed = JSON.parse(task.result)
+      if (parsed && Array.isArray(parsed.findings) && parsed.findings.length > 0) {
+        structuredResult = parsed as StructuredTaskResult
+      }
+    }
+  } catch { /* not structured */ }
+  try {
+    if (task.context) {
+      const ctx = JSON.parse(task.context)
+      if (ctx.decisions) contextDecisions = ctx.decisions as Record<string, FindingDecision>
+    }
+  } catch { /* ignore */ }
 
   return (
     <div className={styles.detailOverlay} onClick={onClose}>
@@ -145,19 +171,41 @@ export function TaskDetail({
             </div>
           )}
 
-          {/* Result Summary + Raw Detail */}
+          {/* Result: DecisionMatrix for structured findings, or standard display */}
           {task.result && (
             <div className={styles.detailSection}>
-              <h3 className={styles.detailSectionTitle}>Result</h3>
-              {(() => {
-                const summary = getResultSummary(task.result)
-                return summary ? (
-                  <div className={styles.taskResultPreview} style={{ marginBottom: 'var(--space-3)', whiteSpace: 'normal' }}>
-                    {summary}
-                  </div>
-                ) : null
-              })()}
-              <ResultDisplay result={task.result} />
+              <h3 className={styles.detailSectionTitle}>
+                {structuredResult ? 'Decision Matrix' : 'Result'}
+              </h3>
+              {structuredResult ? (
+                <DecisionMatrix
+                  key={decisionVersion}
+                  taskId={task.id}
+                  result={structuredResult}
+                  decisions={contextDecisions}
+                  onDecisionChange={refreshDecisions}
+                />
+              ) : (
+                <>
+                  {(() => {
+                    const summary = getResultSummary(task.result)
+                    return summary ? (
+                      <div className={styles.taskResultPreview} style={{ marginBottom: 'var(--space-3)', whiteSpace: 'normal' }}>
+                        {summary}
+                      </div>
+                    ) : null
+                  })()}
+                  <ResultDisplay result={task.result} />
+                </>
+              )}
+              {onNewTaskFromOutcome && (
+                <button
+                  className={styles.outcomeActionBtn}
+                  onClick={() => { onNewTaskFromOutcome(task); onClose() }}
+                >
+                  New Task from Outcome
+                </button>
+              )}
             </div>
           )}
 
