@@ -1,14 +1,21 @@
 # ============================================================
 # Cortex Hub — Remote Agent Bootstrap (Windows)
-# Downloads cortex-agent.sh + dependencies, then launches via Git Bash.
+# Downloads cortex-agent.ps1 + dependencies, then launches.
+# No repo clone needed.
 #
 # Usage:
 #   iwr -useb "https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/run-agent.ps1" -OutFile $env:TEMP\run-agent.ps1; & $env:TEMP\run-agent.ps1
-#   .\run-agent.ps1 launch
-#   .\run-agent.ps1 start --daemon --preset fullstack
+#   .\run-agent.ps1 start
+#   .\run-agent.ps1 start -Daemon
 # ============================================================
 
-param([Parameter(ValueFromRemainingArguments)]$Args)
+param(
+    [Parameter(Position = 0)]
+    [string]$Command = "",
+    [switch]$Daemon,
+    [switch]$Background,
+    [int]$LogLines = 50
+)
 
 $ErrorActionPreference = "Stop"
 $RepoRaw = "https://raw.githubusercontent.com/lktiep/cortex-hub/master"
@@ -19,16 +26,12 @@ function Write-Ok    { param([string]$msg) Write-Host "[cortex] $msg" -Foregroun
 function Write-Err   { param([string]$msg) Write-Host "[cortex] $msg" -ForegroundColor Red }
 
 # ── Check prerequisites ──
-$bashPath = Get-Command bash -ErrorAction SilentlyContinue
-if (-not $bashPath) {
-    Write-Err "bash (Git Bash) is required. Install Git for Windows: https://git-scm.com"
-    exit 1
-}
 $nodePath = Get-Command node -ErrorAction SilentlyContinue
 if (-not $nodePath) {
     Write-Err "node is required. Install Node.js: https://nodejs.org"
     exit 1
 }
+Write-Ok "Node.js found: $($nodePath.Source)"
 
 # ── Setup workspace ──
 $dirs = @("$WorkDir\scripts", "$WorkDir\.cortex", "$WorkDir\node_modules")
@@ -48,7 +51,7 @@ function Download-IfNeeded {
 }
 
 Write-Info "Downloading agent scripts..."
-Download-IfNeeded "$RepoRaw/scripts/cortex-agent.sh" "$WorkDir\scripts\cortex-agent.sh"
+Download-IfNeeded "$RepoRaw/scripts/cortex-agent.ps1" "$WorkDir\scripts\cortex-agent.ps1"
 Download-IfNeeded "$RepoRaw/scripts/orchestrator-prompt.md" "$WorkDir\scripts\orchestrator-prompt.md"
 Download-IfNeeded "$RepoRaw/.cortex/capability-templates.json" "$WorkDir\.cortex\capability-templates.json"
 Download-IfNeeded "$RepoRaw/.cortex/agent-identity.json" "$WorkDir\.cortex\agent-identity.json"
@@ -56,7 +59,8 @@ Download-IfNeeded "$RepoRaw/.cortex/agent-identity.json" "$WorkDir\.cortex\agent
 # ── Install ws package if needed ──
 $wsCheck = & node -e "require('ws')" 2>&1
 if ($LASTEXITCODE -ne 0) {
-    $wsCheck2 = & node -e "require('$($WorkDir -replace '\\','/')/node_modules/ws')" 2>&1
+    $wsNodeModules = "$($WorkDir -replace '\\','/')/node_modules/ws"
+    $wsCheck2 = & node -e "require('$wsNodeModules')" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Info "Installing ws package..."
         Push-Location $WorkDir
@@ -66,13 +70,18 @@ if ($LASTEXITCODE -ne 0) {
     }
 }
 
-# ── Set NODE_PATH ──
+# ── Set NODE_PATH so ws is resolvable ──
 $env:NODE_PATH = "$WorkDir\node_modules;$($env:NODE_PATH)"
 
 Write-Ok "Ready. Launching cortex-agent..."
 Write-Host ""
 
-# ── Forward to cortex-agent.sh via bash ──
-$agentScript = "$WorkDir/scripts/cortex-agent.sh" -replace '\\', '/'
-$bashArgs = @($agentScript) + $Args
-& bash @bashArgs
+# ── Forward to native cortex-agent.ps1 ──
+$agentScript = Join-Path $WorkDir "scripts" "cortex-agent.ps1"
+$psArgs = @()
+if ($Command) { $psArgs += $Command }
+if ($Daemon) { $psArgs += "-Daemon" }
+if ($Background) { $psArgs += "-Background" }
+if ($LogLines -ne 50) { $psArgs += "-LogLines"; $psArgs += $LogLines }
+
+& $agentScript @psArgs
