@@ -21,6 +21,7 @@ import {
   type StatusFilter,
   type ViewMode,
   type TaskPrefill,
+  type ResumeTask,
   buildTaskTree,
   flattenTree,
   getIdeInfo,
@@ -270,6 +271,7 @@ export default function ConductorPage() {
   const [selectedAgent, setSelectedAgent] = useState<ConductorAgent | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [taskPrefill, setTaskPrefill] = useState<TaskPrefill | undefined>(undefined)
+  const [resumeTask, setResumeTask] = useState<ResumeTask | undefined>(undefined)
   const [diagramPipelineId, setDiagramPipelineId] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
@@ -480,6 +482,34 @@ export default function ConductorPage() {
         </div>
       )}
 
+      {/* Pending Strategy Review Banner */}
+      {allTasks.filter(t => t.status === 'strategy_review' || t.status === 'analyzing').map(task => {
+        const ctx = typeof task.context === 'string' ? (() => { try { return JSON.parse(task.context) } catch { return {} } })() : (task.context ?? {})
+        const hasStrategy = task.status === 'strategy_review' && ctx.strategy
+        return (
+          <div key={task.id} className={`card ${styles.statCard}`} style={{ marginBottom: 'var(--space-3)', cursor: 'pointer', borderLeft: '3px solid var(--status-warning)' }}
+            onClick={() => {
+              if (hasStrategy) {
+                setResumeTask({ task, strategy: ctx.strategy })
+                setShowCreateForm(true)
+              }
+            }}
+          >
+            <span style={{ fontSize: '1.25rem' }}>{hasStrategy ? '📋' : '⏳'}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600 }}>{task.title}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                {hasStrategy
+                  ? `Strategy ready — click to review & approve (${task.assigned_to_agent})`
+                  : `Agent ${task.assigned_to_agent} is analyzing...`
+                }
+              </div>
+            </div>
+            {hasStrategy && <span className="btn btn-primary btn-sm">Review Strategy →</span>}
+          </div>
+        )
+      })}
+
       {/* Tasks Section */}
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
@@ -646,10 +676,11 @@ export default function ConductorPage() {
       {/* New Task Wizard */}
       {showCreateForm && (
         <TaskBriefingWizard
-          onClose={() => { setShowCreateForm(false); setTaskPrefill(undefined) }}
+          onClose={() => { setShowCreateForm(false); setTaskPrefill(undefined); setResumeTask(undefined) }}
           onCreated={() => mutate()}
           agents={agents}
           prefill={taskPrefill}
+          resume={resumeTask}
         />
       )}
     </DashboardLayout>

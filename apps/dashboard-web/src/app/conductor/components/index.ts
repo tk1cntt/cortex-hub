@@ -1,4 +1,4 @@
-export { TaskBriefingWizard, type TaskPrefill } from './TaskBriefingWizard'
+export { TaskBriefingWizard, type TaskPrefill, type ResumeTask } from './TaskBriefingWizard'
 export { StrategyReview } from './StrategyReview'
 export { PipelineDiagram } from './PipelineDiagram'
 export { TaskCard } from './TaskCard'

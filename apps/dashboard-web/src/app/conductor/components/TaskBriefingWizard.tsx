@@ -19,39 +19,47 @@ export interface TaskPrefill {
   context?: Record<string, unknown>
 }
 
+/** Resume a task that's waiting for strategy approval */
+export interface ResumeTask {
+  task: ConductorTask
+  strategy: TaskStrategy
+}
+
 interface Props {
   onClose: () => void
   onCreated: () => void
   agents: ConductorAgent[]
   prefill?: TaskPrefill
+  resume?: ResumeTask
 }
 
 
 
-export function TaskBriefingWizard({ onClose, onCreated, agents, prefill }: Props) {
+export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume }: Props) {
   // ── Step 1: Brief ──
-  const [title, setTitle] = useState(prefill?.title ?? '')
-  const [description, setDescription] = useState(prefill?.description ?? '')
+  const [title, setTitle] = useState(resume?.task.title ?? prefill?.title ?? '')
+  const [description, setDescription] = useState(resume?.task.description ?? prefill?.description ?? '')
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>([])
   const [images, setImages] = useState<ImageAttachment[]>([])
-  const [priority, setPriority] = useState(5)
+  const [priority, setPriority] = useState(resume?.task.priority ?? 5)
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // ── Step 2: Assign Lead ──
-  const [leadAgent, setLeadAgent] = useState('')
+  const [leadAgent, setLeadAgent] = useState(resume?.task.assigned_to_agent ?? '')
 
   // ── Step 3: Strategy Review ──
   const [analyzing, setAnalyzing] = useState(false)
-  const [strategy, setStrategy] = useState<TaskStrategy | null>(null)
-  const [createdTask, setCreatedTask] = useState<ConductorTask | null>(null)
+  const [strategy, setStrategy] = useState<TaskStrategy | null>(resume?.strategy ?? null)
+  const [createdTask, setCreatedTask] = useState<ConductorTask | null>(resume?.task ?? null)
 
   // ── Step 4: Pipeline ──
   const [createdTaskIds, setCreatedTaskIds] = useState<string[]>([])
 
+  // ── Wizard state ── (resume skips to step 3)
   // ── Wizard state ──
-  const [step, setStep] = useState<WizardStep>(1)
+  const [step, setStep] = useState<WizardStep>(resume ? 3 : 1)
   const [submitting, setSubmitting] = useState(false)
 
   // ── Image paste handler ──
