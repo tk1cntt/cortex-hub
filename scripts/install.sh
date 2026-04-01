@@ -127,7 +127,7 @@ if [ "$SKIP_GLOBAL" = "false" ] && [ "$CHECK_ONLY" = "false" ] && ide_selected "
   SKILL_INSTALLED=false
 
   # Find SKILL.md source: local repo or download
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" 2>/dev/null || echo ".")" && pwd)"
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-"."}")" 2>/dev/null && pwd || echo ".")"
   LOCAL_SKILL="$SCRIPT_DIR/../templates/skills/install/SKILL.md"
 
   if [ -f "$LOCAL_SKILL" ]; then
