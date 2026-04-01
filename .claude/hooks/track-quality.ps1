@@ -11,18 +11,43 @@ if (-not [string]::IsNullOrWhiteSpace($InputData)) {
         $ToolName = $json.tool_name
         $Command = $json.tool_input.command
 
-        if ($Command -match "pnpm build") { New-Item -ItemType File -Path (Join-Path $StateDir "gate-build") -Force | Out-Null }
-        if ($Command -match "pnpm typecheck") { New-Item -ItemType File -Path (Join-Path $StateDir "gate-typecheck") -Force | Out-Null }
-        if ($Command -match "pnpm lint") { New-Item -ItemType File -Path (Join-Path $StateDir "gate-lint") -Force | Out-Null }
+        # Track build gates
+        if ($Command -match "(pnpm|npm|yarn) build")     { New-Item -ItemType File -Path (Join-Path $StateDir "gate-build") -Force | Out-Null }
+        if ($Command -match "(pnpm|npm|yarn) typecheck")  { New-Item -ItemType File -Path (Join-Path $StateDir "gate-typecheck") -Force | Out-Null }
+        if ($Command -match "(pnpm|npm|yarn) lint")       { New-Item -ItemType File -Path (Join-Path $StateDir "gate-lint") -Force | Out-Null }
+        if ($Command -match "cargo build")                { New-Item -ItemType File -Path (Join-Path $StateDir "gate-build") -Force | Out-Null }
+        if ($Command -match "cargo clippy")               { New-Item -ItemType File -Path (Join-Path $StateDir "gate-lint") -Force | Out-Null }
+        if ($Command -match "go build")                   { New-Item -ItemType File -Path (Join-Path $StateDir "gate-build") -Force | Out-Null }
+        if ($Command -match "go vet")                     { New-Item -ItemType File -Path (Join-Path $StateDir "gate-lint") -Force | Out-Null }
+        if ($Command -match "dotnet build")               { New-Item -ItemType File -Path (Join-Path $StateDir "gate-build") -Force | Out-Null }
 
-        if ((Test-Path (Join-Path $StateDir "gate-build")) -and (Test-Path (Join-Path $StateDir "gate-typecheck")) -and (Test-Path (Join-Path $StateDir "gate-lint"))) {
+        # All gates passed?
+        $hasBuild = Test-Path (Join-Path $StateDir "gate-build")
+        $hasTypecheck = Test-Path (Join-Path $StateDir "gate-typecheck")
+        $hasLint = Test-Path (Join-Path $StateDir "gate-lint")
+        if ($hasBuild -and $hasTypecheck -and $hasLint) {
             New-Item -ItemType File -Path (Join-Path $StateDir "quality-gates-passed") -Force | Out-Null
         }
+        # For projects without typecheck
+        if ($hasBuild -and $hasLint -and -not $hasTypecheck) {
+            $profilePath = Join-Path $ProjectDir ".cortex\project-profile.json"
+            if (Test-Path $profilePath) {
+                $hasTC = (Get-Content $profilePath -Raw) -match "typecheck"
+                if (-not $hasTC) {
+                    New-Item -ItemType File -Path (Join-Path $StateDir "quality-gates-passed") -Force | Out-Null
+                }
+            }
+        }
 
-        if ($ToolName -match "cortex_session_start") { New-Item -ItemType File -Path (Join-Path $StateDir "session-started") -Force | Out-Null }
-        if ($ToolName -match "cortex_session_end") { New-Item -ItemType File -Path (Join-Path $StateDir "session-ended") -Force | Out-Null }
-    } catch {
-        # ignore parse errors
-    }
+        # Track MCP tool calls
+        if ($ToolName -match "cortex_session_start")  { New-Item -ItemType File -Path (Join-Path $StateDir "session-started") -Force | Out-Null }
+        if ($ToolName -match "cortex_session_end")    { New-Item -ItemType File -Path (Join-Path $StateDir "session-ended") -Force | Out-Null }
+        if ($ToolName -match "cortex_quality_report") { New-Item -ItemType File -Path (Join-Path $StateDir "quality-gates-passed") -Force | Out-Null }
+
+        # Track cortex discovery tool usage
+        if ($ToolName -match "cortex_(code_search|knowledge_search|memory_search|code_context|code_impact|cypher)") {
+            New-Item -ItemType File -Path (Join-Path $StateDir "discovery-used") -Force | Out-Null
+        }
+    } catch {}
 }
 exit 0

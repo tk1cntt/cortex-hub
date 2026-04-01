@@ -490,6 +490,55 @@ exit 0
         [System.IO.File]::WriteAllText((Join-Path $ProjectDir ".claude/settings.json"), $settingsContent)
 
         Write-Ok ("Claude: PS1 hooks + settings.json installed (v" + $LATEST_VERSION + ")")
+
+        # ── Slash commands (/cs, /ce) ──
+        $cmdDir = Join-Path $ProjectDir ".claude\commands"
+        if (-not (Test-Path $cmdDir)) { New-Item -ItemType Directory -Path $cmdDir -Force | Out-Null }
+
+        @'
+# /cs — Cortex Start (mandatory session init)
+
+Run these steps IN ORDER. Do NOT skip any step.
+
+## Step 1: Session Start
+Call `cortex_session_start` with repo, mode: "development", agentId, ide, os, branch.
+If `recentChanges.count > 0` → warn user and run `git pull`.
+
+## Step 2: Knowledge Recall
+Call `cortex_knowledge_search` with query: "session summary progress next session"
+
+## Step 3: Memory Recall
+Call `cortex_memory_search` with query: "session context decisions lessons", agentId: "claude-code"
+
+## Step 4: Check for Conflicts
+Call `cortex_changes` with agentId and projectId from step 1.
+
+## Step 5: Summarize
+Print brief summary: recent progress, unseen changes, key memories. Confirm ready.
+'@ | Out-File -FilePath (Join-Path $cmdDir "cs.md") -Encoding utf8
+
+        @'
+# /ce — Cortex End (session close + quality gates)
+
+Run these steps IN ORDER before ending.
+
+## Step 1: Quality Gates
+Run: pnpm build && pnpm typecheck && pnpm lint
+
+## Step 2: Quality Report
+Call `cortex_quality_report` with results.
+
+## Step 3: Store Knowledge
+If you fixed bugs or made decisions, call `cortex_knowledge_store`.
+
+## Step 4: Store Memory
+Call `cortex_memory_store` with session lessons.
+
+## Step 5: End Session
+Call `cortex_session_end` with sessionId and summary.
+'@ | Out-File -FilePath (Join-Path $cmdDir "ce.md") -Encoding utf8
+
+        Write-Ok "Commands: /cs and /ce slash commands installed"
     }
 
     # ── Gemini / Antigravity hooks ──

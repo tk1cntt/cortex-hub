@@ -1,36 +1,53 @@
 $ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
 $StateDir = Join-Path $ProjectDir ".cortex\.session-state"
 $StartedFile = Join-Path $StateDir "session-started"
+$DiscoveryFile = Join-Path $StateDir "discovery-used"
 
 if (Test-Path $StartedFile) {
+    # Session started — enforce discovery-first
+    if (-not (Test-Path $DiscoveryFile)) {
+        $InputData = [Console]::In.ReadToEnd()
+        if (-not [string]::IsNullOrWhiteSpace($InputData)) {
+            try {
+                $json = $InputData | ConvertFrom-Json
+                $ToolName = $json.tool_name
+                $Command = $json.tool_input.command
+
+                if ($ToolName -eq "Grep") {
+                    [Console]::Error.WriteLine("BLOCKED: Use cortex_code_search or cortex_knowledge_search FIRST. Run /cs to auto-complete all steps.")
+                    exit 2
+                }
+                if ($ToolName -eq "Bash" -and $Command -match "^(find |grep |rg |ag )") {
+                    [Console]::Error.WriteLine("BLOCKED: Use cortex_code_search FIRST. Run /cs to auto-complete all steps.")
+                    exit 2
+                }
+            } catch {}
+        }
+    }
     exit 0
 }
 
+# Session NOT started — block writes, allow reads
 $InputData = [Console]::In.ReadToEnd()
 if (-not [string]::IsNullOrWhiteSpace($InputData)) {
     try {
         $json = $InputData | ConvertFrom-Json
         $ToolName = $json.tool_name
-        
+        $Command = $json.tool_input.command
+
         if ($ToolName -match "^(Edit|Write|NotebookEdit)$") {
-            [Console]::Error.WriteLine("BLOCKED: Call cortex_session_start before editing files. Session not started.")
+            [Console]::Error.WriteLine("BLOCKED: Call cortex_session_start first (or run /cs). No edits without session.")
             exit 2
         }
-        
         if ($ToolName -eq "Bash") {
-            $Command = $json.tool_input.command
-            if ($Command -match "^(ls|cat|head|tail|pwd|which|echo|git (status|log|diff|branch|remote)|pnpm (build|typecheck|lint|test)|curl|python3 -m json)") {
+            if ($Command -match "^(ls|cat|head|tail|pwd|which|echo|git (status|log|diff|branch|remote|show)|pnpm |npm |yarn |cargo |go |python|curl|dotnet |node )") {
                 exit 0
             }
-            if ($Command -match "(git (add|commit|push|reset)|rm |mv |cp |mkdir |touch |chmod |sed -i|> )") {
-                [Console]::Error.WriteLine("BLOCKED: Call cortex_session_start before modifying files. Session not started.")
+            if ($Command -match "(git (add|commit|push|reset)|rm |mv |cp |mkdir |touch |chmod |sed -i)") {
+                [Console]::Error.WriteLine("BLOCKED: Call cortex_session_start first (or run /cs). No file modifications without session.")
                 exit 2
             }
-            exit 0
         }
-    } catch {
-        # Formatting error, proceed
-    }
+    } catch {}
 }
-
 exit 0
