@@ -39,11 +39,37 @@ if (-not $claudePath) {
 }
 Write-Ok "Claude Code CLI found: $($claudePath.Source)"
 
-# ── Interactive prompts ──
+# ── Auto-detect Hub API key from existing IDE configs ──
 if (-not $Key) {
-    $Key = Read-Host "API Key"
+    Write-Info "Detecting Cortex Hub API key from IDE configs..."
+    $configPaths = @(
+        "$env:USERPROFILE\.claude.json",
+        "$env:USERPROFILE\.cursor\mcp.json",
+        "$env:USERPROFILE\.codeium\windsurf\mcp_config.json",
+        "$env:USERPROFILE\.gemini\antigravity\mcp_config.json"
+    )
+    foreach ($cfg in $configPaths) {
+        if (-not (Test-Path $cfg)) { continue }
+        try {
+            $config = Get-Content $cfg -Raw | ConvertFrom-Json
+            $servers = if ($config.mcpServers) { $config.mcpServers } elseif ($config.servers) { $config.servers } else { $null }
+            if ($servers -and $servers.'cortex-hub') {
+                $auth = $servers.'cortex-hub'.env.AUTH_HEADER
+                if ($auth -and $auth.StartsWith("Bearer ")) { $auth = $auth.Substring(7) }
+                if ($auth) {
+                    $Key = $auth
+                    Write-Ok "Found Hub API key in $cfg"
+                    break
+                }
+            }
+        } catch { }
+    }
+}
+
+if (-not $Key) {
+    $Key = Read-Host "Cortex Hub API Key (from Dashboard -> Keys)"
     if (-not $Key) {
-        Write-Err "API key required. Get one from Hub Dashboard -> Keys."
+        Write-Err "Hub API key required. Get one from Hub Dashboard -> Keys."
         exit 1
     }
 }
