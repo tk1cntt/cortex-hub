@@ -22,8 +22,8 @@
 
 set -euo pipefail
 
-HOOKS_VERSION=4
-HOOKS_MINOR=1
+HOOKS_VERSION=5
+HOOKS_MINOR=0
 MCP_URL_DEFAULT="https://cortex-mcp.jackle.dev/mcp"
 
 # ── Colors ──
