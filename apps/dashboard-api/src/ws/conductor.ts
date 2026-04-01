@@ -477,6 +477,34 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       break
     }
 
+    case 'task.comment': {
+      // Agent submits a comment on a task/finding
+      const taskId = msg['taskId'] as string | undefined
+      const comment = msg['comment'] as string | undefined
+      if (!taskId || !comment) break
+
+      const findingId = (msg['findingId'] as string) ?? null
+      const commentType = (msg['commentType'] as string) ?? 'comment'
+
+      const result = db.prepare(
+        'INSERT INTO conductor_comments (task_id, finding_id, agent_id, comment, comment_type) VALUES (?, ?, ?, ?, ?)'
+      ).run(taskId, findingId, agent.agentId, comment.slice(0, 4000), commentType)
+
+      const created = db.prepare('SELECT * FROM conductor_comments WHERE id = ?').get(result.lastInsertRowid) as {
+        id: number; task_id: string; finding_id: string | null; agent_id: string | null
+        comment: string; comment_type: string; created_at: string
+      }
+
+      // Broadcast to all agents of same owner
+      broadcastToOwner(agent.apiKeyOwner, {
+        type: 'task.comment',
+        taskId,
+        comment: created,
+        timestamp: new Date().toISOString(),
+      })
+      break
+    }
+
     case 'message': {
       // Agent-to-agent messaging (same owner only)
       const targetId = msg['to'] as string | undefined
@@ -630,6 +658,24 @@ export function broadcastStrategyReady(taskId: string, title: string, strategy: 
     taskId,
     title,
     strategy,
+    timestamp: new Date().toISOString(),
+  })
+  for (const [, agent] of agents) {
+    if (agent.ws.readyState === WebSocket.OPEN) {
+      agent.ws.send(data)
+    }
+  }
+}
+
+/** Broadcast a new comment to all connected agents (for real-time updates) */
+export function broadcastComment(taskId: string, comment: {
+  id: number; task_id: string; finding_id: string | null; agent_id: string | null
+  comment: string; comment_type: string; created_at: string
+}): void {
+  const data = JSON.stringify({
+    type: 'task.comment',
+    taskId,
+    comment,
     timestamp: new Date().toISOString(),
   })
   for (const [, agent] of agents) {
