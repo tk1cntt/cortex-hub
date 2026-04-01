@@ -668,6 +668,7 @@ conductorRouter.post('/', async (c) => {
     // Notify assigned agent via WebSocket (only if not blocked)
     if (assignedTo && initialStatus !== 'blocked') {
       pushTaskToAgent(assignedTo, id, title, description ?? '')
+      setAgentStatus(assignedTo, 'busy')
     }
 
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow
@@ -776,10 +777,18 @@ conductorRouter.put('/:id', async (c) => {
 
     // ── Post-update chain logic ──
 
-    // Handle completion → resolve dependency chain
+    // Handle completion → resolve dependency chain + set agent idle
     if (status === 'completed') {
       logTaskAction(id, completedBy ?? null, 'completed', undefined)
+      if (existing.assigned_to_agent) {
+        setAgentStatus(existing.assigned_to_agent, 'idle')
+      }
       resolveCompletionChain(updatedTask)
+    }
+    if (status === 'failed') {
+      if (existing.assigned_to_agent) {
+        setAgentStatus(existing.assigned_to_agent, 'idle')
+      }
     }
 
     // Handle review submission
@@ -989,6 +998,144 @@ conductorRouter.post('/:id/cancel', (c) => {
     logTaskAction(id, null, 'cancelled', undefined)
 
     return c.json({ success: true, id })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Comments: list ──
+conductorRouter.get('/:id/comments', (c) => {
+  try {
+    const taskId = c.req.param('id')
+    const task = db.prepare('SELECT id FROM conductor_tasks WHERE id = ?').get(taskId)
+    if (!task) return c.json({ error: 'Task not found' }, 404)
+
+    const comments = db.prepare(
+      'SELECT * FROM conductor_comments WHERE task_id = ? ORDER BY created_at ASC'
+    ).all(taskId) as {
+      id: number; task_id: string; finding_id: string | null; agent_id: string | null
+      comment: string; comment_type: string; created_at: string
+    }[]
+
+    return c.json({ comments })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Comments: submit ──
+conductorRouter.post('/:id/comments', async (c) => {
+  try {
+    const taskId = c.req.param('id')
+    const task = db.prepare('SELECT id FROM conductor_tasks WHERE id = ?').get(taskId)
+    if (!task) return c.json({ error: 'Task not found' }, 404)
+
+    const body = await c.req.json()
+    const { comment, findingId, agentId, commentType = 'comment' } = body as {
+      comment?: string
+      findingId?: string
+      agentId?: string
+      commentType?: 'comment' | 'agree' | 'disagree' | 'amendment'
+    }
+
+    if (!comment) return c.json({ error: 'comment is required' }, 400)
+    if (!['comment', 'agree', 'disagree', 'amendment'].includes(commentType)) {
+      return c.json({ error: 'Invalid comment_type' }, 400)
+    }
+
+    const result = db.prepare(
+      'INSERT INTO conductor_comments (task_id, finding_id, agent_id, comment, comment_type) VALUES (?, ?, ?, ?, ?)'
+    ).run(taskId, findingId ?? null, agentId ?? 'dashboard', comment, commentType)
+
+    const created = db.prepare('SELECT * FROM conductor_comments WHERE id = ?').get(result.lastInsertRowid) as {
+      id: number; task_id: string; finding_id: string | null; agent_id: string | null
+      comment: string; comment_type: string; created_at: string
+    }
+
+    // Broadcast via WS
+    const { broadcastComment } = await import('../ws/conductor.js')
+    broadcastComment(taskId, created)
+
+    return c.json({ comment: created }, 201)
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Decision Matrix: update finding decision ──
+conductorRouter.put('/:id/matrix/:findingId', async (c) => {
+  try {
+    const taskId = c.req.param('id')
+    const findingId = c.req.param('findingId')
+
+    const existing = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(taskId) as TaskRow | undefined
+    if (!existing) return c.json({ error: 'Task not found' }, 404)
+
+    const body = await c.req.json()
+    const { status, reason } = body as { status: 'approved' | 'rejected'; reason?: string }
+
+    if (status !== 'approved' && status !== 'rejected') {
+      return c.json({ error: 'status must be "approved" or "rejected"' }, 400)
+    }
+
+    // Update context.decisions
+    const ctx = safeJsonParse<Record<string, unknown>>(existing.context, {})
+    const decisions = (ctx['decisions'] ?? {}) as Record<string, { status: string; reason?: string; decidedAt: string }>
+    decisions[findingId] = { status, reason, decidedAt: new Date().toISOString() }
+    ctx['decisions'] = decisions
+
+    db.prepare('UPDATE conductor_tasks SET context = ? WHERE id = ?').run(JSON.stringify(ctx), taskId)
+
+    logTaskAction(taskId, null, `finding_${status}`, `Finding ${findingId} ${status}${reason ? ': ' + reason : ''}`)
+
+    return c.json({ success: true, findingId, status, decisions })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Decision Matrix: finalize task with approved findings only ──
+conductorRouter.post('/:id/finalize', async (c) => {
+  try {
+    const taskId = c.req.param('id')
+
+    const existing = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(taskId) as TaskRow | undefined
+    if (!existing) return c.json({ error: 'Task not found' }, 404)
+
+    const ctx = safeJsonParse<Record<string, unknown>>(existing.context, {})
+    const decisions = (ctx['decisions'] ?? {}) as Record<string, { status: string; reason?: string; decidedAt: string }>
+
+    // Parse result to get findings
+    const resultObj = safeJsonParse<{ summary?: string; findings?: Array<{ id: string; [k: string]: unknown }> }>(existing.result, {})
+    const allFindings = resultObj.findings ?? []
+
+    // Filter to only approved findings
+    const approvedFindings = allFindings.filter((f) => decisions[f.id]?.status === 'approved')
+    const rejectedFindings = allFindings.filter((f) => decisions[f.id]?.status === 'rejected')
+
+    const finalResult = {
+      summary: resultObj.summary ?? '',
+      findings: approvedFindings,
+      finalized: true,
+      totalFindings: allFindings.length,
+      approvedCount: approvedFindings.length,
+      rejectedCount: rejectedFindings.length,
+      finalizedAt: new Date().toISOString(),
+    }
+
+    db.prepare(`
+      UPDATE conductor_tasks
+      SET result = ?, status = 'completed', completed_at = datetime('now')
+      WHERE id = ?
+    `).run(JSON.stringify(finalResult), taskId)
+
+    logTaskAction(taskId, null, 'finalized',
+      `Finalized with ${approvedFindings.length}/${allFindings.length} findings approved`)
+
+    const updatedTask = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(taskId) as TaskRow
+    resolveCompletionChain(updatedTask)
+
+    return c.json({ task: updatedTask })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }
