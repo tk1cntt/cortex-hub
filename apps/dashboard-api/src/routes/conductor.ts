@@ -871,6 +871,80 @@ conductorRouter.put('/:id', async (c) => {
   }
 })
 
+// ── Submit strategy (Lead Agent submits after analysis) ──
+conductorRouter.put('/:id/strategy', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const body = await c.req.json()
+    const { strategy } = body as {
+      strategy: {
+        summary: string
+        roles: Array<{ role: string; label: string; agent: string; rationale: string; capabilities?: string[] }>
+        subtasks: Array<{ title: string; description?: string; role: string; dependsOn?: string[]; priority?: number }>
+        estimatedEffort?: string
+      }
+    }
+
+    if (!strategy?.summary || !Array.isArray(strategy.roles) || !Array.isArray(strategy.subtasks)) {
+      return c.json({ error: 'Invalid strategy: requires summary, roles[], and subtasks[]' }, 400)
+    }
+
+    const existing = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow | undefined
+    if (!existing) return c.json({ error: 'Task not found' }, 404)
+
+    // Save strategy into context and set status to strategy_review
+    const existingCtx = safeJsonParse<Record<string, unknown>>(existing.context, {})
+    const updatedCtx = { ...existingCtx, strategy, phase: 'strategy_review' }
+
+    db.prepare(`
+      UPDATE conductor_tasks
+      SET status = 'strategy_review', context = ?
+      WHERE id = ?
+    `).run(JSON.stringify(updatedCtx), id)
+
+    logTaskAction(id, existing.assigned_to_agent, 'strategy_submitted',
+      `Strategy: ${strategy.roles.length} roles, ${strategy.subtasks.length} subtasks`)
+
+    // Broadcast to dashboard via WS
+    const { broadcastStrategyReady } = await import('../ws/conductor.js')
+    broadcastStrategyReady(id, existing.title, strategy)
+
+    const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow
+    return c.json({ task })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Approve strategy (user approves from dashboard) ──
+conductorRouter.post('/:id/strategy/approve', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const existing = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow | undefined
+    if (!existing) return c.json({ error: 'Task not found' }, 404)
+
+    if (existing.status !== 'strategy_review') {
+      return c.json({ error: `Cannot approve strategy: task status is '${existing.status}', expected 'strategy_review'` }, 400)
+    }
+
+    const existingCtx = safeJsonParse<Record<string, unknown>>(existing.context, {})
+    const updatedCtx = { ...existingCtx, phase: 'execution', strategyApprovedAt: new Date().toISOString() }
+
+    db.prepare(`
+      UPDATE conductor_tasks
+      SET status = 'in_progress', context = ?
+      WHERE id = ?
+    `).run(JSON.stringify(updatedCtx), id)
+
+    logTaskAction(id, null, 'strategy_approved', 'Strategy approved by user')
+
+    const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow
+    return c.json({ task })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
 // ── Cancel task ──
 conductorRouter.post('/:id/cancel', (c) => {
   try {

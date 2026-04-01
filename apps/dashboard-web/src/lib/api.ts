@@ -956,6 +956,14 @@ export async function deleteConductorTask(id: string) {
   return apiFetch<{ success: boolean; id: string }>(`/api/conductor/${id}`, { method: 'DELETE' })
 }
 
+export async function getConductorTaskById(id: string) {
+  return apiFetch<ConductorTask>(`/api/conductor/${id}`)
+}
+
+export async function approveConductorStrategy(id: string) {
+  return apiFetch<{ task: ConductorTask }>(`/api/conductor/${id}/strategy/approve`, { method: 'POST' })
+}
+
 export async function autoAssignTask(taskId: string, requiredCapabilities: string[], preferredPlatform?: string) {
   return apiFetch<{ assigned: boolean; agentId?: string; task?: ConductorTask }>('/api/conductor/auto-assign', {
     method: 'POST',

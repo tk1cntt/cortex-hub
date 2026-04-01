@@ -4,8 +4,7 @@ import type { Env } from '../types.js'
 
 /**
  * Register Cortex Conductor task management tools.
- * Enables agents to create, pick up, accept, update, and query tasks
- * via the Dashboard API task endpoints.
+ * All tools use the /api/conductor endpoints (orchestration-aware).
  */
 export function registerTaskTools(server: McpServer, env: Env) {
   // task.create — create a new task and optionally assign to another agent
@@ -25,7 +24,7 @@ export function registerTaskTools(server: McpServer, env: Env) {
     },
     async ({ title, description, assignTo, priority, requiredCapabilities, dependsOn, notifyOnComplete, context, parentTaskId }) => {
       try {
-        const response = await fetch(`${env.DASHBOARD_API_URL}/api/tasks`, {
+        const response = await fetch(`${env.DASHBOARD_API_URL}/api/conductor`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -51,21 +50,18 @@ export function registerTaskTools(server: McpServer, env: Env) {
         }
 
         const data = (await response.json()) as {
-          id: string
-          title: string
-          status: string
-          assignedTo?: string
-          priority?: string
+          task: { id: string; title: string; status: string; assigned_to_agent?: string; priority?: number }
         }
+        const task = data.task
 
         const lines = [
           `**Task Created**`,
-          `- **ID:** ${data.id}`,
-          `- **Title:** ${data.title}`,
-          `- **Status:** ${data.status}`,
+          `- **ID:** ${task.id}`,
+          `- **Title:** ${task.title}`,
+          `- **Status:** ${task.status}`,
         ]
-        if (data.assignedTo) lines.push(`- **Assigned To:** ${data.assignedTo}`)
-        if (data.priority) lines.push(`- **Priority:** ${data.priority}`)
+        if (task.assigned_to_agent) lines.push(`- **Assigned To:** ${task.assigned_to_agent}`)
+        if (task.priority) lines.push(`- **Priority:** ${task.priority}`)
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
       } catch (error) {
@@ -86,11 +82,10 @@ export function registerTaskTools(server: McpServer, env: Env) {
     },
     async ({ agentId }) => {
       try {
-        // Query all tasks, filter by any matching identity
-        const url = `${env.DASHBOARD_API_URL}/api/tasks?status=assigned,accepted,in_progress`
-        const response = await fetch(url, {
-          method: 'GET',
+        const response = await fetch(`${env.DASHBOARD_API_URL}/api/conductor/pickup`, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId }),
           signal: AbortSignal.timeout(10000),
         })
 
@@ -102,22 +97,21 @@ export function registerTaskTools(server: McpServer, env: Env) {
           }
         }
 
-        const data = (await response.json()) as { tasks?: Array<{ id: string; title: string; status: string; priority?: string; description?: string }> }
-        const tasks = data.tasks ?? []
+        const data = (await response.json()) as { task?: { id: string; title: string; status: string; priority?: number; description?: string } | null }
 
-        if (tasks.length === 0) {
+        if (!data.task) {
           return { content: [{ type: 'text' as const, text: `No pending tasks for agent **${agentId}**.` }] }
         }
 
-        const lines = [`**Tasks for ${agentId}** (${tasks.length} found):\n`]
-        for (const task of tasks) {
-          lines.push(`### ${task.title}`)
-          lines.push(`- **ID:** ${task.id}`)
-          lines.push(`- **Status:** ${task.status}`)
-          if (task.priority) lines.push(`- **Priority:** ${task.priority}`)
-          if (task.description) lines.push(`- **Description:** ${task.description}`)
-          lines.push('')
-        }
+        const task = data.task
+        const lines = [
+          `**Task Picked Up**`,
+          `### ${task.title}`,
+          `- **ID:** ${task.id}`,
+          `- **Status:** ${task.status}`,
+        ]
+        if (task.priority) lines.push(`- **Priority:** ${task.priority}`)
+        if (task.description) lines.push(`- **Description:** ${task.description}`)
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
       } catch (error) {
@@ -138,12 +132,11 @@ export function registerTaskTools(server: McpServer, env: Env) {
     },
     async ({ taskId }) => {
       try {
-        const response = await fetch(`${env.DASHBOARD_API_URL}/api/tasks/${encodeURIComponent(taskId)}`, {
-          method: 'PATCH',
+        const response = await fetch(`${env.DASHBOARD_API_URL}/api/conductor/${encodeURIComponent(taskId)}`, {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             status: 'accepted',
-            acceptedAt: new Date().toISOString(),
           }),
           signal: AbortSignal.timeout(10000),
         })
@@ -156,9 +149,9 @@ export function registerTaskTools(server: McpServer, env: Env) {
           }
         }
 
-        const data = (await response.json()) as { id: string; title: string; status: string }
+        const data = (await response.json()) as { task: { id: string; title: string; status: string } }
         return {
-          content: [{ type: 'text' as const, text: `**Task Accepted**\n- **ID:** ${data.id}\n- **Title:** ${data.title}\n- **Status:** ${data.status}` }],
+          content: [{ type: 'text' as const, text: `**Task Accepted**\n- **ID:** ${data.task.id}\n- **Title:** ${data.task.title}\n- **Status:** ${data.task.status}` }],
         }
       } catch (error) {
         return {
@@ -181,8 +174,8 @@ export function registerTaskTools(server: McpServer, env: Env) {
     },
     async ({ taskId, status, message, result }) => {
       try {
-        const response = await fetch(`${env.DASHBOARD_API_URL}/api/tasks/${encodeURIComponent(taskId)}`, {
-          method: 'PATCH',
+        const response = await fetch(`${env.DASHBOARD_API_URL}/api/conductor/${encodeURIComponent(taskId)}`, {
+          method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status, message, result }),
           signal: AbortSignal.timeout(10000),
@@ -196,9 +189,9 @@ export function registerTaskTools(server: McpServer, env: Env) {
           }
         }
 
-        const data = (await response.json()) as { id: string; title: string; status: string }
+        const data = (await response.json()) as { task: { id: string; title: string; status: string } }
         return {
-          content: [{ type: 'text' as const, text: `**Task Updated**\n- **ID:** ${data.id}\n- **Title:** ${data.title}\n- **Status:** ${data.status}` }],
+          content: [{ type: 'text' as const, text: `**Task Updated**\n- **ID:** ${data.task.id}\n- **Title:** ${data.task.title}\n- **Status:** ${data.task.status}` }],
         }
       } catch (error) {
         return {
@@ -227,7 +220,7 @@ export function registerTaskTools(server: McpServer, env: Env) {
         if (assignedTo) params.set('assignedTo', assignedTo)
         if (limit) params.set('limit', String(limit))
 
-        const url = `${env.DASHBOARD_API_URL}/api/tasks?${params.toString()}`
+        const url = `${env.DASHBOARD_API_URL}/api/conductor?${params.toString()}`
         const response = await fetch(url, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
@@ -276,7 +269,7 @@ export function registerTaskTools(server: McpServer, env: Env) {
     },
     async ({ taskId }) => {
       try {
-        const response = await fetch(`${env.DASHBOARD_API_URL}/api/tasks/${encodeURIComponent(taskId)}`, {
+        const response = await fetch(`${env.DASHBOARD_API_URL}/api/conductor/${encodeURIComponent(taskId)}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           signal: AbortSignal.timeout(10000),
@@ -295,15 +288,16 @@ export function registerTaskTools(server: McpServer, env: Env) {
           title: string
           status: string
           description?: string
-          assignedTo?: string
-          priority?: string
-          createdAt?: string
-          acceptedAt?: string
-          completedAt?: string
-          parentTaskId?: string
-          dependsOn?: string[]
-          logs?: Array<{ timestamp: string; message: string }>
-          result?: Record<string, unknown>
+          assigned_to_agent?: string
+          priority?: number
+          created_at?: string
+          accepted_at?: string
+          completed_at?: string
+          parent_task_id?: string
+          depends_on?: string
+          context?: string
+          result?: string
+          logs?: Array<{ action: string; agent_id: string; message: string; created_at: string }>
         }
 
         const lines = [
@@ -312,25 +306,28 @@ export function registerTaskTools(server: McpServer, env: Env) {
           `- **Status:** ${task.status}`,
         ]
         if (task.description) lines.push(`- **Description:** ${task.description}`)
-        if (task.assignedTo) lines.push(`- **Assigned To:** ${task.assignedTo}`)
+        if (task.assigned_to_agent) lines.push(`- **Assigned To:** ${task.assigned_to_agent}`)
         if (task.priority) lines.push(`- **Priority:** ${task.priority}`)
-        if (task.parentTaskId) lines.push(`- **Parent Task:** ${task.parentTaskId}`)
-        if (task.dependsOn && task.dependsOn.length > 0) lines.push(`- **Depends On:** ${task.dependsOn.join(', ')}`)
-        if (task.createdAt) lines.push(`- **Created:** ${task.createdAt}`)
-        if (task.acceptedAt) lines.push(`- **Accepted:** ${task.acceptedAt}`)
-        if (task.completedAt) lines.push(`- **Completed:** ${task.completedAt}`)
+        if (task.parent_task_id) lines.push(`- **Parent Task:** ${task.parent_task_id}`)
+        if (task.created_at) lines.push(`- **Created:** ${task.created_at}`)
+        if (task.accepted_at) lines.push(`- **Accepted:** ${task.accepted_at}`)
+        if (task.completed_at) lines.push(`- **Completed:** ${task.completed_at}`)
 
         if (task.result) {
           lines.push(`\n### Result`)
           lines.push('```json')
-          lines.push(JSON.stringify(task.result, null, 2))
+          try {
+            lines.push(JSON.stringify(JSON.parse(task.result), null, 2))
+          } catch {
+            lines.push(task.result)
+          }
           lines.push('```')
         }
 
         if (task.logs && task.logs.length > 0) {
           lines.push(`\n### Activity Log`)
           for (const log of task.logs) {
-            lines.push(`- **${log.timestamp}:** ${log.message}`)
+            lines.push(`- **${log.created_at}** [${log.action}] ${log.message ?? ''}`)
           }
         }
 
@@ -343,4 +340,5 @@ export function registerTaskTools(server: McpServer, env: Env) {
       }
     }
   )
+
 }

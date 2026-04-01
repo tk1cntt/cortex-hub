@@ -398,6 +398,45 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       break
     }
 
+    case 'task.strategy': {
+      // Lead Agent submits strategy for a task
+      const taskId = msg['taskId'] as string | undefined
+      const strategy = msg['strategy'] as Record<string, unknown> | undefined
+      if (!taskId || !strategy) break
+
+      const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(taskId) as Record<string, unknown> | undefined
+      if (!task) break
+
+      // Save strategy into context
+      let ctx: Record<string, unknown> = {}
+      try { ctx = JSON.parse((task['context'] as string) ?? '{}') } catch { /* ignore */ }
+      ctx['strategy'] = strategy
+      ctx['phase'] = 'strategy_review'
+
+      db.prepare(`
+        UPDATE conductor_tasks SET status = 'strategy_review', context = ? WHERE id = ?
+      `).run(JSON.stringify(ctx), taskId)
+
+      // Log action
+      db.prepare(
+        'INSERT INTO conductor_task_logs (task_id, agent_id, action, message) VALUES (?, ?, ?, ?)'
+      ).run(taskId, agent.agentId, 'strategy_submitted',
+        `Strategy: ${(strategy['roles'] as unknown[])?.length ?? 0} roles, ${(strategy['subtasks'] as unknown[])?.length ?? 0} subtasks`)
+
+      console.log(`[ws] task.strategy: ${taskId} by ${agent.agentId}`)
+
+      // Broadcast to all (dashboard included)
+      broadcastToOwner(agent.apiKeyOwner, {
+        type: 'task.strategy_ready',
+        taskId,
+        title: task['title'],
+        strategy,
+        agentId: agent.agentId,
+        timestamp: new Date().toISOString(),
+      })
+      break
+    }
+
     case 'message': {
       // Agent-to-agent messaging (same owner only)
       const targetId = msg['to'] as string | undefined
@@ -543,6 +582,23 @@ export function notifyAgents(
 }
 
 /** Mark an agent as busy/idle */
+/** Broadcast strategy ready event to all agents of the task's owner */
+export function broadcastStrategyReady(taskId: string, title: string, strategy: unknown): void {
+  // Broadcast to all owners (dashboard will pick it up)
+  const data = JSON.stringify({
+    type: 'task.strategy_ready',
+    taskId,
+    title,
+    strategy,
+    timestamp: new Date().toISOString(),
+  })
+  for (const [, agent] of agents) {
+    if (agent.ws.readyState === WebSocket.OPEN) {
+      agent.ws.send(data)
+    }
+  }
+}
+
 export function setAgentStatus(agentId: string, status: 'idle' | 'busy'): void {
   const agent = agents.get(agentId)
   if (agent) {

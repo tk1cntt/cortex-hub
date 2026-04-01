@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS conductor_tasks (
     assigned_to_agent TEXT,
     assigned_session_id TEXT,
     status TEXT DEFAULT 'pending'
-        CHECK(status IN ('pending','blocked','assigned','accepted','in_progress','review','approved','rejected','completed','failed','cancelled')),
+        CHECK(status IN ('pending','blocked','assigned','accepted','in_progress','analyzing','strategy_review','synthesis','discussion','review','approved','rejected','completed','failed','cancelled')),
     priority INTEGER DEFAULT 5,
     required_capabilities TEXT DEFAULT '[]',
     depends_on TEXT DEFAULT '[]',

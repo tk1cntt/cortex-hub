@@ -8,7 +8,7 @@ import {
   getIdeInfo,
 } from './shared'
 import { StrategyReview } from './StrategyReview'
-import { createConductorTask, type ConductorAgent, type ConductorTask } from '@/lib/api'
+import { createConductorTask, getConductorTaskById, approveConductorStrategy, type ConductorAgent, type ConductorTask } from '@/lib/api'
 import styles from './TaskBriefingWizard.module.css'
 
 type WizardStep = 1 | 2 | 3 | 4
@@ -136,82 +136,50 @@ export function TaskBriefingWizard({ onClose, onCreated, agents }: Props) {
       })
       setCreatedTask(res.task)
 
-      // Simulate agent analysis (in production, this would poll for agent response)
-      await new Promise(r => setTimeout(r, 2500))
+      // Poll for Lead Agent's real strategy submission
+      const taskId = res.task.id
+      const POLL_INTERVAL = 3000
+      const TIMEOUT = 5 * 60 * 1000 // 5 minutes
+      const startTime = Date.now()
 
-      // Generate simulated strategy based on description keywords
-      const desc = (title + ' ' + description).toLowerCase()
-      const simulatedRoles: TaskStrategy['roles'] = []
-      const simulatedSubtasks: TaskStrategy['subtasks'] = []
-
-      if (desc.includes('ui') || desc.includes('giao diện') || desc.includes('frontend') || desc.includes('design') || desc.includes('component') || desc.includes('dashboard')) {
-        const uiAgent = agents.find(a => a.capabilities?.includes('frontend'))
-        simulatedRoles.push({
-          role: 'ui',
-          label: '🎨 UI / Frontend',
-          agent: uiAgent?.agentId || 'anti-01',
-          rationale: 'Task involves UI/frontend changes. Best suited for agents with frontend capability.',
-        })
-        simulatedSubtasks.push({
-          title: `UI Implementation: ${title.trim()}`,
-          description: 'Implement the UI changes described in the brief',
-          role: 'ui',
-        })
-      }
-
-      if (desc.includes('api') || desc.includes('backend') || desc.includes('database') || desc.includes('endpoint') || desc.includes('server')) {
-        const backendAgent = agents.find(a => a.capabilities?.includes('backend'))
-        simulatedRoles.push({
-          role: 'backend',
-          label: '🔧 Backend',
-          agent: backendAgent?.agentId || '',
-          rationale: 'Task requires backend/API changes.',
-        })
-        simulatedSubtasks.push({
-          title: `Backend changes: ${title.trim()}`,
-          description: 'Implement backend API and logic changes',
-          role: 'backend',
-          dependsOn: simulatedRoles.some(r => r.role === 'ui') ? [] : undefined,
+      const pollForStrategy = (): Promise<TaskStrategy | null> => {
+        return new Promise((resolve) => {
+          const check = async () => {
+            if (Date.now() - startTime > TIMEOUT) {
+              resolve(null)
+              return
+            }
+            try {
+              const taskData = await getConductorTaskById(taskId)
+              if (taskData.status === 'strategy_review') {
+                const ctx = typeof taskData.context === 'string'
+                  ? JSON.parse(taskData.context)
+                  : taskData.context
+                if (ctx?.strategy) {
+                  resolve(ctx.strategy as TaskStrategy)
+                  return
+                }
+              }
+            } catch { /* ignore polling errors */ }
+            setTimeout(check, POLL_INTERVAL)
+          }
+          check()
         })
       }
 
-      // Always suggest a reviewer
-      const reviewAgent = agents.find(a => a.capabilities?.includes('review'))
-      simulatedRoles.push({
-        role: 'review',
-        label: '🔍 Reviewer',
-        agent: reviewAgent?.agentId || 'codex',
-        rationale: 'Code review ensures quality and catches issues before merge.',
-      })
-      simulatedSubtasks.push({
-        title: `Review: ${title.trim()}`,
-        description: 'Review all code changes for quality and correctness',
-        role: 'review',
-        dependsOn: simulatedSubtasks.map(s => s.role),
-      })
+      const agentStrategy = await pollForStrategy()
 
-      // If no specific roles matched, add a general implementation role
-      if (simulatedRoles.length === 1) { // only reviewer
-        simulatedRoles.unshift({
-          role: 'implementation',
-          label: '⚡ Implementation',
-          agent: leadAgent,
-          rationale: 'General task implementation by the lead agent.',
-        })
-        simulatedSubtasks.unshift({
-          title: `Implement: ${title.trim()}`,
-          description: description.trim(),
-          role: 'implementation',
+      if (agentStrategy) {
+        setStrategy(agentStrategy)
+      } else {
+        // Timeout — agent didn't respond
+        setStrategy({
+          summary: `Lead agent "${leadAgent}" did not respond within 5 minutes. You can go back and try a different agent, or close and assign manually.`,
+          roles: [],
+          subtasks: [],
+          estimatedEffort: 'Unknown',
         })
       }
-
-      setStrategy({
-        summary: `Analyzed task "${title.trim()}". Identified ${simulatedRoles.length} roles needed with ${simulatedSubtasks.length} work items. ` +
-          (simulatedSubtasks.some(s => s.dependsOn?.length) ? 'Review depends on implementation completion.' : 'Tasks can run in parallel.'),
-        roles: simulatedRoles,
-        subtasks: simulatedSubtasks,
-        estimatedEffort: simulatedSubtasks.length <= 2 ? 'Small (~1 session)' : 'Medium (~2-3 sessions)',
-      })
     } catch (err) {
       console.error('Failed to create task:', err)
     } finally {
@@ -250,6 +218,11 @@ export function TaskBriefingWizard({ onClose, onCreated, agents }: Props) {
           },
         })
         taskIds.push(subRes.task.id)
+      }
+
+      // Approve the strategy on backend
+      if (createdTask) {
+        try { await approveConductorStrategy(createdTask.id) } catch { /* non-critical */ }
       }
 
       setCreatedTaskIds(taskIds)
