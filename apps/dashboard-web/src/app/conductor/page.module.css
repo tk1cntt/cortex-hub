@@ -259,6 +259,147 @@
   color: var(--accent-primary);
 }
 
+/* Task Result Preview (on cards) */
+.taskResultPreview {
+  font-size: 0.75rem;
+  color: var(--status-healthy, #10b981);
+  line-height: 1.4;
+  padding: var(--space-1) var(--space-2);
+  background: rgba(16, 185, 129, 0.06);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid rgba(16, 185, 129, 0.3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskMetaRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.taskDuration {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* Pipeline Row Outcome */
+.pipelineOutcome {
+  font-size: 0.6875rem;
+  color: var(--status-healthy, #10b981);
+  padding-left: calc(var(--space-2) + 14px);
+  margin-top: -2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.pipelineDuration {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  margin-left: var(--space-2);
+}
+
+/* Live Output Lifecycle Events */
+.liveOutputLifecycle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px solid var(--border-subtle);
+  margin-bottom: 1px;
+  font-size: 0.75rem;
+}
+
+.liveOutputLifecycleIcon {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+}
+
+.liveOutputLifecycleAction {
+  font-weight: 600;
+  min-width: 100px;
+}
+
+.liveOutputLifecycleMsg {
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Task Detail Timeline */
+.taskTimeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: var(--space-2) 0;
+}
+
+.timelineStep {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  position: relative;
+}
+
+.timelineStep::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 28px;
+  bottom: -8px;
+  width: 1px;
+  background: var(--border-subtle);
+}
+
+.timelineStep:last-child::before {
+  display: none;
+}
+
+.timelineDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5rem;
+}
+
+.timelineDotActive {
+  background: var(--status-healthy, #10b981);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+
+.timelineDotPending {
+  background: var(--border-subtle);
+}
+
+.timelineInfo {
+  flex: 1;
+}
+
+.timelineLabel {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.timelineTime {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
 /* Progress bar */
 .progressBar {
   width: 100%;

@@ -23,6 +23,8 @@ import {
   flattenTree,
   getIdeInfo,
   getCapColor,
+  getResultSummary,
+  getTaskDuration,
   StatusBadge,
 } from './components'
 import styles from './page.module.css'
@@ -52,44 +54,59 @@ function PipelineRow({
     : task.status === 'in_progress' ? 'inProgress'
     : task.status === 'failed' ? 'failed' : 'pending'
 
+  const resultSummary = task.status === 'completed' ? getResultSummary(task.result, 80) : ''
+  const duration = getTaskDuration(task)
+
   return (
-    <div
-      className={`${styles.pipelineRow} ${depth === 0 ? styles.pipelineRowRoot : ''}`}
-      onClick={onSelect}
-      style={{ paddingLeft: `${depth * 36 + 20}px` }}
-    >
-      {depth > 0 && (
-        <span
-          className={`${styles.connector} ${isLast ? styles.connectorLast : styles.connectorMid}`}
-          data-status={statusColor}
-        />
+    <div>
+      <div
+        className={`${styles.pipelineRow} ${depth === 0 ? styles.pipelineRowRoot : ''}`}
+        onClick={onSelect}
+        style={{ paddingLeft: `${depth * 36 + 20}px` }}
+      >
+        {depth > 0 && (
+          <span
+            className={`${styles.connector} ${isLast ? styles.connectorLast : styles.connectorMid}`}
+            data-status={statusColor}
+          />
+        )}
+        <span className={`${styles.pipelineDot} ${
+          task.status === 'completed' ? styles.dotCompleted
+          : task.status === 'in_progress' ? styles.dotInProgress
+          : task.status === 'failed' ? styles.dotFailed
+          : styles.dotPending
+        }`} />
+        <span className={`${styles.pipelineTitle} ${depth === 0 ? styles.pipelineTitleRoot : ''}`}>
+          {hasChildren && <span className={styles.pipelineExpandIcon}>▾</span>}
+          {task.title}
+        </span>
+        <span className={styles.pipelineFlow}>
+          {task.created_by_agent && <code className={styles.flowAgent}>{task.created_by_agent}</code>}
+          {task.assigned_to_agent && (
+            <>
+              <span className={styles.flowArrow}>→</span>
+              <code className={styles.flowAgent}>{task.assigned_to_agent}</code>
+            </>
+          )}
+          {task.completed_by && task.completed_by !== task.assigned_to_agent && (
+            <>
+              <span className={styles.flowArrow}>→</span>
+              <code className={styles.flowAgentDone}>{task.completed_by}</code>
+            </>
+          )}
+        </span>
+        <StatusBadge status={task.status} />
+      </div>
+      {/* Result outcome line */}
+      {resultSummary && (
+        <div
+          className={styles.pipelineOutcome}
+          style={{ paddingLeft: `${depth * 36 + 20}px` }}
+        >
+          {resultSummary}
+          {duration && <span className={styles.pipelineDuration}>⏱ {duration}</span>}
+        </div>
       )}
-      <span className={`${styles.pipelineDot} ${
-        task.status === 'completed' ? styles.dotCompleted
-        : task.status === 'in_progress' ? styles.dotInProgress
-        : task.status === 'failed' ? styles.dotFailed
-        : styles.dotPending
-      }`} />
-      <span className={`${styles.pipelineTitle} ${depth === 0 ? styles.pipelineTitleRoot : ''}`}>
-        {hasChildren && <span className={styles.pipelineExpandIcon}>▾</span>}
-        {task.title}
-      </span>
-      <span className={styles.pipelineFlow}>
-        {task.created_by_agent && <code className={styles.flowAgent}>{task.created_by_agent}</code>}
-        {task.assigned_to_agent && (
-          <>
-            <span className={styles.flowArrow}>→</span>
-            <code className={styles.flowAgent}>{task.assigned_to_agent}</code>
-          </>
-        )}
-        {task.completed_by && task.completed_by !== task.assigned_to_agent && (
-          <>
-            <span className={styles.flowArrow}>→</span>
-            <code className={styles.flowAgentDone}>{task.completed_by}</code>
-          </>
-        )}
-      </span>
-      <StatusBadge status={task.status} />
     </div>
   )
 }

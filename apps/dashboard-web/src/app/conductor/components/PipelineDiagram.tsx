@@ -13,7 +13,7 @@ import {
   MarkerType,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { buildTaskTree, type ConductorTask, type TaskTreeNode } from './shared'
+import { buildTaskTree, getResultSummary, getTaskDuration, type ConductorTask, type TaskTreeNode } from './shared'
 import styles from './PipelineDiagram.module.css'
 
 /* ── Custom Node Component ── */
@@ -65,6 +65,10 @@ function PipelineNodeComponent({ data }: NodeProps) {
     return styles.iconOrange
   })()
 
+  const resultSummary = (task.status === 'completed' || task.status === 'approved')
+    ? getResultSummary(task.result, 60) : ''
+  const duration = getTaskDuration(task)
+
   return (
     <div
       className={`${styles.pipelineNode} ${statusClass} ${isOrchestrator ? styles.nodeOrchestrator : ''}`}
@@ -74,16 +78,22 @@ function PipelineNodeComponent({ data }: NodeProps) {
 
       <div className={styles.nodeHeader}>
         <span className={`${styles.nodeIcon} ${iconColor}`}>{roleEmoji}</span>
-        <span className={styles.nodeTitle}>{task.title.replace(/^\[Delegated\]\s*/, '').slice(0, 30)}</span>
+        <span className={styles.nodeTitle}>{task.title.replace(/^\[Delegated\]\s*/, '').slice(0, 50)}</span>
       </div>
 
       <div className={styles.nodeAgent}>
         {task.assigned_to_agent ?? 'unassigned'}
       </div>
 
+      {/* Result preview for completed tasks */}
+      {resultSummary && (
+        <div className={styles.nodeResult}>{resultSummary}</div>
+      )}
+
       <div className={styles.nodeStatusRow}>
         <span className={`${styles.nodeStatusDot} ${dotClass}`} />
         <span className={styles.nodeStatusLabel}>{task.status.replace('_', ' ')}</span>
+        {duration && <span className={styles.nodeDuration}>⏱ {duration}</span>}
       </div>
 
       <Handle type="source" position={Position.Bottom} style={{ background: 'var(--border)', width: 8, height: 8 }} />
@@ -93,6 +103,18 @@ function PipelineNodeComponent({ data }: NodeProps) {
 
 const nodeTypes = {
   pipeline: PipelineNodeComponent,
+}
+
+/* ── Edge label helper ── */
+function getEdgeLabel(parentTask: ConductorTask, childTask: ConductorTask): string {
+  const title = childTask.title.toLowerCase()
+  if (title.includes('review')) return 'review'
+  if (title.includes('delegated')) return 'delegated'
+  if (title.includes('revision')) return 'revision'
+  if (childTask.created_by_agent === 'auto-orchestrator') return 'auto'
+  if (parentTask.assigned_to_agent && childTask.assigned_to_agent &&
+      parentTask.assigned_to_agent !== childTask.assigned_to_agent) return 'delegate'
+  return ''
 }
 
 /* ── Pipeline Diagram ── */
@@ -109,8 +131,12 @@ export function PipelineDiagram({ tasks, onNodeClick }: Props) {
     const tree = buildTaskTree(tasks)
     const flowNodes: Node[] = []
     const flowEdges: Edge[] = []
-    const HORIZ_GAP = 260
-    const VERT_GAP = 140
+    const HORIZ_GAP = 280
+    const VERT_GAP = 160
+
+    // Build a task lookup for edge labels
+    const taskMap = new Map<string, ConductorTask>()
+    for (const t of tasks) taskMap.set(t.id, t)
 
     function layoutNode(treeNode: TaskTreeNode, x: number, y: number, _parentId?: string): number {
       const nodeId = treeNode.task.id
@@ -128,16 +154,37 @@ export function PipelineDiagram({ tasks, onNodeClick }: Props) {
 
       if (_parentId) {
         const isActive = treeNode.task.status === 'in_progress' || treeNode.task.status === 'analyzing'
+        const isComplete = treeNode.task.status === 'completed' || treeNode.task.status === 'approved'
+        const parentTask = taskMap.get(_parentId)
+        const label = parentTask ? getEdgeLabel(parentTask, treeNode.task) : ''
+
         flowEdges.push({
           id: `e-${_parentId}-${nodeId}`,
           source: _parentId,
           target: nodeId,
           animated: isActive,
-          style: {
-            stroke: isActive ? '#6366f1' : 'var(--border)',
-            strokeWidth: isActive ? 2.5 : 1.5,
+          label: label || undefined,
+          labelStyle: {
+            fontSize: 10,
+            fill: isComplete ? '#10b981' : isActive ? '#6366f1' : 'var(--text-tertiary)',
+            fontWeight: 500,
           },
-          markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: isActive ? '#6366f1' : 'var(--border)' },
+          labelBgStyle: {
+            fill: 'var(--bg-secondary)',
+            fillOpacity: 0.9,
+          },
+          labelBgPadding: [4, 2] as [number, number],
+          labelBgBorderRadius: 4,
+          style: {
+            stroke: isComplete ? '#10b981' : isActive ? '#6366f1' : 'var(--border)',
+            strokeWidth: isActive ? 2.5 : isComplete ? 2 : 1.5,
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 12,
+            height: 12,
+            color: isComplete ? '#10b981' : isActive ? '#6366f1' : 'var(--border)',
+          },
         })
       }
 

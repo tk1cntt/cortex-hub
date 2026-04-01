@@ -102,6 +102,85 @@ export function parseResult(value: string | null): ParsedResult {
   }
 }
 
+/** Get a short one-liner summary from task result JSON */
+export function getResultSummary(result: string | null, maxLen = 120): string {
+  if (!result) return ''
+  try {
+    const parsed = JSON.parse(result)
+    if (typeof parsed === 'string') return parsed.slice(0, maxLen)
+
+    // Auto-completed parent: "All N subtasks completed"
+    if (parsed.autoCompleted && Array.isArray(parsed.subtaskResults)) {
+      const count = parsed.subtaskResults.length
+      const titles = parsed.subtaskResults
+        .slice(0, 3)
+        .map((s: { title?: string }) => s.title ?? 'untitled')
+        .join(', ')
+      const suffix = count > 3 ? ` +${count - 3} more` : ''
+      return `✓ ${count} subtasks: ${titles}${suffix}`
+    }
+
+    // Array of subtask results
+    if (Array.isArray(parsed)) {
+      return `${parsed.length} results returned`
+    }
+
+    // Object with a message/summary key
+    if (parsed.message) return String(parsed.message).slice(0, maxLen)
+    if (parsed.summary) return String(parsed.summary).slice(0, maxLen)
+
+    // Generic object: show top-level keys
+    const keys = Object.keys(parsed).filter(k => k !== 'subtaskResults')
+    if (keys.length > 0) {
+      const preview = keys.slice(0, 4).map(k => {
+        const v = parsed[k]
+        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return `${k}: ${v}`
+        return k
+      }).join(', ')
+      return preview.slice(0, maxLen)
+    }
+
+    return ''
+  } catch {
+    return result.slice(0, maxLen)
+  }
+}
+
+/** Get human-readable duration between task timestamps */
+export function getTaskDuration(task: { created_at: string; accepted_at?: string | null; completed_at?: string | null }): string {
+  const start = task.accepted_at ?? task.created_at
+  const end = task.completed_at
+  if (!end) return ''
+  const diffMs = new Date(end).getTime() - new Date(start).getTime()
+  if (diffMs < 0) return ''
+  const seconds = Math.floor(diffMs / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const remainMins = minutes % 60
+  return remainMins > 0 ? `${hours}h ${remainMins}m` : `${hours}h`
+}
+
+/** Map log action types to human-readable labels */
+export function getLogActionLabel(action: string): { label: string; icon: string; color: string } {
+  switch (action) {
+    case 'created': return { label: 'Created', icon: '📋', color: 'var(--text-secondary)' }
+    case 'auto_assigned': return { label: 'Auto-assigned', icon: '🎯', color: 'var(--status-info)' }
+    case 'delegated': return { label: 'Delegated', icon: '🔀', color: 'var(--status-info)' }
+    case 'picked_up': return { label: 'Picked up', icon: '🤚', color: 'var(--status-info)' }
+    case 'progress': return { label: 'Progress', icon: '⚡', color: 'var(--text-tertiary)' }
+    case 'completed': return { label: 'Completed', icon: '✅', color: 'var(--status-success)' }
+    case 'auto_completed': return { label: 'Auto-completed', icon: '✅', color: 'var(--status-success)' }
+    case 'auto_review': return { label: 'Review created', icon: '🔍', color: 'var(--status-warning)' }
+    case 'unblocked': return { label: 'Unblocked', icon: '🔓', color: 'var(--status-info)' }
+    case 'submitted_for_review': return { label: 'Submitted for review', icon: '📤', color: 'var(--status-warning)' }
+    case 'rejected': return { label: 'Rejected', icon: '❌', color: 'var(--status-error)' }
+    case 'subtask_failed': return { label: 'Subtask failed', icon: '⚠️', color: 'var(--status-error)' }
+    default: return { label: action.replace(/_/g, ' '), icon: '•', color: 'var(--text-tertiary)' }
+  }
+}
+
 /** Build a tree from flat task list using parent_task_id */
 export function buildTaskTree(tasks: ConductorTask[]): TaskTreeNode[] {
   const taskMap = new Map<string, TaskTreeNode>()
