@@ -261,21 +261,45 @@ function checkParentCompletion(parentId: string): void {
     const subtaskResults = subtasks.map((t) => ({
       id: t.id,
       title: t.title,
+      status: t.status,
+      assignedTo: t.assigned_to_agent,
+      completedBy: t.completed_by,
       result: t.result ? safeJsonParse(t.result, null) : null,
     }))
 
-    db.prepare(`
-      UPDATE conductor_tasks
-      SET status = 'completed', completed_at = datetime('now'),
-          result = ?
-      WHERE id = ?
-    `).run(JSON.stringify({ subtaskResults, autoCompleted: true }), parentId)
+    // If parent has a Lead Agent assigned, enter synthesis mode instead of auto-completing
+    if (parent.assigned_to_agent) {
+      const existingCtx = safeJsonParse<Record<string, unknown>>(parent.context, {})
+      const updatedCtx = { ...existingCtx, subtaskResults, phase: 'synthesis' }
 
-    logTaskAction(parentId, null, 'auto_completed', `All ${subtasks.length} subtasks completed`)
+      db.prepare(`
+        UPDATE conductor_tasks
+        SET status = 'synthesis', context = ?
+        WHERE id = ?
+      `).run(JSON.stringify(updatedCtx), parentId)
 
-    // Recursively resolve the parent's completion chain
-    const updatedParent = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(parentId) as TaskRow
-    resolveCompletionChain(updatedParent)
+      logTaskAction(parentId, null, 'synthesis_ready',
+        `All ${activeSubtasks.length} subtasks completed. Awaiting Lead Agent synthesis.`)
+
+      // Notify Lead Agent via WS to synthesize
+      pushTaskToAgent(parent.assigned_to_agent, parentId, parent.title,
+        `All ${activeSubtasks.length} subtasks completed. Please synthesize results and submit final summary.`)
+
+      console.log(`[conductor] Synthesis requested: ${parentId} → ${parent.assigned_to_agent}`)
+    } else {
+      // No Lead Agent — fallback to auto-complete
+      db.prepare(`
+        UPDATE conductor_tasks
+        SET status = 'completed', completed_at = datetime('now'),
+            result = ?
+        WHERE id = ?
+      `).run(JSON.stringify({ subtaskResults, autoCompleted: true }), parentId)
+
+      logTaskAction(parentId, null, 'auto_completed', `All ${subtasks.length} subtasks completed`)
+
+      const updatedParent = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(parentId) as TaskRow
+      resolveCompletionChain(updatedParent)
+    }
   } else if (anyFailed) {
     // If any subtask failed, mark parent for review
     const failedTasks = subtasks.filter((t) => t.status === 'failed').map((t) => t.id)
