@@ -344,4 +344,59 @@ export function registerTaskTools(server: McpServer, env: Env) {
     }
   )
 
+  // task.submit_strategy — Lead Agent submits strategy after analyzing a task
+  server.tool(
+    'cortex_task_submit_strategy',
+    'Submit a task execution strategy for user review. The Lead Agent calls this after analyzing a task to propose team roles, subtasks, and execution plan. The dashboard wizard will display the strategy for user approval.',
+    {
+      taskId: z.string().describe('The task ID to submit strategy for'),
+      summary: z.string().describe('Brief summary of the analysis and proposed approach'),
+      roles: z.array(z.object({
+        role: z.string().describe('Role identifier (e.g. ui, backend, review)'),
+        label: z.string().describe('Display label (e.g. "UI / Frontend")'),
+        agent: z.string().describe('Agent ID to assign this role'),
+        rationale: z.string().describe('Why this role is needed'),
+      })).describe('Team roles needed for this task'),
+      subtasks: z.array(z.object({
+        title: z.string().describe('Subtask title'),
+        description: z.string().optional().describe('Subtask description'),
+        role: z.string().describe('Role this subtask belongs to'),
+        dependsOn: z.array(z.string()).optional().describe('Role names this subtask depends on'),
+      })).describe('Work items to execute'),
+      estimatedEffort: z.string().optional().describe('Estimated effort (e.g. "Small (~1 session)")'),
+    },
+    async ({ taskId, summary, roles, subtasks, estimatedEffort }) => {
+      try {
+        const response = await fetch(`${env.DASHBOARD_API_URL}/api/conductor/${encodeURIComponent(taskId)}/strategy`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            strategy: { summary, roles, subtasks, estimatedEffort },
+          }),
+          signal: AbortSignal.timeout(10000),
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          return {
+            content: [{ type: 'text' as const, text: `Strategy submission failed: ${response.status} ${errorText}` }],
+            isError: true,
+          }
+        }
+
+        const lines = [
+          `**Strategy Submitted** for task ${taskId}`,
+          `- **Roles:** ${roles.map(r => `${r.label} → ${r.agent}`).join(', ')}`,
+          `- **Subtasks:** ${subtasks.length}`,
+          `- **Status:** Awaiting user approval on dashboard`,
+        ]
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+      } catch (error) {
+        return {
+          content: [{ type: 'text' as const, text: `Strategy submit error: ${error instanceof Error ? error.message : 'Unknown'}` }],
+          isError: true,
+        }
+      }
+    }
+  )
 }

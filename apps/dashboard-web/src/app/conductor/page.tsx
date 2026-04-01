@@ -8,6 +8,7 @@ import {
   getConductorAgents,
   cancelConductorTask,
   deleteConductorTask,
+  deletePipeline,
   type ConductorTask,
   type ConductorAgent,
 } from '@/lib/api'
@@ -19,6 +20,7 @@ import {
   AgentDetail,
   type StatusFilter,
   type ViewMode,
+  type TaskPrefill,
   buildTaskTree,
   flattenTree,
   getIdeInfo,
@@ -26,16 +28,11 @@ import {
   getResultSummary,
   getTaskDuration,
   StatusBadge,
+  type TaskTreeNode,
 } from './components'
 import styles from './page.module.css'
 
 // ── Pipeline tree views ──
-
-interface TaskTreeNode {
-  task: ConductorTask
-  children: TaskTreeNode[]
-  depth: number
-}
 
 /** Pipeline tree row — shows task with indentation and connector lines */
 function PipelineRow({
@@ -111,13 +108,17 @@ function PipelineRow({
   )
 }
 
-/** Classic Pipeline view — renders task tree with delegation arrows */
+/** Classic Pipeline view — renders task tree with delegation arrows + per-pipeline diagram & delete */
 function PipelineView({
   tasks,
   onSelectTask,
+  onDeletePipeline,
+  onShowDiagram,
 }: {
   tasks: ConductorTask[]
   onSelectTask: (task: ConductorTask) => void
+  onDeletePipeline: (rootTaskId: string) => void
+  onShowDiagram: (rootTaskId: string) => void
 }) {
   const tree = useMemo(() => buildTaskTree(tasks), [tasks])
   const flat = useMemo(() => flattenTree(tree), [tree])
@@ -195,6 +196,22 @@ function PipelineView({
                       {completedCount}/{subtaskCount} subtasks
                     </span>
                     <StatusBadge status={root.status} />
+                    <div className={styles.pipelineActions}>
+                      <button
+                        className={styles.pipelineActionBtn}
+                        title="View pipeline diagram"
+                        onClick={(e) => { e.stopPropagation(); onShowDiagram(root.id) }}
+                      >
+                        🔗
+                      </button>
+                      <button
+                        className={`${styles.pipelineActionBtn} ${styles.pipelineActionBtnDanger}`}
+                        title="Delete entire pipeline"
+                        onClick={(e) => { e.stopPropagation(); onDeletePipeline(root.id) }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -238,9 +255,6 @@ function PipelineView({
   )
 }
 
-// ── Extend ViewMode to include 'diagram' ──
-type ExtendedViewMode = ViewMode | 'diagram'
-
 // ── Main Page ──
 export default function ConductorPage() {
   const { data, error, isLoading, mutate } = useSWR('conductor-tasks', () => getConductorTasks({ limit: 200 }), {
@@ -251,10 +265,13 @@ export default function ConductorPage() {
   })
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [viewMode, setViewMode] = useState<ExtendedViewMode>('list')
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [selectedTask, setSelectedTask] = useState<ConductorTask | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<ConductorAgent | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [taskPrefill, setTaskPrefill] = useState<TaskPrefill | undefined>(undefined)
+  const [diagramPipelineId, setDiagramPipelineId] = useState<string | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
   const allTasks = data?.tasks ?? []
   const agents = agentsData?.agents ?? []
@@ -303,6 +320,43 @@ export default function ConductorPage() {
       console.error('Failed to delete task:', err)
     }
   }, [mutate])
+
+  const handleDeletePipeline = useCallback(async (rootTaskId: string) => {
+    try {
+      await deletePipeline(rootTaskId, allTasks)
+      setDeleteConfirm(null)
+      mutate()
+    } catch (err) {
+      console.error('Failed to delete pipeline:', err)
+    }
+  }, [allTasks, mutate])
+
+  const handleNewTaskFromOutcome = useCallback((task: ConductorTask) => {
+    const resultText = task.result ? getResultSummary(task.result, 2000) : ''
+    setTaskPrefill({
+      title: `Follow-up: ${task.title}`,
+      description: resultText
+        ? `## Context\nBased on outcome from task "${task.title}" (${task.id}):\n\n${resultText}`
+        : `Follow-up task for: ${task.title}`,
+      context: { parentTaskId: task.id, sourceTaskTitle: task.title },
+    })
+    setSelectedTask(null)
+    setShowCreateForm(true)
+  }, [])
+
+  // Get pipeline tasks for diagram modal
+  const diagramTasks = useMemo(() => {
+    if (!diagramPipelineId) return []
+    const ids = new Set<string>()
+    function collect(parentId: string) {
+      ids.add(parentId)
+      for (const t of allTasks) {
+        if (t.parent_task_id === parentId) collect(t.id)
+      }
+    }
+    collect(diagramPipelineId)
+    return allTasks.filter((t) => ids.has(t.id))
+  }, [diagramPipelineId, allTasks])
 
   const filterTabs: { key: StatusFilter; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: counts.all },
@@ -447,21 +501,14 @@ export default function ConductorPage() {
                 >
                   🔀 Pipeline
                 </button>
-                <button
-                  className={`${styles.viewToggleBtn} ${viewMode === 'diagram' ? styles.viewToggleActive : ''}`}
-                  onClick={() => setViewMode('diagram')}
-                  title="Visual flow diagram"
-                >
-                  🔗 Diagram
-                </button>
               </div>
               <span className={styles.viewToggleHint}>
-                {viewMode === 'list' ? 'Simple standalone tasks' : viewMode === 'pipeline' ? 'Multi-agent workflows' : 'Visual flow diagram'}
+                {viewMode === 'list' ? 'Simple standalone tasks' : 'Multi-agent workflows'}
               </span>
             </div>
             <button
               className="btn btn-primary btn-sm"
-              onClick={() => setShowCreateForm(true)}
+              onClick={() => { setTaskPrefill(undefined); setShowCreateForm(true) }}
             >
               + New Task
             </button>
@@ -494,13 +541,13 @@ export default function ConductorPage() {
         )}
 
         {/* View Content */}
-        {viewMode === 'diagram' ? (
-          <PipelineDiagram
+        {viewMode === 'pipeline' ? (
+          <PipelineView
             tasks={filteredTasks}
-            onNodeClick={(task) => setSelectedTask(task)}
+            onSelectTask={setSelectedTask}
+            onDeletePipeline={(rootId) => setDeleteConfirm(rootId)}
+            onShowDiagram={(rootId) => setDiagramPipelineId(rootId)}
           />
-        ) : viewMode === 'pipeline' ? (
-          <PipelineView tasks={filteredTasks} onSelectTask={setSelectedTask} />
         ) : filteredTasks.length === 0 && !isLoading ? (
           <div className={`card ${styles.emptyState}`}>
             <span className={styles.emptyIcon}>T</span>
@@ -526,6 +573,56 @@ export default function ConductorPage() {
         )}
       </div>
 
+      {/* Pipeline Diagram Modal */}
+      {diagramPipelineId && diagramTasks.length > 0 && (
+        <div className={styles.diagramModalOverlay} onClick={() => setDiagramPipelineId(null)}>
+          <div className={styles.diagramModalPanel} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.diagramModalHeader}>
+              <h2 className={styles.diagramModalTitle}>
+                🔗 Pipeline Diagram
+                <span className={styles.diagramModalSubtitle}>
+                  {diagramTasks.length} tasks
+                </span>
+              </h2>
+              <button className={styles.detailClose} onClick={() => setDiagramPipelineId(null)}>×</button>
+            </div>
+            <div className={styles.diagramModalBody}>
+              <PipelineDiagram
+                tasks={diagramTasks}
+                onNodeClick={(task) => { setDiagramPipelineId(null); setSelectedTask(task) }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Pipeline Confirmation */}
+      {deleteConfirm && (
+        <div className={styles.confirmOverlay} onClick={() => setDeleteConfirm(null)}>
+          <div className={styles.confirmPanel} onClick={(e) => e.stopPropagation()}>
+            <h3 className={styles.confirmTitle}>🗑️ Delete Pipeline</h3>
+            <p className={styles.confirmText}>
+              This will <strong>cancel all pending/running tasks</strong> and <strong>permanently delete</strong> the entire pipeline including all subtasks.
+            </p>
+            <p className={styles.confirmText} style={{ color: 'var(--status-error)' }}>
+              This action cannot be undone.
+            </p>
+            <div className={styles.confirmActions}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setDeleteConfirm(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-sm"
+                style={{ background: 'var(--status-error)', color: 'white', border: 'none' }}
+                onClick={() => handleDeletePipeline(deleteConfirm)}
+              >
+                Delete Pipeline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Task Detail Slide-over */}
       {selectedTask && (
         <TaskDetail
@@ -533,6 +630,7 @@ export default function ConductorPage() {
           onClose={() => setSelectedTask(null)}
           onCancel={() => handleCancel(selectedTask.id)}
           onDelete={() => handleDelete(selectedTask.id)}
+          onNewTaskFromOutcome={handleNewTaskFromOutcome}
         />
       )}
 
@@ -548,9 +646,10 @@ export default function ConductorPage() {
       {/* New Task Wizard */}
       {showCreateForm && (
         <TaskBriefingWizard
-          onClose={() => setShowCreateForm(false)}
+          onClose={() => { setShowCreateForm(false); setTaskPrefill(undefined) }}
           onCreated={() => mutate()}
           agents={agents}
+          prefill={taskPrefill}
         />
       )}
     </DashboardLayout>
