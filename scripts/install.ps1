@@ -34,11 +34,19 @@ function Write-Err   { param([string]$msg) Write-Host "[cortex] $msg" -Foregroun
 
 
 # ── Find project root ──
-$ProjectDir = git rev-parse --show-toplevel 2>$null
-if (-not $ProjectDir) { $ProjectDir = (Get-Location).Path }
+try {
+    $ProjectDir = (git rev-parse --show-toplevel 2>&1) | Where-Object { $_ -is [string] }
+    if ($LASTEXITCODE -ne 0 -or -not $ProjectDir) { throw "not a git repo" }
+} catch {
+    $ProjectDir = (Get-Location).Path
+}
 Set-Location $ProjectDir
-$GitRepo = git remote get-url origin 2>$null
-if (-not $GitRepo) { $GitRepo = "unknown" }
+try {
+    $GitRepo = (git remote get-url origin 2>&1) | Where-Object { $_ -is [string] }
+    if ($LASTEXITCODE -ne 0 -or -not $GitRepo) { throw "no remote" }
+} catch {
+    $GitRepo = "unknown"
+}
 
 Write-Info "Project: $ProjectDir"
 
