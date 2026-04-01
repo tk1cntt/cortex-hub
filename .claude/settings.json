@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs session-init"
+            "command": "node .claude/hooks/run-hook.mjs session-init"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs enforce-session"
+            "command": "node .claude/hooks/run-hook.mjs enforce-session"
           }
         ]
       },
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs enforce-commit"
+            "command": "node .claude/hooks/run-hook.mjs enforce-commit"
           }
         ]
       }
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs track-quality"
+            "command": "node .claude/hooks/run-hook.mjs track-quality"
           }
         ]
       }
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs session-end-check"
+            "command": "node .claude/hooks/run-hook.mjs session-end-check"
           }
         ]
       }
