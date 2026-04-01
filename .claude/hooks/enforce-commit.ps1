@@ -1,4 +1,5 @@
-$ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { "." }
+$ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (git rev-parse --show-toplevel 2>$null) -replace '/', '\' }
+if (-not $ProjectDir) { $ProjectDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
 $StateDir = Join-Path $ProjectDir ".cortex\.session-state"
 
 $InputData = [Console]::In.ReadToEnd()
