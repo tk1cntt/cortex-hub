@@ -275,7 +275,38 @@ Cortex exposes **18 tools** via a single MCP endpoint. Any MCP-compatible client
 - pnpm 9.x
 - A Cloudflare account (free tier)
 
-### One-Command Install (Agent Setup)
+### Run Agent (No Clone Needed)
+
+Launch a Claude Code agent connected to your Hub — one command, no repo clone:
+
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/run-agent.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb "https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/run-agent.ps1" -OutFile $env:TEMP\run-agent.ps1; & $env:TEMP\run-agent.ps1
+```
+
+**With options (headless task):**
+```bash
+curl -fsSL .../run-agent.sh | bash -s -- \
+  --key YOUR_API_KEY \
+  --agent win-builder \
+  --task "Build Godot export templates for Windows" \
+  --budget 10.00
+```
+
+The script:
+- Downloads agent instructions + MCP config to a temp directory
+- Launches `claude` CLI with Cortex Hub tools available
+- Interactive mode (chat) or headless mode (run task → exit)
+- Cleans up temp files on exit
+
+> **Prerequisite:** [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) must be installed (`npm i -g @anthropic-ai/claude-code`).
+
+### One-Command Install (Full Project Setup)
 
 **macOS / Linux:**
 ```bash
