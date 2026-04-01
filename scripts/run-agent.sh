@@ -72,11 +72,36 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 ok "Claude Code CLI found: $(command -v claude)"
 
-# ── Interactive prompts ──
+# ── Auto-detect Hub API key from existing IDE configs ──
 if [ -z "$API_KEY" ]; then
-  read -rp "$(echo -e "${BLUE}API Key${NC}: ")" API_KEY < /dev/tty
+  info "Detecting Cortex Hub API key from IDE configs..."
+  for cfg in "$HOME/.claude.json" "$HOME/.cursor/mcp.json" "$HOME/.codeium/windsurf/mcp_config.json" "$HOME/.gemini/antigravity/mcp_config.json"; do
+    [ -f "$cfg" ] || continue
+    if command -v python3 >/dev/null 2>&1; then
+      DETECTED_KEY=$(python3 -c "
+import json
+with open('$cfg') as f:
+    config = json.load(f)
+servers = config.get('mcpServers', config.get('servers', {}))
+hub = servers.get('cortex-hub', {})
+env = hub.get('env', {})
+auth = env.get('AUTH_HEADER', '')
+if auth.startswith('Bearer '): auth = auth[7:]
+if auth: print(auth)
+" 2>/dev/null || true)
+      if [ -n "$DETECTED_KEY" ]; then
+        API_KEY="$DETECTED_KEY"
+        ok "Found Hub API key in $cfg"
+        break
+      fi
+    fi
+  done
+fi
+
+if [ -z "$API_KEY" ]; then
+  read -rp "$(echo -e "${BLUE}Cortex Hub API Key${NC} (from Dashboard → Keys): ")" API_KEY < /dev/tty
   if [ -z "$API_KEY" ]; then
-    err "API key required. Get one from Hub Dashboard → Keys."
+    err "Hub API key required. Get one from Hub Dashboard → Keys."
     exit 1
   fi
 fi
