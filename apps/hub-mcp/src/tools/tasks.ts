@@ -283,22 +283,18 @@ export function registerTaskTools(server: McpServer, env: Env) {
           }
         }
 
-        const task = (await response.json()) as {
-          id: string
-          title: string
-          status: string
-          description?: string
-          assigned_to_agent?: string
-          priority?: number
-          created_at?: string
-          accepted_at?: string
-          completed_at?: string
-          parent_task_id?: string
-          depends_on?: string
-          context?: string
-          result?: string
+        // Response shape: { task: {...}, subtasks?: [...], logs?: [...] }
+        const data = (await response.json()) as {
+          task: {
+            id: string; title: string; status: string; description?: string
+            assigned_to_agent?: string; priority?: number; created_at?: string
+            accepted_at?: string; completed_at?: string; parent_task_id?: string
+            depends_on?: string; context?: string; result?: string
+          }
+          subtasks?: Array<{ id: string; title: string; status: string; assigned_to_agent?: string }>
           logs?: Array<{ action: string; agent_id: string; message: string; created_at: string }>
         }
+        const task = data.task
 
         const lines = [
           `## Task: ${task.title}`,
@@ -324,9 +320,16 @@ export function registerTaskTools(server: McpServer, env: Env) {
           lines.push('```')
         }
 
-        if (task.logs && task.logs.length > 0) {
+        if (data.subtasks && data.subtasks.length > 0) {
+          lines.push(`\n### Subtasks (${data.subtasks.length})`)
+          for (const sub of data.subtasks) {
+            lines.push(`- **${sub.status}** ${sub.title} → ${sub.assigned_to_agent ?? 'unassigned'}`)
+          }
+        }
+
+        if (data.logs && data.logs.length > 0) {
           lines.push(`\n### Activity Log`)
-          for (const log of task.logs) {
+          for (const log of data.logs) {
             lines.push(`- **${log.created_at}** [${log.action}] ${log.message ?? ''}`)
           }
         }
