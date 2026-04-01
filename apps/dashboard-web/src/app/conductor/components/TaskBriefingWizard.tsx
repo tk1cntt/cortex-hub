@@ -181,7 +181,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
       const TIMEOUT = 5 * 60 * 1000 // 5 minutes
       const startTime = Date.now()
 
-      const pollForStrategy = (): Promise<TaskStrategy | null> => {
+      const pollForStrategy = (): Promise<{ type: 'strategy'; strategy: TaskStrategy } | { type: 'completed' } | null> => {
         return new Promise((resolve) => {
           const check = async () => {
             if (Date.now() - startTime > TIMEOUT) {
@@ -190,14 +190,22 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             }
             try {
               const taskData = await getConductorTaskById(taskId)
+
+              // Agent submitted strategy — show for approval
               if (taskData.status === 'strategy_review') {
                 const ctx = typeof taskData.context === 'string'
                   ? JSON.parse(taskData.context)
                   : taskData.context
                 if (ctx?.strategy) {
-                  resolve(ctx.strategy as TaskStrategy)
+                  resolve({ type: 'strategy', strategy: ctx.strategy as TaskStrategy })
                   return
                 }
+              }
+
+              // Agent skipped strategy and completed/progressed directly
+              if (['completed', 'in_progress', 'failed'].includes(taskData.status)) {
+                resolve({ type: 'completed' })
+                return
               }
             } catch { /* ignore polling errors */ }
             setTimeout(check, POLL_INTERVAL)
@@ -206,10 +214,16 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
         })
       }
 
-      const agentStrategy = await pollForStrategy()
+      const pollResult = await pollForStrategy()
 
-      if (agentStrategy) {
-        setStrategy(agentStrategy)
+      if (pollResult?.type === 'strategy') {
+        setStrategy(pollResult.strategy)
+      } else if (pollResult?.type === 'completed') {
+        // Agent skipped strategy — jump to pipeline
+        setCreatedTaskIds([taskId])
+        onCreated()
+        setStep(4)
+        return
       } else {
         // Timeout — agent didn't respond
         setStrategy({
