@@ -277,7 +277,18 @@ Cortex exposes **18 tools** via a single MCP endpoint. Any MCP-compatible client
 
 ### Run Agent (No Clone Needed)
 
-Launch a Cortex agent daemon without cloning the repo. Supports Claude, Codex, Antigravity, and Gemini:
+Launch a Cortex agent daemon on any machine — no repo clone required. The bootstrap script downloads everything to a temp directory, installs the `ws` npm package, and starts the full agent daemon with WebSocket connection, task pickup, auto-reconnect, and log rotation.
+
+> **Prerequisites:** Node.js 22+, npm, and at least one AI engine CLI installed.
+
+**Supported engines:**
+
+| Engine | CLI | Install |
+|--------|-----|---------|
+| Claude Code | `claude` | `npm i -g @anthropic-ai/claude-code` |
+| OpenAI Codex | `codex` | `npm i -g @openai/codex` |
+| Antigravity | `antigravity` | [antigravity.dev](https://antigravity.dev) (own subscription) |
+| Gemini CLI | `gemini` | `npm i -g @anthropic-ai/gemini-cli` |
 
 **macOS / Linux:**
 ```bash
@@ -287,29 +298,31 @@ curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/ru
 # Quick start — headless daemon with preset
 curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/run-agent.sh | bash -s -- \
   start --daemon --preset fullstack
+
+# Specific engine + agent ID
+curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/run-agent.sh | bash -s -- start -d \
+  CORTEX_AGENT_IDE=codex CORTEX_AGENT_ID=reviewer-1 --preset reviewer
 ```
 
-**Windows (PowerShell):**
+**Windows (PowerShell) — native, no bash needed:**
 ```powershell
-iwr -useb "https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/run-agent.ps1" -OutFile $env:TEMP\run-agent.ps1
-& $env:TEMP\run-agent.ps1 launch
+# Download and run (one-liner)
+iwr -useb "https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/run-agent.ps1" -OutFile $env:TEMP\run-agent.ps1; & $env:TEMP\run-agent.ps1 start
+
+# Or with daemon mode
+& $env:TEMP\run-agent.ps1 start -Daemon
 ```
 
-**Multi-engine examples:**
+**Management (after agent is running):**
 ```bash
-# Claude Code backend dev
-curl ... | bash -s -- start -d CORTEX_AGENT_IDE=claude-code CORTEX_AGENT_ID=dev-1 --preset backend-dev
-
-# OpenAI Codex reviewer
-curl ... | bash -s -- start -d CORTEX_AGENT_IDE=codex CORTEX_AGENT_ID=rev-1 --preset reviewer
-
-# Antigravity UI developer
-curl ... | bash -s -- start -d CORTEX_AGENT_IDE=antigravity CORTEX_AGENT_ID=ui-1 --preset ui-dev
+./scripts/cortex-agent.sh status         # Show agent status
+./scripts/cortex-agent.sh logs 100       # Last 100 log lines
+./scripts/cortex-agent.sh stop           # Stop current agent
+./scripts/cortex-agent.sh stop-all       # Stop ALL agents
+./scripts/cortex-agent.sh list           # List running agents + presets
 ```
 
-The bootstrap script downloads `cortex-agent.sh` + dependencies to a temp directory, installs `ws` (npm), then runs the full agent daemon — WebSocket connection, task pickup, auto-reconnect, log rotation.
-
-> **Prerequisites:** Node.js, Git, and at least one AI engine CLI (claude, codex, antigravity, or gemini).
+The agent auto-detects Hub API key and URL from existing IDE configs (`~/.claude.json`, `~/.cursor/mcp.json`, etc.) — no manual configuration if you've already run the installer once.
 
 ### One-Command Install (Full Project Setup)
 
