@@ -141,6 +141,20 @@ CREATE TABLE IF NOT EXISTS conductor_task_logs (
 
 CREATE INDEX IF NOT EXISTS idx_conductor_task_logs_task ON conductor_task_logs(task_id);
 
+-- ── Conductor Comments ──
+CREATE TABLE IF NOT EXISTS conductor_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    finding_id TEXT,
+    agent_id TEXT,
+    comment TEXT NOT NULL,
+    comment_type TEXT DEFAULT 'comment'
+        CHECK(comment_type IN ('comment', 'agree', 'disagree', 'amendment')),
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_conductor_comments_task ON conductor_comments(task_id);
+
 -- ── Hub Configuration ──
 CREATE TABLE IF NOT EXISTS hub_config (
     key TEXT PRIMARY KEY,
