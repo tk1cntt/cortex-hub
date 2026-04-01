@@ -220,14 +220,24 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
 
     case 'task.complete': {
       const completedTaskId = msg['taskId'] as string
+      if (!completedTaskId) break
+
+      // Guard: skip if task is already in a terminal state (prevents double completion)
+      const preCheck = db.prepare('SELECT status FROM conductor_tasks WHERE id = ?').get(completedTaskId) as { status: string } | undefined
+      if (!preCheck || preCheck.status === 'completed' || preCheck.status === 'cancelled' || preCheck.status === 'approved') {
+        console.warn(`[ws] task.complete: skipping ${completedTaskId} (already ${preCheck?.status ?? 'not found'})`)
+        break
+      }
+
       db.prepare(
-        'UPDATE conductor_tasks SET status = ?, result = ?, completed_at = datetime(?), completed_by = ? WHERE id = ?',
+        'UPDATE conductor_tasks SET status = ?, result = ?, completed_at = datetime(?), completed_by = ? WHERE id = ? AND status NOT IN (?, ?, ?)',
       ).run(
         'completed',
         JSON.stringify(msg['result'] ?? {}),
         new Date().toISOString(),
         agent.agentId,
         completedTaskId,
+        'completed', 'cancelled', 'approved',
       )
       broadcastToOwner(agent.apiKeyOwner, {
         type: 'task.completed',
@@ -324,12 +334,33 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       // Create task via WebSocket (used by extension for review sub-tasks)
       const title = msg['title'] as string
       if (!title) break
-      const newId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+
       const assignTo = msg['assignTo'] as string | undefined
       const parentTaskId = msg['parentTaskId'] as string | undefined
       const description = (msg['description'] as string) ?? ''
       const priority = (msg['priority'] as number) ?? 5
       const context = (msg['context'] as string) ?? '{}'
+
+      // Dedup: prevent creating duplicate tasks with same title+parent+agent within 30 seconds
+      const recentDupe = db.prepare(
+        "SELECT id FROM conductor_tasks WHERE title = ? AND parent_task_id IS ? AND created_by_agent = ? AND created_at > datetime('now', '-30 seconds')"
+      ).get(title, parentTaskId ?? null, agent.agentId) as { id: string } | undefined
+
+      if (recentDupe) {
+        console.warn(`[ws] task.create: dedup hit for "${title}" by ${agent.agentId} (existing: ${recentDupe.id})`)
+        agent.ws.send(JSON.stringify({
+          type: 'task.created',
+          taskId: recentDupe.id,
+          title,
+          assignedTo: assignTo,
+          parentTaskId,
+          deduplicated: true,
+          timestamp: new Date().toISOString(),
+        }))
+        break
+      }
+
+      const newId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
 
       db.prepare(`
         INSERT INTO conductor_tasks

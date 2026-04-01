@@ -1,0 +1,303 @@
+/* ── Pipeline Diagram (React Flow) ── */
+
+.diagramWrap {
+  width: 100%;
+  height: 560px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-primary);
+  position: relative;
+}
+
+.diagramWrap :global(.react-flow__background) {
+  background: var(--bg-primary) !important;
+}
+
+.diagramWrap :global(.react-flow__edge-path) {
+  stroke: var(--border) !important;
+  stroke-width: 2px;
+}
+
+.diagramWrap :global(.react-flow__edge.animated path) {
+  stroke-dasharray: 6 4;
+  animation: flowDash 0.6s linear infinite;
+}
+
+.diagramWrap :global(.react-flow__attribution) {
+  display: none !important;
+}
+
+.diagramWrap :global(.react-flow__controls) {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.diagramWrap :global(.react-flow__controls button) {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+}
+
+.diagramWrap :global(.react-flow__controls button:hover) {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.diagramWrap :global(.react-flow__controls button svg) {
+  fill: currentColor;
+}
+
+.diagramWrap :global(.react-flow__minimap) {
+  background: var(--bg-secondary) !important;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+/* ── Custom Nodes ── */
+.pipelineNode {
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  min-width: 180px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.pipelineNode:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+  transform: translateY(-1px);
+}
+
+/* Orchestrator node — larger, prominent */
+.nodeOrchestrator {
+  border-color: var(--primary);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.06));
+  min-width: 220px;
+}
+
+.nodeOrchestrator::after {
+  content: 'LEAD';
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--primary);
+  background: var(--bg-secondary);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+/* Status variants */
+.nodeActive {
+  border-color: var(--status-healthy, #10b981);
+  animation: nodeActiveGlow 2s ease infinite;
+}
+
+.nodeAnalyzing {
+  border-color: var(--primary);
+  animation: nodeAnalyzeGlow 1.5s ease infinite;
+}
+
+.nodeWaiting {
+  border-color: var(--border);
+  opacity: 0.65;
+}
+
+.nodeComplete {
+  border-color: var(--status-healthy, #10b981);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.06), var(--bg-secondary));
+}
+
+.nodeFailed {
+  border-color: var(--status-error, #ef4444);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.06), var(--bg-secondary));
+}
+
+.nodeBlocked {
+  border-color: var(--status-warning, #f59e0b);
+  opacity: 0.7;
+}
+
+/* ── Node internals ── */
+.nodeHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.nodeIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.nodeIcon.iconBlue { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.nodeIcon.iconGreen { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+.nodeIcon.iconPurple { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+.nodeIcon.iconOrange { background: rgba(249, 115, 22, 0.12); color: #f97316; }
+.nodeIcon.iconRed { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+
+.nodeTitle {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+
+.nodeAgent {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-bottom: var(--space-1);
+}
+
+.nodeStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.6875rem;
+}
+
+.nodeStatusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotActive {
+  background: var(--status-healthy, #10b981);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+  animation: dotPulse 1.5s ease infinite;
+}
+
+.dotAnalyzing {
+  background: var(--primary);
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.5);
+  animation: dotPulse 1s ease infinite;
+}
+
+.dotWaiting {
+  background: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.dotComplete {
+  background: var(--status-healthy, #10b981);
+}
+
+.dotFailed {
+  background: var(--status-error, #ef4444);
+}
+
+.dotBlocked {
+  background: var(--status-warning, #f59e0b);
+  animation: dotPulse 2s ease infinite;
+}
+
+.nodeStatusLabel {
+  color: var(--text-tertiary);
+  text-transform: capitalize;
+}
+
+/* ── Empty State ── */
+.diagramEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-tertiary);
+  gap: var(--space-3);
+}
+
+.diagramEmptyIcon {
+  font-size: 2rem;
+  opacity: 0.5;
+}
+
+.diagramEmptyText {
+  font-size: 0.875rem;
+}
+
+/* ── Legend ── */
+.diagramLegend {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  flex-wrap: wrap;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ── Animations ── */
+@keyframes nodeActiveGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  50% { box-shadow: 0 0 16px 2px rgba(16, 185, 129, 0.15); }
+}
+
+@keyframes nodeAnalyzeGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+  50% { box-shadow: 0 0 20px 3px rgba(99, 102, 241, 0.18); }
+}
+
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.7; }
+}
+
+@keyframes flowDash {
+  to { stroke-dashoffset: -10; }
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .diagramWrap {
+    height: 400px;
+  }
+
+  .pipelineNode {
+    min-width: 140px;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .nodeTitle {
+    max-width: 100px;
+    font-size: 0.75rem;
+  }
+}

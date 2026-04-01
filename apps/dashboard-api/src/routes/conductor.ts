@@ -102,101 +102,127 @@ function allDependenciesMet(dependsOn: string[]): boolean {
  * 2. Notify agents in notify_on_complete
  * 3. Check if parent task's subtasks are all complete
  */
+/** Guard against re-entrant resolveCompletionChain calls (prevents infinite loops) */
+const _resolving = new Set<string>()
+
 export function resolveCompletionChain(completedTask: TaskRow): void {
   const completedId = completedTask.id
 
-  // 1. Find tasks that depend on this completed task and unblock them
-  const dependentTasks = db.prepare(
-    "SELECT * FROM conductor_tasks WHERE status = 'blocked'"
-  ).all() as TaskRow[]
+  // ── Anti-recursion guard: skip if already resolving this task ──
+  if (_resolving.has(completedId)) {
+    console.warn(`[conductor] resolveCompletionChain: skipping ${completedId} (already resolving)`)
+    return
+  }
+  _resolving.add(completedId)
 
-  for (const task of dependentTasks) {
-    const deps = safeJsonParse<string[]>(task.depends_on, [])
-    if (!deps.includes(completedId)) continue
+  try {
+    // 1. Find tasks that depend on this completed task and unblock them
+    const dependentTasks = db.prepare(
+      "SELECT * FROM conductor_tasks WHERE status = 'blocked'"
+    ).all() as TaskRow[]
 
-    // Check if ALL dependencies for this task are now met
-    if (allDependenciesMet(deps)) {
-      db.prepare(
-        "UPDATE conductor_tasks SET status = 'pending' WHERE id = ?"
-      ).run(task.id)
+    for (const task of dependentTasks) {
+      const deps = safeJsonParse<string[]>(task.depends_on, [])
+      if (!deps.includes(completedId)) continue
 
-      logTaskAction(task.id, null, 'unblocked', `All dependencies met after ${completedId} completed`)
+      // Check if ALL dependencies for this task are now met
+      if (allDependenciesMet(deps)) {
+        db.prepare(
+          "UPDATE conductor_tasks SET status = 'pending' WHERE id = ?"
+        ).run(task.id)
 
-      // If the task has an assigned agent, notify them
-      if (task.assigned_to_agent) {
-        pushTaskToAgent(task.assigned_to_agent, task.id, task.title, task.description)
+        logTaskAction(task.id, null, 'unblocked', `All dependencies met after ${completedId} completed`)
+
+        // If the task has an assigned agent, notify them
+        if (task.assigned_to_agent) {
+          pushTaskToAgent(task.assigned_to_agent, task.id, task.title, task.description)
+        }
       }
     }
-  }
 
-  // 2. Notify agents listed in notify_on_complete
-  const notifyList = safeJsonParse<string[]>(completedTask.notify_on_complete, [])
-  if (notifyList.length > 0) {
-    const notified = notifyAgents(notifyList, {
-      type: 'task.completed',
-      taskId: completedId,
-      title: completedTask.title,
-      result: completedTask.result ? safeJsonParse(completedTask.result, {}) : null,
-      completedBy: completedTask.completed_by,
-      timestamp: new Date().toISOString(),
-    })
+    // 2. Notify agents listed in notify_on_complete
+    const notifyList = safeJsonParse<string[]>(completedTask.notify_on_complete, [])
+    if (notifyList.length > 0) {
+      const notified = notifyAgents(notifyList, {
+        type: 'task.completed',
+        taskId: completedId,
+        title: completedTask.title,
+        result: completedTask.result ? safeJsonParse(completedTask.result, {}) : null,
+        completedBy: completedTask.completed_by,
+        timestamp: new Date().toISOString(),
+      })
 
-    // Record which agents were actually notified
-    const existingNotified = safeJsonParse<string[]>(completedTask.notified_agents, [])
-    const allNotified = [...new Set([...existingNotified, ...notified])]
-    db.prepare(
-      'UPDATE conductor_tasks SET notified_agents = ? WHERE id = ?'
-    ).run(JSON.stringify(allNotified), completedId)
-  }
+      // Record which agents were actually notified
+      const existingNotified = safeJsonParse<string[]>(completedTask.notified_agents, [])
+      const allNotified = [...new Set([...existingNotified, ...notified])]
+      db.prepare(
+        'UPDATE conductor_tasks SET notified_agents = ? WHERE id = ?'
+      ).run(JSON.stringify(allNotified), completedId)
+    }
 
-  // 3. Auto-create review task if context has autoReview enabled
-  const ctx = safeJsonParse<Record<string, unknown>>(completedTask.context, {})
-  const reqCaps = safeJsonParse<string[]>(completedTask.required_capabilities, [])
-  const isReviewTask = reqCaps.includes('review') || completedTask.title.toLowerCase().includes('review')
+    // 3. Auto-create review task if context has autoReview enabled
+    //    GUARD: Skip if this task is itself a review/revision/auto-orchestrated task
+    const ctx = safeJsonParse<Record<string, unknown>>(completedTask.context, {})
+    const reqCaps = safeJsonParse<string[]>(completedTask.required_capabilities, [])
+    const titleLower = completedTask.title.toLowerCase()
+    const isReviewTask = reqCaps.includes('review') || titleLower.includes('review')
+    const isRevisionTask = titleLower.includes('revision') || ctx['revisionOf'] !== undefined
+    const isAutoTask = completedTask.created_by_agent === 'auto-orchestrator'
+    const autoReviewDisabled = ctx['autoReview'] === false
 
-  if (!isReviewTask && ctx['autoReview'] !== false) {
-    // Check if a review task already exists for this task
-    const existingReview = db.prepare(
-      "SELECT id FROM conductor_tasks WHERE parent_task_id = ? AND title LIKE '%Review:%' AND status != 'cancelled'"
-    ).get(completedTask.parent_task_id ?? completedId) as { id: string } | undefined
+    if (!isReviewTask && !isRevisionTask && !isAutoTask && !autoReviewDisabled) {
+      // Check if a review task already exists for THIS specific task (not parent)
+      const existingReviewForThis = db.prepare(
+        "SELECT id FROM conductor_tasks WHERE context LIKE ? AND status NOT IN ('cancelled', 'failed')"
+      ).get(`%"reviewOf":"${completedId}"%`) as { id: string } | undefined
 
-    if (!existingReview) {
-      // Find online reviewer agent
-      const connected = getAllConnectedAgents()
-      const reviewer = connected.find(a =>
-        a.capabilities.includes('review') && a.agentId !== completedTask.completed_by
-      )
+      // Also check by parent+title pattern as fallback
+      const existingReviewByTitle = existingReviewForThis ?? db.prepare(
+        "SELECT id FROM conductor_tasks WHERE parent_task_id = ? AND title = ? AND status NOT IN ('cancelled', 'failed')"
+      ).get(completedId, `Review: ${completedTask.title}`) as { id: string } | undefined
 
-      if (reviewer) {
-        const reviewId = generateTaskId()
-        db.prepare(`
-          INSERT INTO conductor_tasks
-            (id, title, description, priority, assigned_to_agent, created_by_agent,
-             project_id, parent_task_id, required_capabilities, context, status, assigned_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
-        `).run(
-          reviewId,
-          `Review: ${completedTask.title}`,
-          `Auto-review of completed task ${completedId}.\n\nOriginal task: ${completedTask.title}\nCompleted by: ${completedTask.completed_by}\nResult preview: ${(completedTask.result ?? '').slice(0, 500)}\n\nReview the code changes. If issues found, reject with feedback. If OK, approve.`,
-          Math.max(1, completedTask.priority),
-          reviewer.agentId,
-          'auto-orchestrator',
-          completedTask.project_id,
-          completedTask.parent_task_id ?? completedId,
-          JSON.stringify(['review', 'security']),
-          JSON.stringify({ reviewOf: completedId, originalAgent: completedTask.completed_by }),
+      if (!existingReviewByTitle) {
+        // Find online reviewer agent
+        const connected = getAllConnectedAgents()
+        const reviewer = connected.find(a =>
+          a.capabilities.includes('review') && a.agentId !== completedTask.completed_by
         )
 
-        pushTaskToAgent(reviewer.agentId, reviewId, `Review: ${completedTask.title}`, `Auto-review of task by ${completedTask.completed_by}`)
-        logTaskAction(reviewId, null, 'auto_review', `Auto-created review for ${completedId}, assigned to ${reviewer.agentId}`)
-        console.log(`[conductor] Auto-review created: ${reviewId} → ${reviewer.agentId}`)
+        if (reviewer) {
+          const reviewId = generateTaskId()
+          db.prepare(`
+            INSERT INTO conductor_tasks
+              (id, title, description, priority, assigned_to_agent, created_by_agent,
+               project_id, parent_task_id, required_capabilities, context, status, assigned_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))
+          `).run(
+            reviewId,
+            `Review: ${completedTask.title}`,
+            `Auto-review of completed task ${completedId}.\n\nOriginal task: ${completedTask.title}\nCompleted by: ${completedTask.completed_by}\nResult preview: ${(completedTask.result ?? '').slice(0, 500)}\n\nReview the code changes. If issues found, reject with feedback. If OK, approve.`,
+            Math.max(1, completedTask.priority),
+            reviewer.agentId,
+            'auto-orchestrator',
+            completedTask.project_id,
+            completedId, // review is a CHILD of the completed task, not a sibling
+            JSON.stringify(['review', 'security']),
+            JSON.stringify({ reviewOf: completedId, originalAgent: completedTask.completed_by, autoReview: false }),
+          )
+
+          pushTaskToAgent(reviewer.agentId, reviewId, `Review: ${completedTask.title}`, `Auto-review of task by ${completedTask.completed_by}`)
+          logTaskAction(reviewId, null, 'auto_review', `Auto-created review for ${completedId}, assigned to ${reviewer.agentId}`)
+          console.log(`[conductor] Auto-review created: ${reviewId} → ${reviewer.agentId}`)
+        }
+      } else {
+        console.log(`[conductor] Auto-review skipped for ${completedId}: review already exists (${existingReviewByTitle.id})`)
       }
     }
-  }
 
-  // 4. Check if this is a subtask and all siblings are complete -> update parent
-  if (completedTask.parent_task_id) {
-    checkParentCompletion(completedTask.parent_task_id)
+    // 4. Check if this is a subtask and all siblings are complete -> update parent
+    if (completedTask.parent_task_id) {
+      checkParentCompletion(completedTask.parent_task_id)
+    }
+  } finally {
+    _resolving.delete(completedId)
   }
 }
 
@@ -804,33 +830,39 @@ conductorRouter.put('/:id', async (c) => {
     if (status === 'approved') {
       logTaskAction(id, completedBy ?? null, 'approved', undefined)
 
-      // Mark as completed as well
-      db.prepare(`
-        UPDATE conductor_tasks
-        SET status = 'completed', completed_at = datetime('now'), completed_by = COALESCE(completed_by, ?)
-        WHERE id = ?
-      `).run(completedBy ?? existing.assigned_to_agent, id)
+      // Mark as completed as well (only if not already completed, prevents double processing)
+      const currentStatus = db.prepare('SELECT status FROM conductor_tasks WHERE id = ?').get(id) as { status: string } | undefined
+      if (currentStatus && currentStatus.status !== 'completed') {
+        db.prepare(`
+          UPDATE conductor_tasks
+          SET status = 'completed', completed_at = datetime('now'), completed_by = COALESCE(completed_by, ?)
+          WHERE id = ? AND status != 'completed'
+        `).run(completedBy ?? existing.assigned_to_agent, id)
 
-      const finalTask = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow
+        const finalTask = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow
 
-      // Notify orchestrator/parent creator
-      if (existing.parent_task_id) {
-        const parent = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(existing.parent_task_id) as TaskRow | undefined
-        if (parent?.created_by_agent) {
-          notifyAgents([parent.created_by_agent], {
-            type: 'task.approved',
-            taskId: id,
-            title: existing.title,
-            parentTaskId: parent.id,
-            timestamp: new Date().toISOString(),
-          })
+        // Notify orchestrator/parent creator
+        if (existing.parent_task_id) {
+          const parent = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(existing.parent_task_id) as TaskRow | undefined
+          if (parent?.created_by_agent) {
+            notifyAgents([parent.created_by_agent], {
+              type: 'task.approved',
+              taskId: id,
+              title: existing.title,
+              parentTaskId: parent.id,
+              timestamp: new Date().toISOString(),
+            })
+          }
         }
+
+        // Resolve completion chain since approved = completed
+        resolveCompletionChain(finalTask)
+
+        return c.json({ task: finalTask })
       }
 
-      // Resolve completion chain since approved = completed
-      resolveCompletionChain(finalTask)
-
-      return c.json({ task: finalTask })
+      // Already completed — just return current state
+      return c.json({ task: db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow })
     }
 
     return c.json({ task: updatedTask })

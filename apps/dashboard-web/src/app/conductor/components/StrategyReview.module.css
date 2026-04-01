@@ -1,0 +1,332 @@
+/* ── Strategy Review Styles ── */
+
+.strategyBody {
+  padding: var(--space-6);
+}
+
+/* ── Analyzing State ── */
+.analyzingState {
+  text-align: center;
+  padding: var(--space-8) var(--space-6);
+}
+
+.analyzingOrb {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  margin: 0 auto var(--space-5);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.analyzingOrbInner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.15));
+  border: 2px solid rgba(99, 102, 241, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  animation: orbPulse 2s ease infinite;
+}
+
+.analyzingRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--primary);
+  animation: orbSpin 1.2s linear infinite;
+}
+
+.analyzingTitle {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2) 0;
+}
+
+.analyzingSubtitle {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+.analyzingAgent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.analyzingAgentDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-healthy, #10b981);
+  animation: dotBlink 1.5s ease infinite;
+}
+
+/* ── Strategy Display ── */
+.strategySummary {
+  padding: var(--space-4);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(168, 85, 247, 0.04));
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-5);
+}
+
+.strategySummaryText {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.strategyEffort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--space-2);
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  padding: 2px 8px;
+  background: var(--bg-primary);
+  border-radius: 999px;
+}
+
+/* ── Role Cards ── */
+.rolesHeader {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-3);
+}
+
+.rolesList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.roleCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: border-color 0.15s;
+}
+
+.roleCard:hover {
+  border-color: var(--border);
+}
+
+.roleEmoji {
+  font-size: 1.25rem;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.roleInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.roleLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.roleRationale {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.roleAgentSelect {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.roleAgentDropdown {
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  min-width: 120px;
+}
+
+.roleAgentDropdown:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.roleSuggested {
+  font-size: 0.625rem;
+  color: var(--status-healthy, #10b981);
+  font-weight: 500;
+  padding: 1px 6px;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+}
+
+/* ── Subtask Preview ── */
+.subtasksHeader {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-3);
+}
+
+.subtasksList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.subtaskItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  position: relative;
+}
+
+.subtaskNum {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.subtaskTitle {
+  flex: 1;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.subtaskDeps {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  padding: 2px 6px;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.subtaskRole {
+  font-size: 0.6875rem;
+  color: var(--accent-primary);
+  font-family: var(--font-mono);
+}
+
+/* ── Connector between subtask items ── */
+.subtaskItem + .subtaskItem::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 29px;
+  width: 2px;
+  height: 8px;
+  background: var(--border-subtle);
+}
+
+/* ── Action Buttons ── */
+.strategyActions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.approveBtn {
+  background: var(--status-healthy, #10b981) !important;
+  border-color: var(--status-healthy, #10b981) !important;
+  color: white !important;
+}
+
+.approveBtn:hover {
+  filter: brightness(1.1);
+}
+
+.rejectBtn {
+  border-color: var(--status-error, #ef4444) !important;
+  color: var(--status-error, #ef4444) !important;
+}
+
+/* ── Animations ── */
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.05); opacity: 0.8; }
+}
+
+@keyframes orbSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dotBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  .roleCard {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .roleAgentSelect {
+    width: 100%;
+  }
+
+  .roleAgentDropdown {
+    flex: 1;
+  }
+}

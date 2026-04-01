@@ -1714,3 +1714,561 @@
   padding: var(--space-2) 0;
   animation: pulse 1.5s infinite;
 }
+
+/* ══════════════════════════════════════
+   Wizard — Multi-step Task Creation
+   ══════════════════════════════════════ */
+
+.wizardPanel {
+  width: min(640px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  animation: scaleIn 0.2s ease;
+}
+
+/* ── Step Indicator ── */
+.wizardSteps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.wizardStepItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  position: relative;
+}
+
+.wizardStepNum {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  border: 2px solid var(--border-subtle);
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.wizardStepLabel {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 0.3s ease;
+}
+
+.wizardStepLine {
+  flex: 1;
+  height: 2px;
+  background: var(--border-subtle);
+  margin: 0 var(--space-2);
+  transition: background 0.3s ease;
+}
+
+.wizardStepActive .wizardStepNum {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.4);
+}
+
+.wizardStepActive .wizardStepLabel {
+  color: var(--text-primary);
+}
+
+.wizardStepDone .wizardStepNum {
+  background: var(--success, #22c55e);
+  color: #fff;
+  border-color: var(--success, #22c55e);
+}
+
+.wizardStepDone .wizardStepLabel {
+  color: var(--text-secondary);
+}
+
+.wizardStepDone .wizardStepLine {
+  background: var(--success, #22c55e);
+}
+
+.wizardBody {
+  animation: fadeIn 0.2s ease;
+}
+
+/* ── Image Preview ── */
+.imagePreviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.imagePreviewItem {
+  position: relative;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.imagePreviewImg {
+  width: 100%;
+  height: 100px;
+  object-fit: cover;
+  display: block;
+}
+
+.imageRemoveBtn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.imagePreviewItem:hover .imageRemoveBtn {
+  opacity: 1;
+}
+
+.imagePreviewName {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.formHint {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
+}
+
+/* ── Team Mode Toggle ── */
+.teamModeToggle {
+  display: flex;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  padding: 3px;
+  margin-bottom: var(--space-5);
+}
+
+.teamModeBtn {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border-radius: calc(var(--radius-md) - 2px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.teamModeBtn:hover {
+  color: var(--text-primary);
+}
+
+.teamModeBtnActive {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+/* ── Roles Section ── */
+.rolesSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.analyzeBtn {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.analyzeSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-subtle);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.rolesList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.roleCard {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  transition: border-color 0.2s ease;
+}
+
+.roleCard:hover {
+  border-color: var(--primary);
+}
+
+.roleCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.roleInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.roleLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.roleDesc {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.roleRemoveBtn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 1.125rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.roleRemoveBtn:hover {
+  color: var(--danger, #ef4444);
+}
+
+.roleAgentSelect {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.roleAgentSelect .formInput {
+  flex: 1;
+}
+
+.roleSuggested {
+  font-size: 0.6875rem;
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.1);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.addRoleBtn {
+  align-self: flex-start;
+}
+
+/* ══════════════════════════════════════
+   Monitor View — Step 3
+   ══════════════════════════════════════ */
+
+.monitorParent {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.monitorParentHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.monitorParentInfo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+}
+
+.monitorParentInfo strong {
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+}
+
+.monitorStatusIcon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.monitorDone {
+  color: var(--success, #22c55e);
+}
+
+.monitorActive {
+  color: var(--primary);
+  animation: pulse 1.5s infinite;
+}
+
+.monitorReview {
+  color: #f59e0b;
+}
+
+.monitorFailed {
+  color: var(--danger, #ef4444);
+}
+
+.monitorPending {
+  color: var(--text-tertiary);
+}
+
+.monitorAgent {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: var(--space-2);
+}
+
+.monitorAgent code {
+  font-family: var(--font-mono);
+  color: var(--primary);
+}
+
+/* Pipeline track */
+.monitorPipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: var(--space-4);
+}
+
+.monitorTask {
+  position: relative;
+}
+
+.monitorConnector {
+  width: 2px;
+  height: 12px;
+  background: var(--border-subtle);
+  margin-left: 32px;
+}
+
+.monitorTaskCard {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  transition: border-color 0.2s ease;
+}
+
+.monitorTaskCard.monitorActive {
+  border-color: var(--primary);
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+}
+
+.monitorTaskCard.monitorReview {
+  border-color: #f59e0b;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.15);
+}
+
+.monitorTaskCard.monitorDone {
+  border-color: var(--success, #22c55e);
+  opacity: 0.85;
+}
+
+.monitorTaskCard.monitorFailed {
+  border-color: var(--danger, #ef4444);
+}
+
+.monitorTaskHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.monitorTaskInfo {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.monitorTaskTitle {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.monitorRoleBadge {
+  font-size: 0.6875rem;
+  color: var(--primary);
+  background: rgba(99, 102, 241, 0.1);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.monitorTaskMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.monitorBlocked {
+  font-size: 0.6875rem;
+  color: var(--danger, #ef4444);
+  background: rgba(239, 68, 68, 0.1);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.monitorReviewTag {
+  font-size: 0.6875rem;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.monitorOutcome {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.monitorOutcomeLabel {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.monitorOutcomeText {
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  margin-top: var(--space-1);
+  line-height: 1.5;
+}
+
+.monitorSingle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-6) 0;
+  gap: var(--space-4);
+}
+
+.monitorSingleMsg {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.monitorPulse {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.2);
+  animation: monitorPulseAnim 2s ease infinite;
+}
+
+@keyframes monitorPulseAnim {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.5); opacity: 0; }
+}
+
+.monitorLoading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.monitorAutoRefresh {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* ── Wizard responsive ── */
+@media (max-width: 768px) {
+  .wizardPanel {
+    width: 100vw;
+    border-radius: 16px 16px 0 0;
+    max-height: 95vh;
+  }
+
+  .wizardStepLabel {
+    display: none;
+  }
+
+  .imagePreviewGrid {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  }
+
+  .roleCard {
+    padding: var(--space-2) var(--space-3);
+  }
+}
