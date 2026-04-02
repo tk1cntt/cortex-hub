@@ -5,19 +5,20 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import useSWR from 'swr'
 import { checkHealth } from '@/lib/api'
+import { NAV_ICONS, ICON_DEFAULTS } from '@/lib/icons'
 import styles from './Sidebar.module.css'
 
 const navItems = [
-  { href: '/', label: 'Dashboard', icon: '◈' },
-  { href: '/orgs', label: 'Organizations', icon: '🏢' },
-  { href: '/knowledge', label: 'Knowledge', icon: '📚' },
-  { href: '/keys', label: 'API Keys', icon: '⚿' },
-  { href: '/providers', label: 'LLM Providers', icon: '⬡' },
-  { href: '/usage', label: 'Usage', icon: '📊' },
-  { href: '/quality', label: 'Quality', icon: '✦' },
-  { href: '/conductor', label: 'Conductor', icon: '🎯' },
-  { href: '/sessions', label: 'Sessions', icon: '⇄' },
-  { href: '/settings', label: 'Settings', icon: '⚙' },
+  { href: '/', label: 'Dashboard' },
+  { href: '/orgs', label: 'Organizations' },
+  { href: '/knowledge', label: 'Knowledge' },
+  { href: '/keys', label: 'API Keys' },
+  { href: '/providers', label: 'LLM Providers' },
+  { href: '/usage', label: 'Usage' },
+  { href: '/quality', label: 'Quality' },
+  { href: '/conductor', label: 'Conductor' },
+  { href: '/sessions', label: 'Sessions' },
+  { href: '/settings', label: 'Settings' },
 ]
 
 export default function Sidebar() {
@@ -84,6 +85,7 @@ export default function Sidebar() {
           {navItems.map((item) => {
             const isActive = pathname === item.href ||
               (item.href !== '/' && pathname.startsWith(item.href))
+            const IconComponent = NAV_ICONS[item.href]
             return (
               <Link
                 key={item.href}
@@ -91,7 +93,9 @@ export default function Sidebar() {
                 className={`${styles.navItem} ${isActive ? styles.active : ''}`}
                 onClick={closeSidebar}
               >
-                <span className={styles.navIcon}>{item.icon}</span>
+                <span className={styles.navIcon}>
+                  {IconComponent && <IconComponent size={ICON_DEFAULTS.size} strokeWidth={ICON_DEFAULTS.strokeWidth} />}
+                </span>
                 <span className={styles.navLabel}>{item.label}</span>
                 {isActive && <span className={styles.activeIndicator} />}
               </Link>

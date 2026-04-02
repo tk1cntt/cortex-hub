@@ -11,6 +11,15 @@ import {
   type ActivityEvent,
   type SystemMetrics,
 } from '@/lib/api'
+import {
+  STAT_ICONS,
+  GAUGE_ICONS,
+  ACTIVITY_ICONS,
+  INTEL_ICONS,
+  ICON_DEFAULTS,
+  type LucideIcon,
+} from '@/lib/icons'
+import { Server, Mailbox } from 'lucide-react'
 import styles from './page.module.css'
 
 // ── Utilities ──
@@ -33,10 +42,12 @@ function timeAgo(dateStr: string): string {
 
 // ── Stat Pill ──
 
-function StatPill({ icon, value, label }: { icon: string; value: string; label: string }) {
+function StatPill({ Icon, value, label }: { Icon: LucideIcon; value: string; label: string }) {
   return (
     <div className={styles.statPill}>
-      <span className={styles.statPillIcon}>{icon}</span>
+      <span className={styles.statPillIcon}>
+        <Icon size={ICON_DEFAULTS.size} strokeWidth={ICON_DEFAULTS.strokeWidth} />
+      </span>
       <div className={styles.statPillContent}>
         <span className={styles.statPillValue}>{value}</span>
         <span className={styles.statPillLabel}>{label}</span>
@@ -48,11 +59,11 @@ function StatPill({ icon, value, label }: { icon: string; value: string; label: 
 // ── Activity Row ──
 
 function ActivityRow({ event }: { event: ActivityEvent }) {
-  const icon = event.type === 'query' ? '🔍' : '📋'
+  const IconComp = ACTIVITY_ICONS[event.type as keyof typeof ACTIVITY_ICONS] ?? ACTIVITY_ICONS.default
   const statusClass = event.status === 'ok' || event.status === 'completed' ? 'healthy' : event.status === 'error' ? 'error' : 'warning'
   return (
     <div className={styles.activityRow}>
-      <span className={styles.activityIcon}>{icon}</span>
+      <span className={styles.activityIcon}><IconComp size={16} strokeWidth={ICON_DEFAULTS.strokeWidth} /></span>
       <div className={styles.activityInfo}>
         <span className={styles.activityDetail}>{event.detail}</span>
         <span className={styles.activityMeta}>
@@ -70,8 +81,8 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
 
 // ── Gauge Chart ──
 
-function GaugeChart({ value, label, subtitle, color, icon }: {
-  value: number; label: string; subtitle: string; color: string; icon: string
+function GaugeChart({ value, label, subtitle, color, Icon }: {
+  value: number; label: string; subtitle: string; color: string; Icon: LucideIcon
 }) {
   const radius = 42
   const circumference = 2 * Math.PI * radius
@@ -91,7 +102,7 @@ function GaugeChart({ value, label, subtitle, color, icon }: {
           />
         </svg>
         <div className={styles.gaugeCenter}>
-          <span className={styles.gaugeIcon}>{icon}</span>
+          <span className={styles.gaugeIcon}><Icon size={22} strokeWidth={ICON_DEFAULTS.strokeWidth} /></span>
           <span className={styles.gaugeValue}>{value}%</span>
         </div>
       </div>
@@ -156,12 +167,12 @@ export default function DashboardPage() {
 
       {/* ── Hero Stats Bar ── */}
       <div className={styles.heroBar}>
-        <StatPill icon="📁" value={overview ? String(overview.projects.length) : '...'} label="Projects" />
-        <StatPill icon="🤖" value={overview ? formatNumber(overview.totalAgents) : '...'} label="Agents" />
-        <StatPill icon="📊" value={overview ? formatNumber(overview.today.queries) : '...'} label="Queries Today" />
-        <StatPill icon="💎" value={overview ? formatNumber(overview.tokenSavings?.totalTokensSaved ?? 0) : '...'} label="Tokens Saved" />
-        <StatPill icon="🏆" value={overview?.quality.lastGrade ?? '...'} label="Quality" />
-        <StatPill icon="⚡" value={overview ? `${Math.floor(overview.uptime / 3600)}h` : '...'} label="Uptime" />
+        <StatPill Icon={STAT_ICONS.projects} value={overview ? String(overview.projects.length) : '...'} label="Projects" />
+        <StatPill Icon={STAT_ICONS.agents} value={overview ? formatNumber(overview.totalAgents) : '...'} label="Agents" />
+        <StatPill Icon={STAT_ICONS.queries} value={overview ? formatNumber(overview.today.queries) : '...'} label="Queries Today" />
+        <StatPill Icon={STAT_ICONS.tokensSaved} value={overview ? formatNumber(overview.tokenSavings?.totalTokensSaved ?? 0) : '...'} label="Tokens Saved" />
+        <StatPill Icon={STAT_ICONS.quality} value={overview?.quality.lastGrade ?? '...'} label="Quality" />
+        <StatPill Icon={STAT_ICONS.uptime} value={overview ? `${Math.floor(overview.uptime / 3600)}h` : '...'} label="Uptime" />
       </div>
 
       {/* ── Services Health Strip ── */}
@@ -189,7 +200,7 @@ export default function DashboardPage() {
             <h2 className={styles.sectionTitle}>System Resources</h2>
             {systemData && (
               <span className={styles.serverTag}>
-                🖥️ {systemData.hostname} · {systemData.cpu.cores} cores
+                <Server size={14} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} />{systemData.hostname} · {systemData.cpu.cores} cores
               </span>
             )}
           </div>
@@ -197,17 +208,17 @@ export default function DashboardPage() {
             <GaugeChart
               value={systemData?.cpu.percent ?? 0} label="CPU"
               subtitle={systemData ? `Load: ${systemData.cpu.loadAvg.join(' / ')}` : '...'}
-              color="#4a90d9" icon="⚡"
+              color="#4a90d9" Icon={GAUGE_ICONS.cpu}
             />
             <GaugeChart
               value={systemData?.memory.percent ?? 0} label="Memory"
               subtitle={systemData ? `${systemData.memory.usedHuman} / ${systemData.memory.totalHuman}` : '...'}
-              color="#9b59b6" icon="🧠"
+              color="#9b59b6" Icon={GAUGE_ICONS.memory}
             />
             <GaugeChart
               value={systemData?.disk[0]?.usedPercent ?? 0} label="Disk"
               subtitle={systemData?.disk[0] ? `${systemData.disk[0].used} / ${systemData.disk[0].size}` : '...'}
-              color="#27ae60" icon="💾"
+              color="#27ae60" Icon={GAUGE_ICONS.disk}
             />
           </div>
           {/* Docker Containers */}
@@ -227,7 +238,7 @@ export default function DashboardPage() {
             <h2 className={styles.sectionTitle} style={{ marginBottom: 'var(--space-4)' }}>Cortex Savings</h2>
             <div className={`card ${styles.intelCard}`}>
               <div className={styles.intelHeader}>
-                <span>💎 Token Analytics</span>
+                <span><INTEL_ICONS.tokens size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Token Analytics</span>
                 <Link href="/usage" className={styles.intelLink}>View →</Link>
               </div>
               <div className={styles.intelGrid}>
@@ -267,7 +278,7 @@ export default function DashboardPage() {
           {/* Quality */}
           <div className={`card ${styles.intelCard}`}>
             <div className={styles.intelHeader}>
-              <span>🏆 Quality Gates</span>
+              <span><INTEL_ICONS.quality size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Quality Gates</span>
               <Link href="/quality" className={styles.intelLink}>View →</Link>
             </div>
             <div className={styles.intelGrid}>
@@ -291,7 +302,7 @@ export default function DashboardPage() {
           {/* Knowledge */}
           <div className={`card ${styles.intelCard}`}>
             <div className={styles.intelHeader}>
-              <span>📚 Knowledge Base</span>
+              <span><INTEL_ICONS.knowledge size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Knowledge Base</span>
               <Link href="/knowledge" className={styles.intelLink}>View →</Link>
             </div>
             <div className={styles.intelGrid}>
@@ -312,7 +323,7 @@ export default function DashboardPage() {
 
           {/* Sessions + Keys */}
           <div className={`card ${styles.intelCard}`}>
-            <div className={styles.intelHeader}><span>🔑 Platform</span></div>
+            <div className={styles.intelHeader}><span><INTEL_ICONS.platform size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Platform</span></div>
             <div className={styles.intelGrid}>
               <div className={styles.intelStat}>
                 <span className={styles.intelValue}>{overview?.activeKeys ?? '—'}</span>
@@ -347,7 +358,7 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className={styles.emptyActivity}>
-              <span>📭</span>
+              <span><Mailbox size={24} strokeWidth={1.5} /></span>
               <p>No activity yet. Events appear when agents make API calls.</p>
             </div>
           )}

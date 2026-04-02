@@ -130,9 +130,23 @@
 }
 
 .navIcon {
-  font-size: 1.125rem;
   width: 24px;
-  text-align: center;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  transition: color 0.2s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.navItem:hover .navIcon {
+  color: var(--text-primary);
+  transform: scale(1.1);
+}
+
+.navItem.active .navIcon {
+  color: var(--accent-primary);
 }
 
 .navLabel {

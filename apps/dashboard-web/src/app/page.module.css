@@ -28,7 +28,6 @@
 }
 
 .statPillIcon {
-  font-size: 1.25rem;
   width: 36px;
   height: 36px;
   display: flex;
@@ -37,6 +36,7 @@
   background: var(--accent-glow);
   border-radius: var(--radius-md);
   flex-shrink: 0;
+  color: var(--accent-primary);
 }
 
 .statPillContent {
@@ -323,7 +323,10 @@
 }
 
 .gaugeIcon {
-  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
 }
 
 .gaugeValue {
@@ -544,7 +547,12 @@
 }
 
 .activityIcon {
-  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-tertiary);
   flex-shrink: 0;
 }
 
