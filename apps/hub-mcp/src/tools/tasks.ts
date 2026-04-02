@@ -165,19 +165,20 @@ export function registerTaskTools(server: McpServer, env: Env) {
   // task.update — update task status and add progress messages
   server.tool(
     'cortex_task_update',
-    'Update the status of a task. Use to transition tasks through their lifecycle: in_progress, review, completed, or failed.',
+    'Update the status of a task. Use to transition tasks through their lifecycle: in_progress, review, completed, or failed. Can also re-parent orphan tasks.',
     {
       taskId: z.string().describe('The ID of the task to update'),
       status: z.enum(['in_progress', 'review', 'completed', 'failed']).describe('The new status for the task'),
       message: z.string().optional().describe('Progress message or note about the status change'),
       result: z.record(z.string(), z.unknown()).optional().describe('Result data when completing or failing a task'),
+      parentTaskId: z.string().optional().describe('Set or change the parent task ID (for re-parenting orphan tasks)'),
     },
-    async ({ taskId, status, message, result }) => {
+    async ({ taskId, status, message, result, parentTaskId }) => {
       try {
         const response = await fetch(`${env.DASHBOARD_API_URL}/api/conductor/${encodeURIComponent(taskId)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status, message, result }),
+          body: JSON.stringify({ status, message, result, parentTaskId }),
           signal: AbortSignal.timeout(10000),
         })
 
