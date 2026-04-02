@@ -25,7 +25,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Split-Path -Parent $ScriptDir
 
 $DefaultHubUrl = "ws://localhost:4000/ws/conductor"
-$IdentityFile = Join-Path $ProjectRoot ".cortex" "agent-identity.json"
+$IdentityFile = Join-Path (Join-Path $ProjectRoot ".cortex") "agent-identity.json"
 $PidFile = if ($env:CORTEX_AGENT_PID_FILE) { $env:CORTEX_AGENT_PID_FILE } else { Join-Path $env:TEMP "cortex-agent.pid" }
 $LogDir = if ($env:CORTEX_AGENT_LOG_DIR) { $env:CORTEX_AGENT_LOG_DIR } else { Join-Path $env:TEMP "cortex-agent-logs" }
 $LogFile = Join-Path $LogDir "cortex-agent.log"
