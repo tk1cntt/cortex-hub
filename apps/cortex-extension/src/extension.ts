@@ -79,6 +79,9 @@ function startAutoAcceptor(taskId: string, logFn: (msg: string) => void): () => 
   return () => { running = false }
 }
 
+/** Track session IDs that have already been reviewed to prevent duplicate reviews */
+const reviewedSessions = new Set<string>()
+
 /** Monitor Antigravity for plan output, then submit for review before proceeding */
 function startPlanMonitor(taskId: string, logFn: (msg: string) => void): () => void {
   if (!antigravitySdk) return () => {}
@@ -93,10 +96,16 @@ function startPlanMonitor(taskId: string, logFn: (msg: string) => void): () => v
         const sessions = await antigravitySdk.cascade.getSessions()
         if (sessions && sessions.length > 0) {
           const latest = sessions[0]
+          const sessionKey = `${latest.id ?? latest.title}:${latest.stepCount}`
+
+          // Skip if this session+stepCount combo was already reviewed
+          if (reviewedSessions.has(sessionKey)) {
+            await new Promise(r => setTimeout(r, 3000))
+            continue
+          }
+
           // Detect plan by checking step count changes or title patterns
           if (latest.stepCount > 0 && latest.title) {
-            // Read the latest session content to find plan
-            // For now, detect via step count stabilization (agent stopped generating)
             const prevCount = latest.stepCount
             await new Promise(r => setTimeout(r, 5000))
             if (!running) break
@@ -104,6 +113,7 @@ function startPlanMonitor(taskId: string, logFn: (msg: string) => void): () => v
             if (refreshed && refreshed.stepCount === prevCount && prevCount > 0) {
               // Agent stopped — plan is ready, submit for review
               planDetected = true
+              reviewedSessions.add(sessionKey)
               logFn(`Plan detected for task ${taskId} (${prevCount} steps). Submitting for review...`)
 
               const planSummary = `[Plan Review Request]\nTask: ${taskId}\nAgent: Anti-01\nSteps: ${prevCount}\nSession: ${latest.title}`
@@ -116,7 +126,7 @@ function startPlanMonitor(taskId: string, logFn: (msg: string) => void): () => v
                 assignTo: 'codex-review',
                 parentTaskId: taskId,
                 priority: 1,
-                context: JSON.stringify({ reviewType: 'plan', originalTaskId: taskId }),
+                context: JSON.stringify({ reviewType: 'plan', originalTaskId: taskId, autoReview: false }),
               })
 
               // Store pending review so we can proceed when approved
@@ -435,28 +445,39 @@ export function activate(context: vscode.ExtensionContext): void {
 
       forwardToWebview('newTask', msg)
 
+      // Skip review/sub-tasks to prevent recursive loop
+      const titleLower = title.toLowerCase()
+      const isReviewLike = titleLower.includes('review') || titleLower.includes('plan review')
+      if (isReviewLike) {
+        log(`Skipping review task ${taskId} — not executing to prevent loop`)
+        client?.acceptTask(taskId)
+        // Complete immediately with acknowledgment
+        client?.send({ type: 'task.complete', taskId, result: { skipped: true, reason: 'Review tasks handled by dedicated reviewer agent' } })
+        return
+      }
+
       // Auto-accept always
       client?.acceptTask(taskId)
       log(`Task auto-accepted: ${taskId}`)
 
-      // If no active task or conversation is done → execute immediately
-      if (!currentTaskId || conversationDone) {
-        const needsNewConversation = conversationDone && currentTaskId !== null
-        if (needsNewConversation) {
-          log(`Previous conversation done — starting fresh for task ${taskId}`)
-        }
-        vscode.window.showInformationMessage(`Cortex: Executing "${title}"`)
-
-        const prompt = `[Cortex Task ${taskId}]\n\n${description}`
-        executeTaskInChat(prompt, taskId, log, needsNewConversation).catch((e) => {
-          log(`Task execution error: ${e instanceof Error ? e.message : String(e)}`)
-        })
-      } else {
-        // Agent is busy with an active conversation — queue the task
+      // If agent is busy with an active task — always queue (never interrupt)
+      if (currentTaskId && !conversationDone) {
         taskQueue.push({ taskId, title, description, rawMsg: msg })
         log(`Agent busy (task ${currentTaskId}) — queued task ${taskId} (queue size: ${taskQueue.length})`)
         vscode.window.showInformationMessage(`Cortex: Task "${title}" queued (${taskQueue.length} in queue)`)
+        return
       }
+
+      const needsNewConversation = conversationDone && currentTaskId !== null
+      if (needsNewConversation) {
+        log(`Previous conversation done — starting fresh for task ${taskId}`)
+      }
+      vscode.window.showInformationMessage(`Cortex: Executing "${title}"`)
+
+      const prompt = `[Cortex Task ${taskId}]\n\n${description}`
+      executeTaskInChat(prompt, taskId, log, needsNewConversation).catch((e) => {
+        log(`Task execution error: ${e instanceof Error ? e.message : String(e)}`)
+      })
     })
 
     // Forward task.completed to webview + handle review approvals + drain queue

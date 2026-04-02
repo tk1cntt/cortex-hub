@@ -161,16 +161,17 @@ export function resolveCompletionChain(completedTask: TaskRow): void {
     }
 
     // 3. Auto-create review task if context has autoReview enabled
-    //    GUARD: Skip if this task is itself a review/revision/auto-orchestrated task
+    //    GUARD: Skip if this task is itself a review/revision/auto-orchestrated/child task
     const ctx = safeJsonParse<Record<string, unknown>>(completedTask.context, {})
     const reqCaps = safeJsonParse<string[]>(completedTask.required_capabilities, [])
     const titleLower = completedTask.title.toLowerCase()
-    const isReviewTask = reqCaps.includes('review') || titleLower.includes('review')
+    const isReviewTask = reqCaps.includes('review') || titleLower.includes('review') || ctx['reviewType'] !== undefined || ctx['reviewOf'] !== undefined
     const isRevisionTask = titleLower.includes('revision') || ctx['revisionOf'] !== undefined
     const isAutoTask = completedTask.created_by_agent === 'auto-orchestrator'
     const autoReviewDisabled = ctx['autoReview'] === false
+    const isSubtask = !!completedTask.parent_task_id
 
-    if (!isReviewTask && !isRevisionTask && !isAutoTask && !autoReviewDisabled) {
+    if (!isReviewTask && !isRevisionTask && !isAutoTask && !autoReviewDisabled && !isSubtask) {
       // Check if a review task already exists for THIS specific task (not parent)
       const existingReviewForThis = db.prepare(
         "SELECT id FROM conductor_tasks WHERE context LIKE ? AND status NOT IN ('cancelled', 'failed')"
