@@ -270,10 +270,46 @@ export function PipelineDiagram({ tasks, agents, onNodeClick }: Props) {
       return Math.max(totalChildHeight, SIBLING_GAP)
     }
 
+    // Add sequential chain edges between sibling tasks (same parent, ordered by creation)
+    function addSiblingChains(treeNode: TaskTreeNode): void {
+      if (treeNode.children.length > 1) {
+        // Sort children by created_at
+        const sorted = [...treeNode.children].sort((a, b) =>
+          (a.task.created_at ?? '').localeCompare(b.task.created_at ?? '')
+        )
+        for (let i = 0; i < sorted.length - 1; i++) {
+          const curr = sorted[i]!
+          const next = sorted[i + 1]!
+          const isComplete = curr.task.status === 'completed' || curr.task.status === 'approved'
+          const nextActive = next.task.status === 'in_progress' || next.task.status === 'analyzing'
+          flowEdges.push({
+            id: `chain-${curr.task.id}-${next.task.id}`,
+            source: curr.task.id,
+            target: next.task.id,
+            animated: nextActive,
+            type: 'smoothstep',
+            style: {
+              stroke: isComplete ? '#10b981' : 'var(--border-subtle)',
+              strokeWidth: 1.5,
+              strokeDasharray: isComplete ? undefined : '6 3',
+            },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              width: 10,
+              height: 10,
+              color: isComplete ? '#10b981' : 'var(--border-subtle)',
+            },
+          })
+        }
+      }
+      for (const child of treeNode.children) addSiblingChains(child)
+    }
+
     // Layout each root tree, stacking vertically
     let startY = 0
     for (const root of tree) {
       const height = layoutNode(root, 40, startY)
+      addSiblingChains(root)
       startY += height + SIBLING_GAP / 2
     }
 
