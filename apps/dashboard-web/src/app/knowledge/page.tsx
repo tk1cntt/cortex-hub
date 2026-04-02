@@ -130,6 +130,14 @@ function DocumentCard({
             <span className={styles.docProject}>{projectName}</span>
           )}
           <span className={styles.docSource}>{doc.source}</span>
+          {doc.origin && doc.origin !== 'manual' && (
+            <span className={`badge ${doc.origin === 'captured' ? 'badge-info' : doc.origin === 'derived' ? 'badge-healthy' : doc.origin === 'fixed' ? 'badge-warning' : ''}`}>
+              {doc.origin}
+            </span>
+          )}
+          {doc.category && doc.category !== 'general' && (
+            <span className="badge">{doc.category}</span>
+          )}
           {doc.source_agent_id && (
             <span className={styles.docAgent}>{doc.source_agent_id}</span>
           )}
@@ -150,6 +158,14 @@ function DocumentCard({
         <div className={styles.docStats}>
           <span title="Chunks">{doc.chunk_count} chunks</span>
           <span title="Search hits">{doc.hit_count} hits</span>
+          {(doc.selection_count ?? 0) > 0 && (
+            <span title={`Selected: ${doc.selection_count}, Completed: ${doc.completion_count}, Fallback: ${doc.fallback_count}`}>
+              {Math.round(((doc.completion_count ?? 0) / (doc.selection_count ?? 1)) * 100)}% effective
+            </span>
+          )}
+          {doc.generation != null && doc.generation > 0 && (
+            <span title="Evolution generation">v{doc.generation}</span>
+          )}
           <span title="Created">{new Date(doc.created_at).toLocaleDateString()}</span>
         </div>
 

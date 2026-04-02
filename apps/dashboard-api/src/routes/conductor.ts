@@ -777,13 +777,22 @@ conductorRouter.put('/:id', async (c) => {
 
     // ── Post-update chain logic ──
 
-    // Handle completion → resolve dependency chain + set agent idle
+    // Handle completion → resolve dependency chain + set agent idle + recipe capture
     if (status === 'completed') {
       logTaskAction(id, completedBy ?? null, 'completed', undefined)
       if (existing.assigned_to_agent) {
         setAgentStatus(existing.assigned_to_agent, 'idle')
       }
       resolveCompletionChain(updatedTask)
+
+      // Fire-and-forget recipe capture (OpenSpace-inspired auto-learning)
+      if (updatedTask.result) {
+        import('../services/recipe-capture.js').then(({ captureFromTask }) =>
+          captureFromTask(updatedTask).catch(e =>
+            console.warn('[recipe-capture] Task capture error:', (e as Error).message)
+          )
+        ).catch(() => { /* module load failure — non-critical */ })
+      }
     }
     if (status === 'failed') {
       if (existing.assigned_to_agent) {

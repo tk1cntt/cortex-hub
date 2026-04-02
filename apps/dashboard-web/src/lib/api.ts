@@ -755,6 +755,15 @@ export interface KnowledgeDocument {
   content_preview: string | null
   created_at: string
   updated_at: string
+  // Evolution fields (OpenSpace-inspired)
+  origin?: string
+  category?: string
+  generation?: number
+  selection_count?: number
+  applied_count?: number
+  completion_count?: number
+  fallback_count?: number
+  created_by_agent?: string
 }
 
 export interface KnowledgeStats {

@@ -178,6 +178,37 @@ INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('quality_g
 INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('task_assignment', 1);
 INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('session_handoff', 1);
 
+-- ── Knowledge Lineage (Version DAG — inspired by OpenSpace) ──
+CREATE TABLE IF NOT EXISTS knowledge_lineage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+    child_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+    relationship TEXT DEFAULT 'derived'
+        CHECK(relationship IN ('derived','fixed')),
+    change_summary TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(parent_id, child_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_lineage_parent ON knowledge_lineage(parent_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_lineage_child ON knowledge_lineage(child_id);
+
+-- ── Knowledge Usage Log (quality feedback tracking) ──
+CREATE TABLE IF NOT EXISTS knowledge_usage_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id TEXT NOT NULL,
+    task_id TEXT,
+    session_id TEXT,
+    agent_id TEXT,
+    action TEXT NOT NULL
+        CHECK(action IN ('suggested','applied','completed','fallback')),
+    token_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_usage_doc ON knowledge_usage_log(document_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_usage_task ON knowledge_usage_log(task_id);
+
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);
 

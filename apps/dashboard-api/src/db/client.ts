@@ -48,6 +48,22 @@ const sessionIdentityCols = [
 for (const sql of sessionIdentityCols) {
   try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
 }
+// Knowledge evolution: quality counters + lineage metadata (OpenSpace-inspired)
+const knowledgeEvolutionCols = [
+  'ALTER TABLE knowledge_documents ADD COLUMN selection_count INTEGER DEFAULT 0',
+  'ALTER TABLE knowledge_documents ADD COLUMN applied_count INTEGER DEFAULT 0',
+  'ALTER TABLE knowledge_documents ADD COLUMN completion_count INTEGER DEFAULT 0',
+  'ALTER TABLE knowledge_documents ADD COLUMN fallback_count INTEGER DEFAULT 0',
+  "ALTER TABLE knowledge_documents ADD COLUMN origin TEXT DEFAULT 'manual'",
+  'ALTER TABLE knowledge_documents ADD COLUMN generation INTEGER DEFAULT 0',
+  'ALTER TABLE knowledge_documents ADD COLUMN source_task_id TEXT',
+  'ALTER TABLE knowledge_documents ADD COLUMN created_by_agent TEXT',
+  "ALTER TABLE knowledge_documents ADD COLUMN category TEXT DEFAULT 'general'",
+]
+for (const sql of knowledgeEvolutionCols) {
+  try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
+}
+
 if (existsSync(schemaPath)) {
   const schema = readFileSync(schemaPath, 'utf8')
   db.exec(schema)

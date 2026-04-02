@@ -93,6 +93,59 @@ export type ApiKey = {
   revokedAt: string | null
 }
 
+/** Knowledge document origin — how it was created */
+export type KnowledgeOrigin = 'manual' | 'agent' | 'captured' | 'derived' | 'fixed'
+
+/** Knowledge document category */
+export type KnowledgeCategory = 'general' | 'workflow' | 'tool_guide' | 'reference' | 'error_fix'
+
+/** Quality metrics for a knowledge document (OpenSpace-inspired) */
+export type KnowledgeQuality = {
+  selectionCount: number
+  appliedCount: number
+  completionCount: number
+  fallbackCount: number
+  /** applied / selected (0-1) */
+  appliedRate: number
+  /** completed / applied (0-1) */
+  completionRate: number
+  /** completed / selected (0-1, end-to-end effectiveness) */
+  effectiveRate: number
+  /** fallback / selected (0-1, higher = worse) */
+  fallbackRate: number
+}
+
+/** Knowledge document with evolution metadata */
+export type KnowledgeDocument = {
+  id: string
+  title: string
+  source: 'manual' | 'agent' | 'import'
+  sourceAgentId: string | null
+  projectId: string | null
+  tags: string[]
+  status: 'active' | 'archived'
+  hitCount: number
+  chunkCount: number
+  contentPreview: string | null
+  origin: KnowledgeOrigin
+  category: KnowledgeCategory
+  generation: number
+  sourceTaskId: string | null
+  createdByAgent: string | null
+  quality: KnowledgeQuality
+  createdAt: string
+  updatedAt: string
+}
+
+/** Lineage edge in the knowledge version DAG */
+export type KnowledgeLineageEdge = {
+  parentId: string
+  childId: string
+  relationship: 'derived' | 'fixed'
+  changeSummary: string | null
+  createdAt: string
+}
+
 /** Tool call log entry */
 export type ToolLog = {
   id: string

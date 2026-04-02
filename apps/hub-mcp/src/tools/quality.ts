@@ -34,6 +34,20 @@ export function registerQualityTools(server: McpServer, env: Env) {
           }
         }
 
+        // Auto-track knowledge usage feedback (OpenSpace-inspired)
+        // If knowledge was searched in this session, update completion/fallback counters
+        try {
+          const feedbackAction = passed ? 'completed' : 'fallback'
+          await fetch(`${env.DASHBOARD_API_URL}/api/knowledge/track-feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: feedbackAction, gate_name }),
+            signal: AbortSignal.timeout(5000),
+          })
+        } catch {
+          // Non-critical — don't fail quality report for feedback tracking
+        }
+
         return {
           content: [{ type: 'text' as const, text: `Quality Report Logged: ${gate_name} (Passed: ${passed})` }],
         }

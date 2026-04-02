@@ -119,13 +119,17 @@ knowledgeRouter.get('/', (c) => {
 knowledgeRouter.post('/', async (c) => {
   try {
     const body = await c.req.json()
-    const { title, content, tags, projectId, sourceAgentId, source } = body as {
+    const { title, content, tags, projectId, sourceAgentId, source, origin, category, sourceTaskId, parentDocId } = body as {
       title: string
       content: string
       tags?: string[]
       projectId?: string
       sourceAgentId?: string
       source?: string
+      origin?: string
+      category?: string
+      sourceTaskId?: string
+      parentDocId?: string
     }
 
     if (!title || !content) {
@@ -166,11 +170,32 @@ knowledgeRouter.post('/', async (c) => {
 
     await vectorStore.ensureCollection(vectorSize)
 
-    // Insert document first
+    // Resolve generation for derived docs
+    let generation = 0
+    if (parentDocId) {
+      const parent = db.prepare('SELECT generation FROM knowledge_documents WHERE id = ?').get(parentDocId) as { generation: number } | undefined
+      generation = (parent?.generation ?? 0) + 1
+    }
+
+    // Insert document with evolution metadata
     db.prepare(
-      `INSERT INTO knowledge_documents (id, title, source, source_agent_id, project_id, tags, content_preview, chunk_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(docId, title, source ?? 'manual', sourceAgentId ?? null, normalizedProjectId, JSON.stringify(tagList), contentPreview, chunks.length)
+      `INSERT INTO knowledge_documents (id, title, source, source_agent_id, project_id, tags, content_preview, chunk_count, origin, category, generation, source_task_id, created_by_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(docId, title, source ?? 'manual', sourceAgentId ?? null, normalizedProjectId, JSON.stringify(tagList), contentPreview, chunks.length, origin ?? 'manual', category ?? 'general', generation, sourceTaskId ?? null, sourceAgentId ?? null)
+
+    // Create lineage edge if this is derived/fixed from a parent
+    if (parentDocId) {
+      const relationship = origin === 'fixed' ? 'fixed' : 'derived'
+      db.prepare(
+        `INSERT OR IGNORE INTO knowledge_lineage (parent_id, child_id, relationship, change_summary)
+         VALUES (?, ?, ?, ?)`
+      ).run(parentDocId, docId, relationship, `${relationship} from ${parentDocId}`)
+
+      // If fixed, archive the parent
+      if (origin === 'fixed') {
+        db.prepare("UPDATE knowledge_documents SET status = 'archived', updated_at = datetime('now') WHERE id = ?").run(parentDocId)
+      }
+    }
 
     // Embed and store each chunk
     for (let i = 0; i < chunks.length; i++) {
@@ -319,7 +344,7 @@ knowledgeRouter.post('/search', async (c) => {
       result?: Array<{ id: string; score: number; payload?: Record<string, unknown> }>
     }
 
-    // Enrich with document metadata and track hits
+    // Enrich with document metadata, quality metrics, and re-rank
     const docIds = new Set<string>()
     const results = (data.result ?? []).map((hit) => {
       const docId = hit.payload?.document_id as string | undefined
@@ -334,24 +359,225 @@ knowledgeRouter.post('/search', async (c) => {
       }
     })
 
-    // Increment hit counts
+    // Increment hit counts + selection counts
     if (docIds.size > 0) {
       const placeholders = [...docIds].map(() => '?').join(',')
       db.prepare(
-        `UPDATE knowledge_documents SET hit_count = hit_count + 1, updated_at = datetime('now') WHERE id IN (${placeholders})`
+        `UPDATE knowledge_documents SET hit_count = hit_count + 1, selection_count = selection_count + 1, updated_at = datetime('now') WHERE id IN (${placeholders})`
       ).run(...docIds)
     }
 
-    // Join document metadata
+    // Join document metadata + quality metrics, then re-rank
+    const now = Date.now()
     const enriched = results.map((r) => {
       if (!r.documentId) return r
-      const doc = db.prepare('SELECT id, title, tags, project_id, source, hit_count, status FROM knowledge_documents WHERE id = ?').get(r.documentId)
-      return { ...r, document: doc }
+      const doc = db.prepare(
+        `SELECT id, title, tags, project_id, source, hit_count, status,
+                selection_count, applied_count, completion_count, fallback_count,
+                origin, category, generation, created_by_agent, updated_at
+         FROM knowledge_documents WHERE id = ?`
+      ).get(r.documentId) as Record<string, unknown> | undefined
+      if (!doc) return r
+
+      // Compute quality metrics (OpenSpace-inspired)
+      const sel = (doc.selection_count as number) || 0
+      const app = (doc.applied_count as number) || 0
+      const comp = (doc.completion_count as number) || 0
+      const fall = (doc.fallback_count as number) || 0
+      const quality = {
+        selectionCount: sel,
+        appliedCount: app,
+        completionCount: comp,
+        fallbackCount: fall,
+        appliedRate: sel > 0 ? app / sel : 0,
+        completionRate: app > 0 ? comp / app : 0,
+        effectiveRate: sel > 0 ? comp / sel : 0,
+        fallbackRate: sel > 0 ? fall / sel : 0,
+      }
+
+      // Hybrid score: vector_similarity * 0.6 + effective_rate * 0.3 + recency * 0.1
+      const updatedAt = doc.updated_at ? new Date(doc.updated_at as string).getTime() : 0
+      const daysSinceUpdate = Math.max(0, (now - updatedAt) / (1000 * 60 * 60 * 24))
+      const recencyScore = Math.max(0, 1 - daysSinceUpdate / 90) // decay over 90 days
+      const vectorScore = r.score
+
+      let hybridScore = vectorScore
+      if (sel >= 3) {
+        // Only apply quality ranking once we have enough data
+        hybridScore = vectorScore * 0.6 + quality.effectiveRate * 0.3 + recencyScore * 0.1
+      }
+
+      // Flag high-fallback docs
+      const deprecated = sel >= 5 && quality.fallbackRate > 0.5
+
+      return {
+        ...r,
+        score: hybridScore,
+        quality,
+        origin: doc.origin,
+        category: doc.category,
+        deprecated,
+        document: doc,
+      }
     })
+
+    // Re-sort by hybrid score
+    enriched.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
     return c.json({ query, results: enriched })
   } catch (error) {
     logger.error(`Knowledge search failed: ${String(error)}`)
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── GET /lineage/:id — Full DAG traversal ──
+knowledgeRouter.get('/lineage/:id', (c) => {
+  const id = c.req.param('id')
+  const doc = db.prepare('SELECT id FROM knowledge_documents WHERE id = ?').get(id)
+  if (!doc) return c.json({ error: 'Document not found' }, 404)
+
+  // BFS traversal — collect all ancestors and descendants
+  const nodes = new Map<string, Record<string, unknown>>()
+  const edges: Array<{ parentId: string; childId: string; relationship: string; changeSummary: string | null }> = []
+  const queue = [id]
+  const visited = new Set<string>()
+
+  while (queue.length > 0) {
+    const current = queue.shift()!
+    if (visited.has(current)) continue
+    visited.add(current)
+
+    const node = db.prepare(
+      'SELECT id, title, origin, category, generation, status, selection_count, completion_count, fallback_count, created_at FROM knowledge_documents WHERE id = ?'
+    ).get(current) as Record<string, unknown> | undefined
+    if (node) nodes.set(current, node)
+
+    // Parents
+    const parents = db.prepare(
+      'SELECT parent_id, child_id, relationship, change_summary FROM knowledge_lineage WHERE child_id = ?'
+    ).all(current) as Array<{ parent_id: string; child_id: string; relationship: string; change_summary: string | null }>
+    for (const edge of parents) {
+      edges.push({ parentId: edge.parent_id, childId: edge.child_id, relationship: edge.relationship, changeSummary: edge.change_summary })
+      if (!visited.has(edge.parent_id)) queue.push(edge.parent_id)
+    }
+
+    // Children
+    const children = db.prepare(
+      'SELECT parent_id, child_id, relationship, change_summary FROM knowledge_lineage WHERE parent_id = ?'
+    ).all(current) as Array<{ parent_id: string; child_id: string; relationship: string; change_summary: string | null }>
+    for (const edge of children) {
+      edges.push({ parentId: edge.parent_id, childId: edge.child_id, relationship: edge.relationship, changeSummary: edge.change_summary })
+      if (!visited.has(edge.child_id)) queue.push(edge.child_id)
+    }
+  }
+
+  // Dedup edges
+  const edgeSet = new Set<string>()
+  const uniqueEdges = edges.filter((e) => {
+    const key = `${e.parentId}-${e.childId}`
+    if (edgeSet.has(key)) return false
+    edgeSet.add(key)
+    return true
+  })
+
+  return c.json({
+    rootId: id,
+    nodes: [...nodes.values()],
+    edges: uniqueEdges,
+  })
+})
+
+// ── GET /token-savings — Compare tasks with vs without knowledge ──
+knowledgeRouter.get('/token-savings', (c) => {
+  // Tasks that used knowledge (have usage log entries with action='completed')
+  const withKnowledge = db.prepare(`
+    SELECT AVG(kul.token_count) as avgTokens, COUNT(*) as count
+    FROM knowledge_usage_log kul
+    WHERE kul.action = 'completed' AND kul.token_count > 0
+  `).get() as { avgTokens: number | null; count: number }
+
+  // Tasks that used knowledge but fell back
+  const withFallback = db.prepare(`
+    SELECT AVG(kul.token_count) as avgTokens, COUNT(*) as count
+    FROM knowledge_usage_log kul
+    WHERE kul.action = 'fallback' AND kul.token_count > 0
+  `).get() as { avgTokens: number | null; count: number }
+
+  // Knowledge docs by origin
+  const byOrigin = db.prepare(`
+    SELECT origin, COUNT(*) as count,
+           AVG(CASE WHEN selection_count > 0 THEN CAST(completion_count AS REAL) / selection_count ELSE 0 END) as avgEffectiveRate
+    FROM knowledge_documents WHERE status = 'active'
+    GROUP BY origin
+  `).all()
+
+  return c.json({
+    withKnowledge: { avgTokens: withKnowledge.avgTokens ?? 0, taskCount: withKnowledge.count },
+    withFallback: { avgTokens: withFallback.avgTokens ?? 0, taskCount: withFallback.count },
+    byOrigin,
+    savingsPercent: withKnowledge.avgTokens && withFallback.avgTokens
+      ? Math.round((1 - withKnowledge.avgTokens / withFallback.avgTokens) * 100)
+      : null,
+  })
+})
+
+// ── POST /track-feedback — Auto-track knowledge completion/fallback from quality reports ──
+knowledgeRouter.post('/track-feedback', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { action, gate_name } = body as { action: 'completed' | 'fallback'; gate_name?: string }
+
+    if (!action || !['completed', 'fallback'].includes(action)) {
+      return c.json({ error: 'action must be completed or fallback' }, 400)
+    }
+
+    // Find recently searched knowledge docs (last hour) — these are the ones that were "used"
+    const recentSearched = db.prepare(`
+      SELECT DISTINCT kd.id FROM knowledge_documents kd
+      WHERE kd.status = 'active'
+        AND kd.selection_count > 0
+        AND kd.updated_at > datetime('now', '-1 hour')
+      ORDER BY kd.updated_at DESC
+      LIMIT 10
+    `).all() as Array<{ id: string }>
+
+    if (recentSearched.length === 0) {
+      return c.json({ updated: 0, message: 'No recently searched knowledge to track' })
+    }
+
+    const column = action === 'completed' ? 'completion_count' : 'fallback_count'
+    let updated = 0
+
+    for (const doc of recentSearched) {
+      db.prepare(
+        `UPDATE knowledge_documents SET ${column} = ${column} + 1, updated_at = datetime('now') WHERE id = ?`
+      ).run(doc.id)
+
+      // Log usage
+      db.prepare(
+        `INSERT INTO knowledge_usage_log (document_id, action) VALUES (?, ?)`
+      ).run(doc.id, action)
+
+      updated++
+    }
+
+    logger.info(`[track-feedback] ${action}: updated ${updated} docs (gate: ${gate_name ?? 'unknown'})`)
+    return c.json({ updated, action })
+  } catch (error) {
+    logger.error(`Track feedback failed: ${String(error)}`)
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── POST /health-check — Find and fix unhealthy knowledge docs (OpenSpace-inspired) ──
+knowledgeRouter.post('/health-check', async (c) => {
+  try {
+    const { runHealthCheck } = await import('../services/knowledge-evolution.js')
+    const result = await runHealthCheck()
+    return c.json(result)
+  } catch (error) {
+    logger.error(`Health check failed: ${String(error)}`)
     return c.json({ error: String(error) }, 500)
   }
 })

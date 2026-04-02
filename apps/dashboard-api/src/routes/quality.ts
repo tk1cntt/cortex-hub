@@ -498,11 +498,29 @@ sessionsRouter.patch('/:id/complete', async (c) => {
     const existing = db.prepare('SELECT id FROM session_handoffs WHERE id = ?').get(id)
     if (!existing) return c.json({ error: 'Session not found' }, 404)
 
+    // Get session details before closing (for recipe capture)
+    const session = db.prepare('SELECT from_agent, project_id, project FROM session_handoffs WHERE id = ?')
+      .get(id) as { from_agent: string; project_id: string | null; project: string } | undefined
+
     db.prepare(
       `UPDATE session_handoffs
        SET status = ?, task_summary = COALESCE(?, task_summary)
        WHERE id = ?`
     ).run(status ?? 'completed', task_summary ?? null, id)
+
+    // Fire-and-forget recipe capture from session summary (OpenSpace-inspired)
+    if (task_summary && task_summary.length > 50 && session) {
+      import('../services/recipe-capture.js').then(({ captureFromSession }) =>
+        captureFromSession({
+          sessionId: id,
+          summary: task_summary,
+          agentId: session.from_agent,
+          projectId: session.project_id,
+        }).catch(e =>
+          console.warn('[recipe-capture] Session capture error:', (e as Error).message)
+        )
+      ).catch(() => { /* module load failure — non-critical */ })
+    }
 
     return c.json({ success: true, id, status: status ?? 'completed' })
   } catch (error) {

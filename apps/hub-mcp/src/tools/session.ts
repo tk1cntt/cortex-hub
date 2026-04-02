@@ -66,6 +66,42 @@ Resuming current objective from STATE.md.
         // Dashboard API unavailable — continue with local session ID
       }
 
+      // Search for relevant knowledge/recipes to suggest (OpenSpace-inspired)
+      let relevantKnowledge: Array<{ id: string; title: string; description: string; origin: string; quality: Record<string, number> }> = []
+      try {
+        const searchQuery = mode ?? branch ?? 'development'
+        const knowledgeRes = await fetch(`${env.DASHBOARD_API_URL}/api/knowledge/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: searchQuery, limit: 3 }),
+          signal: AbortSignal.timeout(5000),
+        })
+        if (knowledgeRes.ok) {
+          const data = await knowledgeRes.json() as {
+            results?: Array<{
+              documentId?: string
+              title?: string
+              content?: string
+              origin?: string
+              quality?: Record<string, number>
+              deprecated?: boolean
+            }>
+          }
+          relevantKnowledge = (data.results ?? [])
+            .filter(r => r.documentId && !r.deprecated)
+            .slice(0, 3)
+            .map(r => ({
+              id: r.documentId!,
+              title: r.title ?? '',
+              description: (r.content ?? '').slice(0, 200),
+              origin: r.origin ?? 'manual',
+              quality: r.quality ?? {},
+            }))
+        }
+      } catch {
+        // Knowledge search unavailable — continue without suggestions
+      }
+
       return {
         content: [
           {
@@ -84,6 +120,7 @@ Resuming current objective from STATE.md.
                 capabilities: capabilities ?? [],
                 role: role ?? null,
               },
+              relevant_knowledge: relevantKnowledge.length > 0 ? relevantKnowledge : undefined,
             }, null, 2)
           }
         ]
