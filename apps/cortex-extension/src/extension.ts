@@ -49,6 +49,7 @@ interface QueuedTask {
   title: string
   description: string
   rawMsg: Record<string, unknown>
+  isSubtask?: boolean
 }
 
 let currentTaskId: string | null = null
@@ -256,15 +257,16 @@ function drainTaskQueue(logFn: (msg: string) => void): void {
 
   const prompt = `[Cortex Task ${next.taskId}]\n\n${next.description}`
   // Always create new conversation for queued tasks
-  executeTaskInChat(prompt, next.taskId, logFn, true).catch((e) => {
+  executeTaskInChat(prompt, next.taskId, logFn, true, next.isSubtask).catch((e) => {
     logFn(`Queued task execution error: ${e instanceof Error ? e.message : String(e)}`)
   })
 }
 
 /** Execute a task by injecting prompt into IDE's AI chat.
- *  @param forceNewConversation — if true, always create a new cascade/chat instead of sending to existing */
-async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: string) => void, forceNewConversation = false): Promise<void> {
-  logFn(`Executing task ${taskId} via IDE chat... (newConversation=${forceNewConversation})`)
+ *  @param forceNewConversation — if true, always create a new cascade/chat instead of sending to existing
+ *  @param isSubtask — if true, skip plan monitor (subtasks don't need review) */
+async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: string) => void, forceNewConversation = false, isSubtask = false): Promise<void> {
+  logFn(`Executing task ${taskId} via IDE chat... (newConversation=${forceNewConversation}, subtask=${isSubtask})`)
 
   // Update tracking state
   currentTaskId = taskId
@@ -280,7 +282,8 @@ async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: st
         const cascadeId = await antigravitySdk.ls.createCascade({ text: prompt })
         await antigravitySdk.ls.focusCascade(cascadeId)
         logFn(`New conversation created via createCascade — cascade ${cascadeId}`)
-        startPlanMonitor(taskId, logFn)
+        // Only monitor plans for top-level tasks — subtasks execute directly
+        if (!isSubtask) startPlanMonitor(taskId, logFn)
         completionMonitorStop = startCompletionMonitor(taskId, logFn)
         return
       } catch (e) {
@@ -292,8 +295,7 @@ async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: st
     try {
       await antigravitySdk.cascade.sendPrompt(prompt)
       logFn(`Task prompt sent via Antigravity SDK (cascade.sendPrompt)`)
-      // Start plan monitor — will pause for review before proceeding
-      startPlanMonitor(taskId, logFn)
+      if (!isSubtask) startPlanMonitor(taskId, logFn)
       completionMonitorStop = startCompletionMonitor(taskId, logFn)
       return
     } catch (e) {
@@ -302,7 +304,7 @@ async function executeTaskInChat(prompt: string, taskId: string, logFn: (msg: st
         const cascadeId = await antigravitySdk.ls.createCascade({ text: prompt })
         await antigravitySdk.ls.focusCascade(cascadeId)
         logFn(`Task prompt sent via Antigravity SDK (ls.createCascade) — cascade ${cascadeId}`)
-        startPlanMonitor(taskId, logFn)
+        if (!isSubtask) startPlanMonitor(taskId, logFn)
         completionMonitorStop = startCompletionMonitor(taskId, logFn)
         return
       } catch (e2) {
@@ -460,9 +462,12 @@ export function activate(context: vscode.ExtensionContext): void {
       client?.acceptTask(taskId)
       log(`Task auto-accepted: ${taskId}`)
 
+      // Detect subtasks — they have Role/Parent in description or parentTaskId in msg
+      const isSubtask = !!(msg['parentTaskId'] || description.includes('Parent task:') || description.includes('Role:'))
+
       // If agent is busy with an active task — always queue (never interrupt)
       if (currentTaskId && !conversationDone) {
-        taskQueue.push({ taskId, title, description, rawMsg: msg })
+        taskQueue.push({ taskId, title, description, rawMsg: msg, isSubtask })
         log(`Agent busy (task ${currentTaskId}) — queued task ${taskId} (queue size: ${taskQueue.length})`)
         vscode.window.showInformationMessage(`Cortex: Task "${title}" queued (${taskQueue.length} in queue)`)
         return
@@ -475,7 +480,7 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage(`Cortex: Executing "${title}"`)
 
       const prompt = `[Cortex Task ${taskId}]\n\n${description}`
-      executeTaskInChat(prompt, taskId, log, needsNewConversation).catch((e) => {
+      executeTaskInChat(prompt, taskId, log, needsNewConversation, isSubtask).catch((e) => {
         log(`Task execution error: ${e instanceof Error ? e.message : String(e)}`)
       })
     })
