@@ -341,6 +341,29 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       const priority = (msg['priority'] as number) ?? 5
       const context = (msg['context'] as string) ?? '{}'
 
+      // Block review task spam: if title starts with [Review], limit to 1 per parent per 5 minutes
+      const titleLower = title.toLowerCase()
+      if (titleLower.startsWith('[review]') || titleLower.includes('plan review')) {
+        const recentReview = db.prepare(
+          "SELECT id FROM conductor_tasks WHERE title LIKE '[Review]%' AND parent_task_id IS ? AND created_by_agent = ? AND created_at > datetime('now', '-300 seconds')"
+        ).get(parentTaskId ?? null, agent.agentId) as { id: string } | undefined
+
+        if (recentReview) {
+          console.warn(`[ws] task.create: BLOCKED review spam "${title}" by ${agent.agentId} (existing: ${recentReview.id})`)
+          agent.ws.send(JSON.stringify({
+            type: 'task.created',
+            taskId: recentReview.id,
+            title,
+            assignedTo: assignTo,
+            parentTaskId,
+            deduplicated: true,
+            blocked: true,
+            timestamp: new Date().toISOString(),
+          }))
+          break
+        }
+      }
+
       // Dedup: prevent creating duplicate tasks with same title+parent+agent within 30 seconds
       const recentDupe = db.prepare(
         "SELECT id FROM conductor_tasks WHERE title = ? AND parent_task_id IS ? AND created_by_agent = ? AND created_at > datetime('now', '-30 seconds')"
