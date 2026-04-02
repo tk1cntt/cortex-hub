@@ -15,11 +15,9 @@ import {
 import {
   TaskBriefingWizard,
   PipelineDiagram,
-  TaskCard,
   TaskDetail,
   AgentDetail,
   type StatusFilter,
-  type ViewMode,
   type TaskPrefill,
   type ResumeTask,
   type TaskStrategy,
@@ -29,6 +27,7 @@ import {
   getCapColor,
   getResultSummary,
   getTaskDuration,
+  parseResult,
   StatusBadge,
   type TaskTreeNode,
 } from './components'
@@ -36,24 +35,66 @@ import styles from './page.module.css'
 
 // ── Pipeline tree views ──
 
+/** Human-readable parsed result for inline pipeline display */
+function PipelineResultSummary({ result }: { result: string }) {
+  const parsed = parseResult(result)
+  if (parsed.type === 'empty') return null
+  if (parsed.type === 'string') {
+    return <div className={styles.pipelineResultText}>{parsed.text}</div>
+  }
+  if (parsed.type === 'subtasks') {
+    return (
+      <div className={styles.pipelineResultSubtasks}>
+        {parsed.items.map((item, i) => (
+          <div key={i} className={styles.pipelineResultSubtaskRow}>
+            <span className={styles.pipelineResultSubtaskIcon}>
+              {item.status === 'completed' ? '✓' : item.status === 'failed' ? '✗' : '○'}
+            </span>
+            <span className={styles.pipelineResultSubtaskTitle}>
+              {item.title ?? `Subtask ${i + 1}`}
+            </span>
+            {item.agent && <code className={styles.pipelineResultSubtaskAgent}>{item.agent}</code>}
+            {item.message && <span className={styles.pipelineResultSubtaskMsg}>{item.message}</span>}
+          </div>
+        ))}
+      </div>
+    )
+  }
+  // type === 'object'
+  return (
+    <div className={styles.pipelineResultKv}>
+      {parsed.summary.map(({ key, value }) => (
+        <div key={key} className={styles.pipelineResultKvRow}>
+          <span className={styles.pipelineResultKvKey}>{key.replace(/_/g, ' ')}</span>
+          <span className={styles.pipelineResultKvValue}>{value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Pipeline tree row — shows task with indentation and connector lines */
 function PipelineRow({
   node,
   onSelect,
   isLast,
+  onFollowUp,
 }: {
   node: TaskTreeNode
   onSelect: () => void
   isLast: boolean
+  onFollowUp?: (task: ConductorTask) => void
 }) {
   const { task, children, depth } = node
   const hasChildren = children.length > 0
+  const [expanded, setExpanded] = useState(false)
 
   const statusColor = task.status === 'completed' ? 'completed'
     : task.status === 'in_progress' ? 'inProgress'
     : task.status === 'failed' ? 'failed' : 'pending'
 
-  const resultSummary = task.status === 'completed' ? getResultSummary(task.result, 80) : ''
+  const isCompleted = task.status === 'completed'
+  const resultSummary = isCompleted ? getResultSummary(task.result, 80) : ''
   const duration = getTaskDuration(task)
 
   return (
@@ -95,15 +136,45 @@ function PipelineRow({
           )}
         </span>
         <StatusBadge status={task.status} />
+        {isCompleted && task.result && (
+          <button
+            className={`${styles.rowExpandBtn} ${expanded ? styles.rowExpandBtnOpen : ''}`}
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
+            title={expanded ? 'Collapse result' : 'Expand result'}
+          >
+            ▾
+          </button>
+        )}
       </div>
-      {/* Result outcome line */}
-      {resultSummary && (
+      {/* Result outcome line (collapsed summary) */}
+      {resultSummary && !expanded && (
         <div
           className={styles.pipelineOutcome}
-          style={{ paddingLeft: `${depth * 36 + 20}px` }}
+          style={{ paddingLeft: `${depth * 36 + 20}px`, cursor: 'pointer' }}
+          onClick={(e) => { e.stopPropagation(); setExpanded(true) }}
         >
           {resultSummary}
           {duration && <span className={styles.pipelineDuration}>⏱ {duration}</span>}
+        </div>
+      )}
+      {/* Expanded result section */}
+      {expanded && isCompleted && task.result && (
+        <div
+          className={styles.pipelineResultExpanded}
+          style={{ paddingLeft: `${depth * 36 + 20}px` }}
+        >
+          {duration && (
+            <div className={styles.pipelineResultDuration}>Completed in {duration}</div>
+          )}
+          <PipelineResultSummary result={task.result} />
+          {onFollowUp && (
+            <button
+              className={styles.followUpBtn}
+              onClick={(e) => { e.stopPropagation(); onFollowUp(task) }}
+            >
+              + Create follow-up task
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -116,11 +187,13 @@ function PipelineView({
   onSelectTask,
   onDeletePipeline,
   onShowDiagram,
+  onFollowUp,
 }: {
   tasks: ConductorTask[]
   onSelectTask: (task: ConductorTask) => void
   onDeletePipeline: (rootTaskId: string) => void
   onShowDiagram: (rootTaskId: string) => void
+  onFollowUp: (task: ConductorTask) => void
 }) {
   const tree = useMemo(() => buildTaskTree(tasks), [tasks])
   const flat = useMemo(() => flattenTree(tree), [tree])
@@ -128,36 +201,27 @@ function PipelineView({
   if (flat.length === 0) {
     return (
       <div className={`card ${styles.emptyState}`}>
-        <p>No tasks with parent-child relationships found.</p>
+        <span className={styles.emptyIcon}>T</span>
+        <p>No conductor tasks yet.</p>
+        <p className={styles.emptyHint}>
+          Create tasks via the dashboard or the <code>cortex_task_create</code> MCP tool.
+        </p>
       </div>
     )
   }
 
-  const withChildren = flat.filter((n) => n.depth === 0 && n.children.length > 0)
-  const rootIds = new Set(withChildren.map((n) => n.task.id))
-
-  function hasAncestorIn(node: TaskTreeNode, ids: Set<string>, allNodes: TaskTreeNode[]): boolean {
-    let parentId = node.task.parent_task_id
-    while (parentId) {
-      if (ids.has(parentId)) return true
-      const parent = allNodes.find((n) => n.task.id === parentId)
-      parentId = parent?.task.parent_task_id ?? null
-    }
-    return false
-  }
-
-  const pipelineTasks = flat.filter((n) => rootIds.has(n.task.id) || (n.depth > 0 && hasAncestorIn(n, rootIds, flat)))
-  const orphans = flat.filter((n) => n.depth === 0 && n.children.length === 0)
+  const pipelines = flat.filter((n) => n.depth === 0 && n.children.length > 0)
+  const standalone = flat.filter((n) => n.depth === 0 && n.children.length === 0)
 
   return (
     <div>
-      {withChildren.length > 0 && (
+      {pipelines.length > 0 && (
         <div className={`card ${styles.pipelineCard}`}>
           <div className={styles.pipelineHeader}>
-            <h3 className={styles.pipelineHeaderTitle}>Task Pipeline</h3>
-            <span className={styles.pipelineHeaderCount}>{pipelineTasks.length} tasks in {withChildren.length} pipelines</span>
+            <h3 className={styles.pipelineHeaderTitle}>Task Pipelines</h3>
+            <span className={styles.pipelineHeaderCount}>{pipelines.length} pipelines</span>
           </div>
-          {withChildren.map((rootNode) => {
+          {pipelines.map((rootNode) => {
             const subtreeFlat = flattenTree([rootNode])
             const root = rootNode.task
             const subtaskCount = rootNode.children.length
@@ -174,7 +238,7 @@ function PipelineView({
 
             return (
               <div key={rootNode.task.id}>
-                <div className={styles.orchestratorHeader}>
+                <div className={styles.orchestratorHeader} style={{ cursor: 'pointer' }} onClick={() => onSelectTask(root)}>
                   <div className={styles.orchestratorInfo}>
                     <div className={styles.orchestratorAgent}>
                       Orchestrator: <code>{root.created_by_agent ?? 'unknown'}</code>
@@ -228,6 +292,7 @@ function PipelineView({
                       node={node}
                       onSelect={() => onSelectTask(node.task)}
                       isLast={isLast}
+                      onFollowUp={onFollowUp}
                     />
                   )
                 })}
@@ -237,18 +302,19 @@ function PipelineView({
         </div>
       )}
 
-      {orphans.length > 0 && (
-        <div className={`card ${styles.pipelineCard}`} style={{ marginTop: 'var(--space-4)' }}>
+      {standalone.length > 0 && (
+        <div className={`card ${styles.pipelineCard}`} style={{ marginTop: pipelines.length > 0 ? 'var(--space-4)' : undefined }}>
           <div className={styles.pipelineHeader}>
             <h3 className={styles.pipelineHeaderTitle}>Standalone Tasks</h3>
-            <span className={styles.pipelineHeaderCount}>{orphans.length}</span>
+            <span className={styles.pipelineHeaderCount}>{standalone.length}</span>
           </div>
-          {orphans.map((node) => (
+          {standalone.map((node) => (
             <PipelineRow
               key={node.task.id}
               node={node}
               onSelect={() => onSelectTask(node.task)}
               isLast
+              onFollowUp={onFollowUp}
             />
           ))}
         </div>
@@ -267,7 +333,6 @@ export default function ConductorPage() {
   })
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [selectedTask, setSelectedTask] = useState<ConductorTask | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<ConductorAgent | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -281,21 +346,9 @@ export default function ConductorPage() {
   const onlineCount = agentsData?.online ?? agents.length
   const [agentsCollapsed, setAgentsCollapsed] = useState(false)
 
-  const taskIdsWithChildren = useMemo(() => {
-    const ids = new Set<string>()
-    for (const t of allTasks) {
-      if (t.parent_task_id) ids.add(t.parent_task_id)
-    }
-    return ids
-  }, [allTasks])
-
   const filteredTasks = useMemo(() => {
-    const byStatus = statusFilter === 'all' ? allTasks : allTasks.filter((t) => t.status === statusFilter)
-    if (viewMode === 'list') {
-      return byStatus.filter((t) => !t.parent_task_id && !taskIdsWithChildren.has(t.id))
-    }
-    return byStatus
-  }, [allTasks, statusFilter, viewMode, taskIdsWithChildren])
+    return statusFilter === 'all' ? allTasks : allTasks.filter((t) => t.status === statusFilter)
+  }, [allTasks, statusFilter])
 
   const counts = useMemo(() => ({
     all: allTasks.length,
@@ -306,14 +359,45 @@ export default function ConductorPage() {
     cancelled: allTasks.filter((t) => t.status === 'cancelled').length,
   }), [allTasks])
 
-  const handleCancel = useCallback(async (id: string) => {
-    try {
-      await cancelConductorTask(id)
-      mutate()
-    } catch (err) {
-      console.error('Failed to cancel task:', err)
+  /** Collect all descendant task IDs for a given parent */
+  const getSubtaskIds = useCallback((parentId: string): string[] => {
+    const ids: string[] = []
+    for (const t of allTasks) {
+      if (t.parent_task_id === parentId) {
+        ids.push(t.id)
+        ids.push(...getSubtaskIds(t.id))
+      }
     }
-  }, [mutate])
+    return ids
+  }, [allTasks])
+
+  const handleCancel = useCallback(async (id: string) => {
+    const idsToCancel = [id, ...getSubtaskIds(id)]
+    const cancellableStatuses = ['pending', 'assigned', 'accepted', 'in_progress', 'analyzing']
+    const tasksToCancelIds = idsToCancel.filter((tid) => {
+      const t = allTasks.find((task) => task.id === tid)
+      return t && cancellableStatuses.includes(t.status)
+    })
+
+    mutate((current) => {
+      if (!current) return current
+      return {
+        ...current,
+        tasks: current.tasks.map((t) =>
+          tasksToCancelIds.includes(t.id) ? { ...t, status: 'cancelled' as ConductorTask['status'] } : t
+        ),
+      }
+    }, false)
+
+    setSelectedTask(null)
+
+    try {
+      await Promise.allSettled(tasksToCancelIds.map((tid) => cancelConductorTask(tid)))
+    } catch (err) {
+      console.error('Failed to cancel task(s):', err)
+    }
+    mutate()
+  }, [allTasks, getSubtaskIds, mutate])
 
   const handleDelete = useCallback(async (id: string) => {
     try {
@@ -347,7 +431,6 @@ export default function ConductorPage() {
     setShowCreateForm(true)
   }, [])
 
-  // Get pipeline tasks for diagram modal
   const diagramTasks = useMemo(() => {
     if (!diagramPipelineId) return []
     const ids = new Set<string>()
@@ -494,7 +577,6 @@ export default function ConductorPage() {
               if (hasStrategy) {
                 setResumeTask({ task, strategy: ctx.strategy })
               } else {
-                // Resume wizard at step 3 — will re-poll for strategy
                 setResumeTask({ task, strategy: undefined as unknown as TaskStrategy })
               }
               setShowCreateForm(true)
@@ -523,27 +605,6 @@ export default function ConductorPage() {
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Tasks</h2>
           <div className={styles.headerActions}>
-            <div className={styles.viewToggleWrap}>
-              <div className={styles.viewToggle}>
-                <button
-                  className={`${styles.viewToggleBtn} ${viewMode === 'list' ? styles.viewToggleActive : ''}`}
-                  onClick={() => setViewMode('list')}
-                  title="Simple standalone tasks"
-                >
-                  📝 List
-                </button>
-                <button
-                  className={`${styles.viewToggleBtn} ${viewMode === 'pipeline' ? styles.viewToggleActive : ''}`}
-                  onClick={() => setViewMode('pipeline')}
-                  title="Multi-agent workflows"
-                >
-                  🔀 Pipeline
-                </button>
-              </div>
-              <span className={styles.viewToggleHint}>
-                {viewMode === 'list' ? 'Simple standalone tasks' : 'Multi-agent workflows'}
-              </span>
-            </div>
             <button
               className="btn btn-primary btn-sm"
               onClick={() => { setTaskPrefill(undefined); setShowCreateForm(true) }}
@@ -578,37 +639,14 @@ export default function ConductorPage() {
           <div className={styles.errorBanner}>Failed to load tasks</div>
         )}
 
-        {/* View Content */}
-        {viewMode === 'pipeline' ? (
-          <PipelineView
-            tasks={filteredTasks}
-            onSelectTask={setSelectedTask}
-            onDeletePipeline={(rootId) => setDeleteConfirm(rootId)}
-            onShowDiagram={(rootId) => setDiagramPipelineId(rootId)}
-          />
-        ) : filteredTasks.length === 0 && !isLoading ? (
-          <div className={`card ${styles.emptyState}`}>
-            <span className={styles.emptyIcon}>T</span>
-            <p>
-              {allTasks.length > 0
-                ? 'No tasks match the current filter.'
-                : 'No conductor tasks yet.'}
-            </p>
-            <p className={styles.emptyHint}>
-              Create tasks via the dashboard or the <code>cortex_task_create</code> MCP tool.
-            </p>
-          </div>
-        ) : (
-          <div className={styles.tasksGrid}>
-            {filteredTasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                onSelect={() => setSelectedTask(task)}
-              />
-            ))}
-          </div>
-        )}
+        {/* Pipeline View */}
+        <PipelineView
+          tasks={filteredTasks}
+          onSelectTask={setSelectedTask}
+          onDeletePipeline={(rootId) => setDeleteConfirm(rootId)}
+          onShowDiagram={(rootId) => setDiagramPipelineId(rootId)}
+          onFollowUp={handleNewTaskFromOutcome}
+        />
       </div>
 
       {/* Pipeline Diagram Modal */}
