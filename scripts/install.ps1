@@ -20,8 +20,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$HOOKS_VERSION = 6
-$HOOKS_MINOR = 4
+$HOOKS_VERSION = 7
+$HOOKS_MINOR = 0
 $LATEST_VERSION = "$HOOKS_VERSION.$HOOKS_MINOR"
 $MCP_URL_DEFAULT = "https://cortex-mcp.jackle.dev/mcp"
 
@@ -353,153 +353,141 @@ if (-not (Test-Path ".cortex\project-profile.json") -or $Force) {
 # Phase 4: Install Hooks (if needed)
 # ══════════════════════════════════════════════
 if ($NeedsUpdate) {
-    # ── Claude Code hooks (PowerShell) ──
+    # ── Claude Code hooks (bash .sh files) ──
+    # Claude Code uses /usr/bin/bash for hooks on ALL platforms (confirmed from error logs).
+    # Generate .sh scripts identical to what install.sh creates on macOS/Linux.
     if (Test-IDESelected "claude") {
         $hooksDir = ".claude\hooks"
         if (-not (Test-Path $hooksDir)) { New-Item -ItemType Directory -Path $hooksDir -Force | Out-Null }
         if (-not (Test-Path ".cortex\.session-state")) { New-Item -ItemType Directory -Path ".cortex\.session-state" -Force | Out-Null }
 
-        # session-init.ps1 (v4.0: touch session-started immediately, don't delete it)
-        @'
-$ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (git rev-parse --show-toplevel 2>$null) }
-if (-not $ProjectDir) { $ProjectDir = "." }
-$StateDir = Join-Path $ProjectDir ".cortex\.session-state"
-if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Path $StateDir -Force | Out-Null }
-New-Item (Join-Path $StateDir "session-started") -Force | Out-Null
-@("quality-gates-passed","gate-build","gate-typecheck","gate-lint","session-ended","discovery-used") | ForEach-Object {
-    Remove-Item (Join-Path $StateDir $_) -ErrorAction SilentlyContinue
-}
-Write-Output "HARD REQUIREMENT: Call cortex_session_start IMMEDIATELY. Grep/find BLOCKED until cortex discovery tools used."
-exit 0
-'@ | Out-File -FilePath "$hooksDir\session-init.ps1" -Encoding utf8
+        # Helper: write .sh file with Unix line endings (LF only)
+        function Write-ShHook { param([string]$Name, [string]$Content)
+            [System.IO.File]::WriteAllText(
+                (Join-Path $hooksDir "$Name.sh"),
+                $Content.Replace("`r`n", "`n"),
+                [System.Text.UTF8Encoding]::new($false)
+            )
+        }
 
-        # enforce-session.ps1 (v4.0: BLOCK Grep/find until discovery tools used)
-        @'
-$ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (git rev-parse --show-toplevel 2>$null) }
-if (-not $ProjectDir) { $ProjectDir = "." }
-$StateDir = Join-Path $ProjectDir ".cortex\.session-state"
-if (Test-Path (Join-Path $StateDir "session-started")) {
-    if (-not (Test-Path (Join-Path $StateDir "discovery-used"))) {
-        try {
-            $peek = [Console]::In.ReadToEnd() | ConvertFrom-Json
-            if ($peek.tool_name -eq "Grep") {
-                Write-Error "BLOCKED: Use cortex_code_search FIRST. Grep unlocked after cortex discovery tools."
-                exit 2
-            }
-            if ($peek.tool_name -eq "Bash" -and $peek.tool_input.command -match "^(find |grep |rg |ag )") {
-                Write-Error "BLOCKED: Use cortex_code_search FIRST."
-                exit 2
-            }
-        } catch {}
-    }
-    exit 0
-}
-try {
-    $json = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    $ToolName = $json.tool_name
-} catch {
-    Write-Error "BLOCKED: Cannot parse hook input."
+        # session-init.sh
+        Write-ShHook "session-init" @'
+#!/bin/bash
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
+mkdir -p "$STATE_DIR"
+touch "$STATE_DIR/session-started"
+rm -f "$STATE_DIR/quality-gates-passed" "$STATE_DIR/gate-build" "$STATE_DIR/gate-typecheck" "$STATE_DIR/gate-lint" "$STATE_DIR/session-ended" "$STATE_DIR/discovery-used" 2>/dev/null
+echo "Run /cs to initialize Cortex session. Grep/Edit BLOCKED until cortex discovery tools used."
+'@
+
+        # enforce-session.sh
+        Write-ShHook "enforce-session" @'
+#!/bin/bash
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
+if [ -f "$STATE_DIR/session-started" ]; then
+  if [ ! -f "$STATE_DIR/discovery-used" ]; then
+    INPUT=$(cat)
+    TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+    CMD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null || echo "")
+    [ "$TOOL" = "Grep" ] && { echo "BLOCKED: Use cortex_code_search FIRST." >&2; exit 2; }
+    [[ "$TOOL" = "Bash" && "$CMD" =~ ^(find\ |grep\ |rg\ |ag\ ) ]] && { echo "BLOCKED: Use cortex_code_search FIRST." >&2; exit 2; }
+  fi
+  exit 0
+fi
+INPUT=$(cat)
+TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+CMD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null || echo "")
+case "$TOOL" in
+  Edit|Write|NotebookEdit) echo "BLOCKED: Call cortex_session_start first." >&2; exit 2 ;;
+  Bash)
+    [[ "$CMD" =~ ^(ls|cat|head|tail|pwd|which|echo|git\ |pnpm\ |npm\ |yarn\ |cargo\ |go\ |python|curl|dotnet\ |node\ ) ]] && exit 0
+    [[ "$CMD" =~ (git\ (add|commit|push|reset)|rm\ |mv\ |cp\ |mkdir\ |touch\ |chmod\ |sed\ -i) ]] && { echo "BLOCKED: Call cortex_session_start first." >&2; exit 2; }
+    ;;
+esac
+exit 0
+'@
+
+        # enforce-commit.sh
+        Write-ShHook "enforce-commit" @'
+#!/bin/bash
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
+INPUT=$(cat)
+CMD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null || echo "")
+[[ ! "$CMD" =~ ^git\ (commit|push) ]] && exit 0
+if [[ "$CMD" =~ ^git\ commit ]]; then
+  MISSING=""
+  [ ! -f "$STATE_DIR/session-started" ] && MISSING="$MISSING\n  - cortex_session_start (not called)"
+  [ ! -f "$STATE_DIR/discovery-used" ] && MISSING="$MISSING\n  - cortex discovery tools (0 calls)"
+  [ ! -f "$STATE_DIR/quality-gates-passed" ] && MISSING="$MISSING\n  - Quality gates: run build/typecheck/lint then cortex_quality_report"
+  if [ -n "$MISSING" ]; then
+    echo -e "BLOCKED: Cannot commit — missing steps:$MISSING" >&2
     exit 2
-}
-if ($ToolName -match "^(Edit|Write|NotebookEdit)$") {
-    Write-Error "BLOCKED: Call cortex_session_start first."
-    exit 2
-}
-if ($ToolName -eq "Bash") {
-    $Command = $json.tool_input.command
-    if ($Command -match "^(ls|cat|head|tail|pwd|which|echo|git |pnpm |npm |yarn |cargo |go |python|curl|dotnet )") { exit 0 }
-    if ($Command -match "(git (add|commit|push|reset)|rm |mv |cp |mkdir |touch |chmod |sed -i)") {
-        Write-Error "BLOCKED: Call cortex_session_start first."
-        exit 2
-    }
-}
+  fi
+fi
+[[ "$CMD" =~ ^git\ push ]] && echo "REMINDER: After push, call cortex_code_reindex." >&2
 exit 0
-'@ | Out-File -FilePath "$hooksDir\enforce-session.ps1" -Encoding utf8
+'@
 
-        # enforce-commit.ps1 (v4.0: full workflow compliance check)
-        @'
-$ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (git rev-parse --show-toplevel 2>$null) }
-if (-not $ProjectDir) { $ProjectDir = "." }
-$StateDir = Join-Path $ProjectDir ".cortex\.session-state"
-try {
-    $json = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    $Command = $json.tool_input.command
-} catch { exit 0 }
-if ($Command -match "^git commit") {
-    $missing = @()
-    if (-not (Test-Path (Join-Path $StateDir "session-started"))) { $missing += "cortex_session_start (not called)" }
-    if (-not (Test-Path (Join-Path $StateDir "discovery-used"))) { $missing += "cortex_code_search or cortex_knowledge_search (0 calls)" }
-    if (-not (Test-Path (Join-Path $StateDir "quality-gates-passed"))) { $missing += "Quality gates: run build/typecheck/lint then cortex_quality_report" }
-    if ($missing.Count -gt 0) {
-        Write-Error ("BLOCKED: Cannot commit. Missing steps:`n  - " + ($missing -join "`n  - ") + "`nRead CLAUDE.md for required workflow.")
-        exit 2
-    }
-}
-if ($Command -match "^git push") {
-    Write-Host "REMINDER: After push, call cortex_code_reindex." -ForegroundColor Yellow
-}
+        # track-quality.sh
+        Write-ShHook "track-quality" @'
+#!/bin/bash
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
+mkdir -p "$STATE_DIR"
+INPUT=$(cat)
+CMD=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('command',''))" 2>/dev/null || echo "")
+TOOL=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_name',''))" 2>/dev/null || echo "")
+[[ "$CMD" =~ (pnpm|npm|yarn)\ build ]] && touch "$STATE_DIR/gate-build"
+[[ "$CMD" =~ (pnpm|npm|yarn)\ typecheck ]] && touch "$STATE_DIR/gate-typecheck"
+[[ "$CMD" =~ (pnpm|npm|yarn)\ lint ]] && touch "$STATE_DIR/gate-lint"
+[[ "$CMD" =~ cargo\ build ]] && touch "$STATE_DIR/gate-build"
+[[ "$CMD" =~ cargo\ clippy ]] && touch "$STATE_DIR/gate-lint"
+[[ "$CMD" =~ go\ build ]] && touch "$STATE_DIR/gate-build"
+[[ "$CMD" =~ go\ vet ]] && touch "$STATE_DIR/gate-lint"
+[[ "$CMD" =~ dotnet\ build ]] && touch "$STATE_DIR/gate-build"
+[ -f "$STATE_DIR/gate-build" ] && [ -f "$STATE_DIR/gate-typecheck" ] && [ -f "$STATE_DIR/gate-lint" ] && touch "$STATE_DIR/quality-gates-passed"
+[[ "$TOOL" =~ cortex_session_start ]] && touch "$STATE_DIR/session-started"
+[[ "$TOOL" =~ cortex_session_end ]] && touch "$STATE_DIR/session-ended"
+[[ "$TOOL" =~ cortex_quality_report ]] && touch "$STATE_DIR/quality-gates-passed"
+[[ "$TOOL" =~ cortex_(code_search|knowledge_search|memory_search|code_context|code_impact|cypher) ]] && touch "$STATE_DIR/discovery-used"
 exit 0
-'@ | Out-File -FilePath "$hooksDir\enforce-commit.ps1" -Encoding utf8
+'@
 
-        # track-quality.ps1
-        @'
-$ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (git rev-parse --show-toplevel 2>$null) }
-if (-not $ProjectDir) { $ProjectDir = "." }
-$StateDir = Join-Path $ProjectDir ".cortex\.session-state"
-if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory -Path $StateDir -Force | Out-Null }
-try {
-    $json = [Console]::In.ReadToEnd() | ConvertFrom-Json
-    $Command = $json.tool_input.command
-    $ToolName = $json.tool_name
-} catch { exit 0 }
-if ($Command -match "(pnpm|npm|yarn) build")     { New-Item (Join-Path $StateDir "gate-build") -Force | Out-Null }
-if ($Command -match "(pnpm|npm|yarn) typecheck") { New-Item (Join-Path $StateDir "gate-typecheck") -Force | Out-Null }
-if ($Command -match "(pnpm|npm|yarn) lint")       { New-Item (Join-Path $StateDir "gate-lint") -Force | Out-Null }
-if ((Test-Path (Join-Path $StateDir "gate-build")) -and (Test-Path (Join-Path $StateDir "gate-typecheck")) -and (Test-Path (Join-Path $StateDir "gate-lint"))) {
-    New-Item (Join-Path $StateDir "quality-gates-passed") -Force | Out-Null
-}
-if ($ToolName -match "cortex_session_start")  { New-Item (Join-Path $StateDir "session-started") -Force | Out-Null }
-if ($ToolName -match "cortex_session_end")    { New-Item (Join-Path $StateDir "session-ended") -Force | Out-Null }
-if ($ToolName -match "cortex_quality_report") { New-Item (Join-Path $StateDir "quality-gates-passed") -Force | Out-Null }
+        # session-end-check.sh
+        Write-ShHook "session-end-check" @'
+#!/bin/bash
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+STATE_DIR="$PROJECT_DIR/.cortex/.session-state"
+[ -f "$STATE_DIR/session-started" ] && [ ! -f "$STATE_DIR/session-ended" ] && echo "WARNING: cortex_session_end has not been called."
 exit 0
-'@ | Out-File -FilePath "$hooksDir\track-quality.ps1" -Encoding utf8
+'@
 
-        # session-end-check.ps1
-        @'
-$ProjectDir = if ($env:CLAUDE_PROJECT_DIR) { $env:CLAUDE_PROJECT_DIR } else { (git rev-parse --show-toplevel 2>$null) }
-if (-not $ProjectDir) { $ProjectDir = "." }
-$StateDir = Join-Path $ProjectDir ".cortex\.session-state"
-if ((Test-Path (Join-Path $StateDir "session-started")) -and -not (Test-Path (Join-Path $StateDir "session-ended"))) {
-    Write-Host "WARNING: cortex_session_end has not been called." -ForegroundColor Yellow
-}
-exit 0
-'@ | Out-File -FilePath "$hooksDir\session-end-check.ps1" -Encoding utf8
-
-        # settings.json — Claude Code uses /usr/bin/bash for hooks on ALL platforms
-        # Call powershell.exe from bash with absolute path (forward slashes)
-        $absHooks = (Join-Path $ProjectDir ".claude\hooks") -replace '\\', '/'
-        $settingsContent = @"
+        # settings.json — bash .sh hooks (Claude Code uses bash on all platforms)
+        $settingsContent = @'
 {
   "hooks": {
     "SessionStart": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/session-init.ps1'"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-init.sh"}]}
     ],
     "PreToolUse": [
-      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/enforce-session.ps1'"}]},
-      {"matcher": "Bash", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/enforce-commit.ps1'"}]}
+      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-session.sh"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-commit.sh"}]}
     ],
     "PostToolUse": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/track-quality.ps1'"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/track-quality.sh"}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/session-end-check.ps1'"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-end-check.sh"}]}
     ]
   }
 }
-"@
+'@
         [System.IO.File]::WriteAllText((Join-Path $ProjectDir ".claude/settings.json"), $settingsContent)
 
-        Write-Ok ("Claude: PS1 hooks + settings.json installed (v" + $LATEST_VERSION + ")")
+        Write-Ok ("Claude: bash hooks + settings.json installed (v" + $LATEST_VERSION + ")")
 
         # ── Slash commands (/cs, /ce) ──
         $cmdDir = Join-Path $ProjectDir ".claude\commands"
