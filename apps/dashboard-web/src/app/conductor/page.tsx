@@ -22,6 +22,7 @@ import {
   type ViewMode,
   type TaskPrefill,
   type ResumeTask,
+  type TaskStrategy,
   buildTaskTree,
   flattenTree,
   getIdeInfo,
@@ -482,17 +483,21 @@ export default function ConductorPage() {
         </div>
       )}
 
-      {/* Pending Strategy Review Banner */}
-      {allTasks.filter(t => t.status === 'strategy_review' || t.status === 'analyzing').map(task => {
+      {/* Pending Strategy / Analyzing Banner */}
+      {allTasks.filter(t => t.status === 'strategy_review' || t.status === 'analyzing' || (t.status === 'accepted' && (() => { try { const c = typeof t.context === 'string' ? JSON.parse(t.context) : t.context; return c?.workflow === 'orchestrated' } catch { return false } })())).map(task => {
         const ctx = typeof task.context === 'string' ? (() => { try { return JSON.parse(task.context) } catch { return {} } })() : (task.context ?? {})
         const hasStrategy = task.status === 'strategy_review' && ctx.strategy
+        const isAnalyzing = task.status === 'accepted' || task.status === 'analyzing'
         return (
-          <div key={task.id} className={`card ${styles.statCard}`} style={{ marginBottom: 'var(--space-3)', cursor: 'pointer', borderLeft: '3px solid var(--status-warning)' }}
+          <div key={task.id} className={`card ${styles.statCard}`} style={{ marginBottom: 'var(--space-3)', cursor: 'pointer', borderLeft: `3px solid ${hasStrategy ? 'var(--status-warning)' : 'var(--primary)'}` }}
             onClick={() => {
               if (hasStrategy) {
                 setResumeTask({ task, strategy: ctx.strategy })
-                setShowCreateForm(true)
+              } else {
+                // Resume wizard at step 3 — will re-poll for strategy
+                setResumeTask({ task, strategy: undefined as unknown as TaskStrategy })
               }
+              setShowCreateForm(true)
             }}
           >
             <span style={{ fontSize: '1.25rem' }}>{hasStrategy ? '📋' : '⏳'}</span>
@@ -501,11 +506,14 @@ export default function ConductorPage() {
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                 {hasStrategy
                   ? `Strategy ready — click to review & approve (${task.assigned_to_agent})`
-                  : `Agent ${task.assigned_to_agent} is analyzing...`
+                  : `Agent ${task.assigned_to_agent} is analyzing... — click to resume`
                 }
               </div>
             </div>
-            {hasStrategy && <span className="btn btn-primary btn-sm">Review Strategy →</span>}
+            {hasStrategy
+              ? <span className="btn btn-primary btn-sm">Review Strategy →</span>
+              : isAnalyzing && <span className="btn btn-secondary btn-sm">Resume →</span>
+            }
           </div>
         )
       })}
