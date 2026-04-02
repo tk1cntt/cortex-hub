@@ -21,7 +21,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $HOOKS_VERSION = 6
-$HOOKS_MINOR = 3
+$HOOKS_MINOR = 4
 $LATEST_VERSION = "$HOOKS_VERSION.$HOOKS_MINOR"
 $MCP_URL_DEFAULT = "https://cortex-mcp.jackle.dev/mcp"
 
@@ -475,25 +475,24 @@ if ((Test-Path (Join-Path $StateDir "session-started")) -and -not (Test-Path (Jo
 exit 0
 '@ | Out-File -FilePath "$hooksDir\session-end-check.ps1" -Encoding utf8
 
-        # settings.json — direct script call via & operator
-        # Claude Code hooks run in PowerShell on Windows. Use & with absolute path.
-        # No subprocess (no powershell -File), so stdin pipes through correctly.
+        # settings.json — Claude Code uses /usr/bin/bash for hooks on ALL platforms
+        # Call powershell.exe from bash with absolute path (forward slashes)
         $absHooks = (Join-Path $ProjectDir ".claude\hooks") -replace '\\', '/'
         $settingsContent = @"
 {
   "hooks": {
     "SessionStart": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "& '${absHooks}/session-init.ps1'"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/session-init.ps1'"}]}
     ],
     "PreToolUse": [
-      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "& '${absHooks}/enforce-session.ps1'"}]},
-      {"matcher": "Bash", "hooks": [{"type": "command", "command": "& '${absHooks}/enforce-commit.ps1'"}]}
+      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/enforce-session.ps1'"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/enforce-commit.ps1'"}]}
     ],
     "PostToolUse": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "& '${absHooks}/track-quality.ps1'"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/track-quality.ps1'"}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "& '${absHooks}/session-end-check.ps1'"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell.exe -ExecutionPolicy Bypass -File '${absHooks}/session-end-check.ps1'"}]}
     ]
   }
 }
