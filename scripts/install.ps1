@@ -21,7 +21,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $HOOKS_VERSION = 6
-$HOOKS_MINOR = 0
+$HOOKS_MINOR = 1
 $LATEST_VERSION = "$HOOKS_VERSION.$HOOKS_MINOR"
 $MCP_URL_DEFAULT = "https://cortex-mcp.jackle.dev/mcp"
 
@@ -475,22 +475,23 @@ if ((Test-Path (Join-Path $StateDir "session-started")) -and -not (Test-Path (Jo
 exit 0
 '@ | Out-File -FilePath "$hooksDir\session-end-check.ps1" -Encoding utf8
 
-        # settings.json — native PowerShell on Windows (no bash dependency)
+        # settings.json — native PowerShell on Windows
+        # Uses $env:CLAUDE_PROJECT_DIR (set by Claude Code) for absolute path resolution
         $settingsContent = @'
 {
   "hooks": {
     "SessionStart": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/session-init.ps1"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR\\.claude\\hooks\\session-init.ps1\""}]}
     ],
     "PreToolUse": [
-      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/enforce-session.ps1"}]},
-      {"matcher": "Bash", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/enforce-commit.ps1"}]}
+      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR\\.claude\\hooks\\enforce-session.ps1\""}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR\\.claude\\hooks\\enforce-commit.ps1\""}]}
     ],
     "PostToolUse": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/track-quality.ps1"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR\\.claude\\hooks\\track-quality.ps1\""}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/session-end-check.ps1"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR\\.claude\\hooks\\session-end-check.ps1\""}]}
     ]
   }
 }
