@@ -132,6 +132,25 @@ export function setupConductorWebSocket(server: Server) {
 
     console.log(`[ws] Agent connected: ${agentId} (${apiKeyOwner})`)
 
+    // Re-push pending tasks: send the FIRST incomplete task assigned to this agent
+    // Agent processes sequentially — only push one at a time, the rest stay queued on server
+    const pendingTask = db.prepare(
+      "SELECT id, title, description FROM conductor_tasks WHERE assigned_to_agent = ? AND status IN ('accepted', 'in_progress', 'pending', 'assigned') ORDER BY priority ASC, created_at ASC LIMIT 1"
+    ).get(agentId) as { id: string; title: string; description: string } | undefined
+    if (pendingTask) {
+      ws.send(
+        JSON.stringify({
+          type: 'task.assigned',
+          taskId: pendingTask.id,
+          title: pendingTask.title,
+          description: pendingTask.description,
+          resumed: true,
+          timestamp: new Date().toISOString(),
+        }),
+      )
+      console.log(`[ws] Re-pushed task ${pendingTask.id} to reconnected agent ${agentId}`)
+    }
+
     // Handle incoming messages
     ws.on('message', (data: Buffer) => {
       try {
@@ -264,6 +283,24 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
         try { resolveCompletionChain(completedTask as Parameters<typeof resolveCompletionChain>[0]) } catch (e) {
           console.error('[ws] resolveCompletionChain error:', e)
         }
+      }
+
+      // Auto-push next task: find the next incomplete task for this agent and push it
+      const nextTask = db.prepare(
+        "SELECT id, title, description FROM conductor_tasks WHERE assigned_to_agent = ? AND status IN ('accepted', 'in_progress', 'pending', 'assigned') AND id != ? ORDER BY priority ASC, created_at ASC LIMIT 1"
+      ).get(agent.agentId, completedTaskId) as { id: string; title: string; description: string } | undefined
+      if (nextTask) {
+        agent.ws.send(
+          JSON.stringify({
+            type: 'task.assigned',
+            taskId: nextTask.id,
+            title: nextTask.title,
+            description: nextTask.description,
+            autoNext: true,
+            timestamp: new Date().toISOString(),
+          }),
+        )
+        console.log(`[ws] Auto-pushed next task ${nextTask.id} to ${agent.agentId} after completing ${completedTaskId}`)
       }
       break
     }
