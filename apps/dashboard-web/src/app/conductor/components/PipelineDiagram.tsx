@@ -297,8 +297,8 @@ export function PipelineDiagram({ tasks, agents, onNodeClick }: Props) {
   }
 
   return (
-    <div>
-      <div className={styles.diagramWrap}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div className={styles.diagramWrap} style={{ flex: 1, minHeight: 0 }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}
