@@ -582,7 +582,7 @@ conductorRouter.get('/:id', (c) => {
 conductorRouter.post('/', async (c) => {
   try {
     const body = await c.req.json()
-    const {
+    let {
       title,
       description,
       priority = 5,
