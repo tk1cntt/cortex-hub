@@ -475,22 +475,22 @@ if ((Test-Path (Join-Path $StateDir "session-started")) -and -not (Test-Path (Jo
 exit 0
 '@ | Out-File -FilePath "$hooksDir\session-end-check.ps1" -Encoding utf8
 
-        # settings.json — cross-platform via node hook runner
+        # settings.json — call bash directly (works on macOS + Windows via Git Bash)
         $settingsContent = @'
 {
   "hooks": {
     "SessionStart": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs session-init"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-init.sh"}]}
     ],
     "PreToolUse": [
-      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs enforce-session"}]},
-      {"matcher": "Bash", "hooks": [{"type": "command", "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs enforce-commit"}]}
+      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-session.sh"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-commit.sh"}]}
     ],
     "PostToolUse": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs track-quality"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/track-quality.sh"}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "node ${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/run-hook.mjs session-end-check"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-end-check.sh"}]}
     ]
   }
 }
