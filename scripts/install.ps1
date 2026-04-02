@@ -475,22 +475,22 @@ if ((Test-Path (Join-Path $StateDir "session-started")) -and -not (Test-Path (Jo
 exit 0
 '@ | Out-File -FilePath "$hooksDir\session-end-check.ps1" -Encoding utf8
 
-        # settings.json — call bash directly (works on macOS + Windows via Git Bash)
+        # settings.json — native PowerShell on Windows (no bash dependency)
         $settingsContent = @'
 {
   "hooks": {
     "SessionStart": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-init.sh"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/session-init.ps1"}]}
     ],
     "PreToolUse": [
-      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-session.sh"}]},
-      {"matcher": "Bash", "hooks": [{"type": "command", "command": "bash .claude/hooks/enforce-commit.sh"}]}
+      {"matcher": "Edit|Write|NotebookEdit|Bash", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/enforce-session.ps1"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/enforce-commit.ps1"}]}
     ],
     "PostToolUse": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/track-quality.sh"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/track-quality.ps1"}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "bash .claude/hooks/session-end-check.sh"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "powershell -ExecutionPolicy Bypass -File .claude/hooks/session-end-check.ps1"}]}
     ]
   }
 }
