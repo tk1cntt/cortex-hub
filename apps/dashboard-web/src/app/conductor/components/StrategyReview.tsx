@@ -11,8 +11,12 @@ interface Props {
   leadAgent: string
   agents: ConductorAgent[]
   submitting: boolean
+  progressMessages: string[]
+  error: string | null
   onApprove: (strategy: TaskStrategy) => void
   onReject: () => void
+  onRetry: () => void
+  onCancel: () => void
   onBack: () => void
 }
 
@@ -22,8 +26,12 @@ export function StrategyReview({
   leadAgent,
   agents,
   submitting,
+  progressMessages,
+  error,
   onApprove,
   onReject,
+  onRetry,
+  onCancel,
   onBack,
 }: Props) {
   // Local editable copy of strategy roles
@@ -48,6 +56,27 @@ export function StrategyReview({
     })
   }
 
+  // ── Error State ──
+  if (error) {
+    return (
+      <div className={styles.strategyBody}>
+        <div className={styles.errorState}>
+          <div className={styles.errorIcon}>!</div>
+          <h3 className={styles.errorTitle}>Analysis Failed</h3>
+          <p className={styles.errorMessage}>{error}</p>
+          <div className={styles.errorActions}>
+            <button className="btn btn-secondary btn-sm" onClick={onCancel}>
+              Cancel Task
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={onRetry}>
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // ── Analyzing State ──
   if (analyzing) {
     return (
@@ -65,12 +94,24 @@ export function StrategyReview({
             <span className={styles.analyzingAgentDot} />
             <code>{leadAgent}</code> — working
           </div>
+
+          {/* Progress messages from agent */}
+          {progressMessages.length > 0 && (
+            <div className={styles.progressLog}>
+              {progressMessages.map((msg, i) => (
+                <div key={i} className={styles.progressItem}>
+                  <span className={styles.progressDot} />
+                  <span className={styles.progressText}>{msg}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )
   }
 
-  // ── No strategy yet ──
+  // ── No strategy yet (should not normally appear, but fallback) ──
   if (!strategy) {
     return (
       <div className={styles.strategyBody}>
@@ -78,7 +119,7 @@ export function StrategyReview({
           Waiting for agent response...
         </p>
         <div className={styles.strategyActions}>
-          <button className="btn btn-secondary btn-sm" onClick={onBack}>← Back</button>
+          <button className="btn btn-secondary btn-sm" onClick={onBack}>&larr; Back</button>
         </div>
       </div>
     )
@@ -103,70 +144,78 @@ export function StrategyReview({
       </div>
 
       {/* Roles */}
-      <h4 className={styles.rolesHeader}>Team Roles ({roles.length})</h4>
-      <div className={styles.rolesList}>
-        {roles.map((role, i) => (
-          <div key={role.role} className={styles.roleCard}>
-            <span className={styles.roleEmoji}>
-              {role.label.match(/^(\S+)/)?.[1] || '⚡'}
-            </span>
-            <div className={styles.roleInfo}>
-              <div className={styles.roleLabel}>{role.label.replace(/^(\S+)\s*/, '')}</div>
-              <div className={styles.roleRationale}>{role.rationale}</div>
-            </div>
-            <div className={styles.roleAgentSelect}>
-              <select
-                className={styles.roleAgentDropdown}
-                value={role.agent}
-                onChange={(e) => updateRoleAgent(i, e.target.value)}
-              >
-                <option value="">— Not assigned —</option>
-                {agents.map((agent) => (
-                  <option key={agent.agentId} value={agent.agentId}>
-                    {agent.agentId}{agent.ide ? ` (${agent.ide})` : ''}
-                  </option>
-                ))}
-                {role.agent && !agents.find(a => a.agentId === role.agent) && (
-                  <option value={role.agent}>{role.agent} (offline)</option>
-                )}
-              </select>
-              {strategy.roles[i]?.agent === role.agent && role.agent && (
-                <span className={styles.roleSuggested}>suggested</span>
-              )}
-            </div>
+      {roles.length > 0 && (
+        <>
+          <h4 className={styles.rolesHeader}>Team Roles ({roles.length})</h4>
+          <div className={styles.rolesList}>
+            {roles.map((role, i) => (
+              <div key={role.role} className={styles.roleCard}>
+                <span className={styles.roleEmoji}>
+                  {role.label.match(/^(\S+)/)?.[1] || '⚡'}
+                </span>
+                <div className={styles.roleInfo}>
+                  <div className={styles.roleLabel}>{role.label.replace(/^(\S+)\s*/, '')}</div>
+                  <div className={styles.roleRationale}>{role.rationale}</div>
+                </div>
+                <div className={styles.roleAgentSelect}>
+                  <select
+                    className={styles.roleAgentDropdown}
+                    value={role.agent}
+                    onChange={(e) => updateRoleAgent(i, e.target.value)}
+                  >
+                    <option value="">— Not assigned —</option>
+                    {agents.map((agent) => (
+                      <option key={agent.agentId} value={agent.agentId}>
+                        {agent.agentId}{agent.ide ? ` (${agent.ide})` : ''}
+                      </option>
+                    ))}
+                    {role.agent && !agents.find(a => a.agentId === role.agent) && (
+                      <option value={role.agent}>{role.agent} (offline)</option>
+                    )}
+                  </select>
+                  {strategy.roles[i]?.agent === role.agent && role.agent && (
+                    <span className={styles.roleSuggested}>suggested</span>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
       {/* Subtask Preview */}
-      <h4 className={styles.subtasksHeader}>Execution Plan ({strategy.subtasks.length} tasks)</h4>
-      <div className={styles.subtasksList}>
-        {strategy.subtasks.map((subtask, i) => (
-          <div key={i} className={styles.subtaskItem}>
-            <span className={styles.subtaskNum}>{i + 1}</span>
-            <span className={styles.subtaskTitle}>{subtask.title}</span>
-            <span className={styles.subtaskRole}>{subtask.role}</span>
-            {subtask.dependsOn && subtask.dependsOn.length > 0 && (
-              <span className={styles.subtaskDeps}>
-                waits for: {subtask.dependsOn.join(', ')}
-              </span>
-            )}
+      {strategy.subtasks.length > 0 && (
+        <>
+          <h4 className={styles.subtasksHeader}>Execution Plan ({strategy.subtasks.length} tasks)</h4>
+          <div className={styles.subtasksList}>
+            {strategy.subtasks.map((subtask, i) => (
+              <div key={i} className={styles.subtaskItem}>
+                <span className={styles.subtaskNum}>{i + 1}</span>
+                <span className={styles.subtaskTitle}>{subtask.title}</span>
+                <span className={styles.subtaskRole}>{subtask.role}</span>
+                {subtask.dependsOn && subtask.dependsOn.length > 0 && (
+                  <span className={styles.subtaskDeps}>
+                    waits for: {subtask.dependsOn.join(', ')}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
       {/* Actions */}
       <div className={styles.strategyActions}>
         <button className={`btn btn-secondary btn-sm ${styles.rejectBtn}`} onClick={onReject}>
           ✗ Reject & Re-assign
         </button>
-        <button className="btn btn-secondary btn-sm" onClick={onBack}>← Back</button>
+        <button className="btn btn-secondary btn-sm" onClick={onBack}>&larr; Back</button>
         <button
           className={`btn btn-primary btn-sm ${styles.approveBtn}`}
           disabled={submitting}
           onClick={handleApprove}
         >
-          {submitting ? 'Creating tasks...' : '✓ Approve & Execute'}
+          {submitting ? 'Creating pipeline...' : '✓ Approve & Execute'}
         </button>
       </div>
     </div>

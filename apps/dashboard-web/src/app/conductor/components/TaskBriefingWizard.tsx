@@ -8,7 +8,14 @@ import {
   getIdeInfo,
 } from './shared'
 import { StrategyReview } from './StrategyReview'
-import { createConductorTask, getConductorTaskById, approveConductorStrategy, type ConductorAgent, type ConductorTask } from '@/lib/api'
+import {
+  createConductorTask,
+  getConductorTaskById,
+  approveConductorStrategy,
+  cancelConductorTask,
+  type ConductorAgent,
+  type ConductorTask,
+} from '@/lib/api'
 import styles from './TaskBriefingWizard.module.css'
 
 type WizardStep = 1 | 2 | 3 | 4
@@ -53,14 +60,18 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
   const [analyzing, setAnalyzing] = useState(false)
   const [strategy, setStrategy] = useState<TaskStrategy | null>(resume?.strategy ?? null)
   const [createdTask, setCreatedTask] = useState<ConductorTask | null>(resume?.task ?? null)
+  const [progressMessages, setProgressMessages] = useState<string[]>([])
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
 
   // ── Step 4: Pipeline ──
   const [createdTaskIds, setCreatedTaskIds] = useState<string[]>([])
 
-  // ── Wizard state ── (resume skips to step 3)
   // ── Wizard state ──
   const [step, setStep] = useState<WizardStep>(resume ? 3 : 1)
   const [submitting, setSubmitting] = useState(false)
+
+  // Ref to abort polling on unmount/retry
+  const pollAbortRef = useRef<AbortController | null>(null)
 
   // ── Image paste handler ──
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -117,19 +128,102 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
     setTagInput('')
   }
 
-  // ── Step 2 → 3: Create task and simulate agent analysis ──
+  // ── Poll for strategy with progress tracking ──
+  const pollForStrategy = useCallback(async (taskId: string): Promise<{ type: 'strategy'; strategy: TaskStrategy } | { type: 'completed' } | { type: 'error'; message: string } | null> => {
+    const POLL_INTERVAL = 2000
+    const TIMEOUT = 5 * 60 * 1000
+
+    const abort = new AbortController()
+    pollAbortRef.current = abort
+
+    const startTime = Date.now()
+    let lastLogCount = 0
+
+    return new Promise((resolve) => {
+      const check = async () => {
+        if (abort.signal.aborted) {
+          resolve(null)
+          return
+        }
+        if (Date.now() - startTime > TIMEOUT) {
+          resolve({ type: 'error', message: `Lead agent "${leadAgent}" did not respond within 5 minutes. The agent may be busy or disconnected.` })
+          return
+        }
+        try {
+          const taskData = await getConductorTaskById(taskId)
+
+          // Agent submitted strategy — show for approval
+          if (taskData.status === 'strategy_review') {
+            const ctx = typeof taskData.context === 'string'
+              ? JSON.parse(taskData.context)
+              : taskData.context
+            if (ctx?.strategy) {
+              resolve({ type: 'strategy', strategy: ctx.strategy as TaskStrategy })
+              return
+            }
+          }
+
+          // Agent completed directly — treat as simple pipeline (1 task)
+          if (taskData.status === 'completed') {
+            resolve({ type: 'completed' })
+            return
+          }
+
+          // Agent failed
+          if (taskData.status === 'failed') {
+            resolve({ type: 'error', message: `Lead agent reported task failure. Check agent logs for details.` })
+            return
+          }
+
+          // Cancelled externally
+          if (taskData.status === 'cancelled') {
+            resolve({ type: 'error', message: `Task was cancelled.` })
+            return
+          }
+
+          // Extract progress from task logs (embedded in GET /:id response)
+          // We re-fetch to get logs too
+          try {
+            const fullRes = await fetch(`${window.location.origin}/api/conductor/${taskId}`)
+            if (fullRes.ok) {
+              const fullData = await fullRes.json() as { task: ConductorTask; logs?: Array<{ action: string; message: string | null }> }
+              const logs = fullData.logs ?? []
+              const progressLogs = logs.filter(l => l.action === 'progress' && l.message)
+              if (progressLogs.length > lastLogCount) {
+                const newLogs = progressLogs.slice(lastLogCount)
+                lastLogCount = progressLogs.length
+                setProgressMessages(prev => [
+                  ...prev,
+                  ...newLogs.map(l => l.message!),
+                ])
+              }
+            }
+          } catch { /* non-critical */ }
+        } catch (err) {
+          // Network error during poll — don't fail immediately, just log
+          console.warn('Poll error:', err)
+        }
+        setTimeout(check, POLL_INTERVAL)
+      }
+      check()
+    })
+  }, [leadAgent])
+
+  // ── Step 2 → 3: Create task and start analysis ──
   const handleAssignAndAnalyze = async () => {
     if (!leadAgent) return
     setStep(3)
     setAnalyzing(true)
+    setAnalysisError(null)
+    setProgressMessages([])
+    setStrategy(null)
 
     try {
-      // Create the actual task with 'analyzing' status indicator
+      // Build description with Lead Agent protocol instructions
       const imageMetadata = images.length > 0
         ? { attachments: images.map(img => ({ type: 'image', name: img.name, data: img.data })) }
         : undefined
 
-      // Build description with Lead Agent protocol instructions
       const userBrief = [
         description.trim(),
         criteria.filter(c => c.text.trim()).length > 0
@@ -159,88 +253,76 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
         '**DO NOT implement the task yourself. DO NOT skip the strategy step.**',
       ].join('\n')
 
-      const res = await createConductorTask({
-        title: title.trim(),
-        description: userBrief + agentInstructions,
-        assignedTo: leadAgent,
-        priority,
-        agentId: 'dashboard-ui',
-        metadata: {
-          ...imageMetadata,
-          workflow: 'orchestrated',
-          phase: 'analyzing',
-          acceptanceCriteria: criteria.filter(c => c.text.trim()).map(c => c.text),
-          tags,
-        },
-      })
-      setCreatedTask(res.task)
-
-      // Poll for Lead Agent's real strategy submission
-      const taskId = res.task.id
-      const POLL_INTERVAL = 3000
-      const TIMEOUT = 5 * 60 * 1000 // 5 minutes
-      const startTime = Date.now()
-
-      const pollForStrategy = (): Promise<{ type: 'strategy'; strategy: TaskStrategy } | { type: 'completed' } | null> => {
-        return new Promise((resolve) => {
-          const check = async () => {
-            if (Date.now() - startTime > TIMEOUT) {
-              resolve(null)
-              return
-            }
-            try {
-              const taskData = await getConductorTaskById(taskId)
-
-              // Agent submitted strategy — show for approval
-              if (taskData.status === 'strategy_review') {
-                const ctx = typeof taskData.context === 'string'
-                  ? JSON.parse(taskData.context)
-                  : taskData.context
-                if (ctx?.strategy) {
-                  resolve({ type: 'strategy', strategy: ctx.strategy as TaskStrategy })
-                  return
-                }
-              }
-
-              // Agent skipped strategy and completed/progressed directly
-              if (['completed', 'in_progress', 'failed'].includes(taskData.status)) {
-                resolve({ type: 'completed' })
-                return
-              }
-            } catch { /* ignore polling errors */ }
-            setTimeout(check, POLL_INTERVAL)
-          }
-          check()
+      // Create task or reuse existing one
+      let taskId: string
+      if (createdTask) {
+        taskId = createdTask.id
+      } else {
+        const res = await createConductorTask({
+          title: title.trim(),
+          description: userBrief + agentInstructions,
+          assignedTo: leadAgent,
+          priority,
+          agentId: 'dashboard-ui',
+          metadata: {
+            ...imageMetadata,
+            workflow: 'orchestrated',
+            phase: 'analyzing',
+            acceptanceCriteria: criteria.filter(c => c.text.trim()).map(c => c.text),
+            tags,
+          },
         })
+        setCreatedTask(res.task)
+        taskId = res.task.id
       }
 
-      const pollResult = await pollForStrategy()
+      const pollResult = await pollForStrategy(taskId)
 
       if (pollResult?.type === 'strategy') {
         setStrategy(pollResult.strategy)
+        setAnalyzing(false)
       } else if (pollResult?.type === 'completed') {
-        // Agent skipped strategy — jump to pipeline
+        // Agent completed directly — show as simple pipeline
         setCreatedTaskIds([taskId])
         onCreated()
         setStep(4)
-        return
+      } else if (pollResult?.type === 'error') {
+        setAnalysisError(pollResult.message)
+        setAnalyzing(false)
       } else {
-        // Timeout — agent didn't respond
-        setStrategy({
-          summary: `Lead agent "${leadAgent}" did not respond within 5 minutes. You can go back and try a different agent, or close and assign manually.`,
-          roles: [],
-          subtasks: [],
-          estimatedEffort: 'Unknown',
-        })
+        // Aborted (null) — do nothing, likely retrying
+        setAnalyzing(false)
       }
     } catch (err) {
-      console.error('Failed to create task:', err)
-    } finally {
+      const message = err instanceof Error ? err.message : 'Unknown error creating task'
+      setAnalysisError(`Failed to create task: ${message}`)
       setAnalyzing(false)
     }
   }
 
-  // ── Step 3 → 4: Approve strategy and create subtasks ──
+  // ── Retry analysis ──
+  const handleRetry = () => {
+    // Abort current poll if any
+    pollAbortRef.current?.abort()
+    // Re-run analysis with same task (avoids creating duplicates)
+    handleAssignAndAnalyze()
+  }
+
+  // ── Cancel and clean up garbage task ──
+  const handleCancel = async () => {
+    pollAbortRef.current?.abort()
+    if (createdTask) {
+      try {
+        await cancelConductorTask(createdTask.id)
+      } catch { /* ignore if already cancelled */ }
+    }
+    setCreatedTask(null)
+    setAnalysisError(null)
+    setStrategy(null)
+    setStep(2)
+  }
+
+  // ── Step 3 → 4: Approve strategy and create subtask pipeline ──
   const handleApproveStrategy = async (approvedStrategy: TaskStrategy) => {
     if (!createdTask) return
     setSubmitting(true)
@@ -274,9 +356,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
       }
 
       // Approve the strategy on backend
-      if (createdTask) {
-        try { await approveConductorStrategy(createdTask.id) } catch { /* non-critical */ }
-      }
+      try { await approveConductorStrategy(createdTask.id) } catch { /* non-critical */ }
 
       setCreatedTaskIds(taskIds)
       onCreated()
@@ -309,7 +389,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
           ))}
         </div>
 
-        {/* ════════ Step 1: Brief ════════ */}
+        {/* Step 1: Brief */}
         {step === 1 && (
           <div className={styles.wizardBody}>
             <h2 className={styles.wizardTitle}>Describe your task</h2>
@@ -441,7 +521,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
           </div>
         )}
 
-        {/* ════════ Step 2: Assign Lead Agent ════════ */}
+        {/* Step 2: Assign Lead Agent */}
         {step === 2 && (
           <div className={styles.wizardBody}>
             <h2 className={styles.wizardTitle}>Assign Lead Agent</h2>
@@ -496,7 +576,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             )}
 
             <div className={styles.wizardActions}>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>← Back</button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>&larr; Back</button>
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
@@ -509,7 +589,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
           </div>
         )}
 
-        {/* ════════ Step 3: Strategy Review ════════ */}
+        {/* Step 3: Strategy Review */}
         {step === 3 && (
           <StrategyReview
             analyzing={analyzing}
@@ -517,22 +597,36 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             leadAgent={leadAgent}
             agents={agents}
             submitting={submitting}
+            progressMessages={progressMessages}
+            error={analysisError}
             onApprove={handleApproveStrategy}
             onReject={() => {
+              pollAbortRef.current?.abort()
               setStrategy(null)
+              setAnalyzing(false)
+              setAnalysisError(null)
+              setProgressMessages([])
+              setStep(2)
+            }}
+            onRetry={handleRetry}
+            onCancel={handleCancel}
+            onBack={() => {
+              pollAbortRef.current?.abort()
               setAnalyzing(false)
               setStep(2)
             }}
-            onBack={() => setStep(2)}
           />
         )}
 
-        {/* ════════ Step 4: Pipeline Monitor ════════ */}
+        {/* Step 4: Pipeline Active */}
         {step === 4 && (
           <div className={styles.wizardBody}>
-            <h2 className={styles.wizardTitle}>🚀 Pipeline Active</h2>
+            <h2 className={styles.wizardTitle}>Pipeline Active</h2>
             <p className={styles.wizardSubtitle}>
-              {createdTaskIds.length} tasks created. Close this wizard and switch to Pipeline view to see the live diagram.
+              {createdTaskIds.length === 1
+                ? 'Task dispatched. Close this wizard and switch to Pipeline view to track progress.'
+                : `${createdTaskIds.length} tasks created. Close this wizard and switch to Pipeline view to see the live diagram.`
+              }
             </p>
             <div style={{ textAlign: 'center', padding: 'var(--space-6)' }}>
               <div style={{
@@ -550,7 +644,10 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
                 ✓
               </div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                Strategy approved. {createdTaskIds.length - 1} subtasks dispatched to agents.
+                {createdTaskIds.length === 1
+                  ? 'Task is being executed by the assigned agent.'
+                  : `Strategy approved. ${createdTaskIds.length - 1} subtasks dispatched to agents.`
+                }
               </p>
             </div>
             <div className={styles.wizardActions}>

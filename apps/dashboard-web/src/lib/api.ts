@@ -993,7 +993,8 @@ export async function deletePipeline(rootTaskId: string, allTasks: ConductorTask
 }
 
 export async function getConductorTaskById(id: string) {
-  return apiFetch<ConductorTask>(`/api/conductor/${id}`)
+  const res = await apiFetch<{ task: ConductorTask; subtasks?: ConductorTask[]; logs?: ConductorTaskLog[] }>(`/api/conductor/${id}`)
+  return res.task
 }
 
 export async function approveConductorStrategy(id: string) {
