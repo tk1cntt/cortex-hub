@@ -227,12 +227,13 @@ export function TaskDetail({
 
           {/* Actions */}
           <div className={styles.detailActions}>
-            {(task.status === 'pending' || task.status === 'in_progress') && (
+            {(task.status === 'pending' || task.status === 'assigned' || task.status === 'accepted' || task.status === 'in_progress' || task.status === 'analyzing') && (
               <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => { onCancel(); onClose() }}
+                className="btn btn-sm"
+                style={{ background: 'var(--status-warning)', color: 'white', border: 'none' }}
+                onClick={onCancel}
               >
-                Cancel Task
+                ⛔ Force Cancel
               </button>
             )}
             <button

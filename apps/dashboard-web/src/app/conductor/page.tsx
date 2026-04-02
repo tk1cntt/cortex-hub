@@ -28,33 +28,265 @@ import {
   getResultSummary,
   getTaskDuration,
   parseResult,
+  getParticipatingAgents,
+  getActiveSubtask,
+  getPipelineProgress,
   StatusBadge,
   type TaskTreeNode,
 } from './components'
 import styles from './page.module.css'
 
-// ── Pipeline tree views ──
+// ── Pipeline Card Component ──
+
+/** Individual subtask row inside a pipeline card */
+function SubtaskRow({ node, onSelect }: { node: TaskTreeNode; onSelect: () => void }) {
+  const { task } = node
+  const duration = getTaskDuration(task)
+  const statusIcon = task.status === 'completed' ? '✓'
+    : task.status === 'in_progress' || task.status === 'analyzing' ? '●'
+    : task.status === 'failed' ? '✗'
+    : task.status === 'cancelled' ? '—'
+    : '○'
+  const statusClass = task.status === 'completed' ? styles.subtaskDone
+    : task.status === 'in_progress' || task.status === 'analyzing' ? styles.subtaskActive
+    : task.status === 'failed' ? styles.subtaskFailed
+    : task.status === 'cancelled' ? styles.subtaskCancelled
+    : styles.subtaskPending
+
+  return (
+    <div className={`${styles.pcSubtaskRow} ${statusClass}`} onClick={onSelect}>
+      <span className={styles.pcSubtaskIcon}>{statusIcon}</span>
+      <span className={styles.pcSubtaskTitle}>{task.title}</span>
+      {task.assigned_to_agent && (
+        <code className={styles.pcSubtaskAgent}>{task.assigned_to_agent}</code>
+      )}
+      {duration && <span className={styles.pcSubtaskDuration}>{duration}</span>}
+      <StatusBadge status={task.status} />
+    </div>
+  )
+}
+
+/** Rich pipeline card — renders an entire pipeline as one informative card */
+function PipelineCard({
+  rootNode,
+  allNodes,
+  onSelectTask,
+  onDeletePipeline,
+  onShowDiagram,
+  onFollowUp,
+  onCancel,
+}: {
+  rootNode: TaskTreeNode
+  allNodes: TaskTreeNode[]
+  onSelectTask: (task: ConductorTask) => void
+  onDeletePipeline: (rootTaskId: string) => void
+  onShowDiagram: (rootTaskId: string) => void
+  onFollowUp: (task: ConductorTask) => void
+  onCancel: (taskId: string) => void
+}) {
+  const root = rootNode.task
+  const hasSubtasks = rootNode.children.length > 0
+  const progress = getPipelineProgress(rootNode)
+  const agents = getParticipatingAgents(rootNode)
+  const activeSubtask = getActiveSubtask(rootNode)
+  const duration = getTaskDuration(root)
+  const [subtasksExpanded, setSubtasksExpanded] = useState(rootNode.children.length <= 5)
+  const [resultExpanded, setResultExpanded] = useState(false)
+  const isCompleted = root.status === 'completed'
+  const isFailed = root.status === 'failed'
+  const isRunning = root.status === 'in_progress' || root.status === 'analyzing' || root.status === 'accepted'
+  const isCancellable = ['pending', 'assigned', 'accepted', 'in_progress', 'analyzing'].includes(root.status)
+
+  // Determine card accent class
+  const accentClass = isCompleted ? styles.pcCardCompleted
+    : isFailed ? styles.pcCardFailed
+    : isRunning ? styles.pcCardRunning
+    : root.status === 'cancelled' ? styles.pcCardCancelled
+    : styles.pcCardPending
+
+  // Subtasks to display
+  const subtaskNodes = allNodes.filter(n => n.depth > 0)
+
+  return (
+    <div className={`${styles.pcCard} ${accentClass}`}>
+      {/* Header */}
+      <div className={styles.pcHeader} onClick={() => onSelectTask(root)}>
+        <div className={styles.pcHeaderLeft}>
+          <span className={`${styles.pcDot} ${
+            isCompleted ? styles.pcDotCompleted
+            : isRunning ? styles.pcDotRunning
+            : isFailed ? styles.pcDotFailed
+            : root.status === 'cancelled' ? styles.pcDotCancelled
+            : styles.pcDotPending
+          }`} />
+          <div className={styles.pcTitleBlock}>
+            <h3 className={styles.pcTitle}>{root.title}</h3>
+            {root.description && (
+              <p className={styles.pcDesc}>
+                {root.description.slice(0, 160)}{root.description.length > 160 ? '…' : ''}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className={styles.pcHeaderRight}>
+          <StatusBadge status={root.status} />
+          {duration && <span className={styles.pcDuration}>⏱ {duration}</span>}
+        </div>
+      </div>
+
+      {/* Progress bar (only if there are subtasks) */}
+      {hasSubtasks && (
+        <div className={styles.pcProgressSection}>
+          <div className={styles.pcProgressBar}>
+            <div
+              className={`${styles.pcProgressFill} ${
+                progress.failed > 0 ? styles.pcProgressFillFailed
+                : progress.percent === 100 ? styles.pcProgressFillComplete
+                : styles.pcProgressFillActive
+              }`}
+              style={{ width: `${progress.percent}%` }}
+            />
+          </div>
+          <span className={styles.pcProgressLabel}>
+            {progress.completed}/{progress.total} subtasks
+            {progress.failed > 0 && <span className={styles.pcProgressFailed}> · {progress.failed} failed</span>}
+          </span>
+        </div>
+      )}
+
+      {/* Agent Roster */}
+      {agents.length > 0 && (
+        <div className={styles.pcAgentSection}>
+          <span className={styles.pcAgentSectionLabel}>👥 Agents</span>
+          <div className={styles.pcAgentRoster}>
+            {agents.map(({ agentId, role }) => {
+              const { icon, colorClass } = getIdeInfo(agentId)
+              const isActive = activeSubtask?.agent === agentId
+              return (
+                <span
+                  key={agentId}
+                  className={`${styles.pcAgentPill} ${colorClass ? styles[colorClass] : ''} ${isActive ? styles.pcAgentActive : ''}`}
+                  title={`${agentId} (${role})`}
+                >
+                  <span className={styles.pcAgentPillIcon}>{icon}</span>
+                  {agentId}
+                  {isActive && <span className={styles.pcAgentActiveDot} />}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Active agent indicator */}
+      {activeSubtask && (
+        <div className={styles.pcActiveIndicator}>
+          <span className={styles.pcActiveIcon}>⚡</span>
+          <span className={styles.pcActiveText}>
+            <strong>{activeSubtask.agent ?? 'Agent'}</strong> is working on <em>&quot;{activeSubtask.title}&quot;</em>
+          </span>
+        </div>
+      )}
+
+      {/* Subtask list */}
+      {hasSubtasks && (
+        <div className={styles.pcSubtaskSection}>
+          <button
+            className={styles.pcSubtaskToggle}
+            onClick={() => setSubtasksExpanded(!subtasksExpanded)}
+          >
+            <span className={`${styles.pcSubtaskChevron} ${subtasksExpanded ? styles.pcSubtaskChevronOpen : ''}`}>▾</span>
+            {subtasksExpanded ? 'Subtasks' : `Show ${subtaskNodes.length} subtasks`}
+          </button>
+          {subtasksExpanded && (
+            <div className={styles.pcSubtaskList}>
+              {subtaskNodes.map(node => (
+                <SubtaskRow
+                  key={node.task.id}
+                  node={node}
+                  onSelect={() => onSelectTask(node.task)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Result preview (completed tasks) */}
+      {isCompleted && root.result && (
+        <div className={styles.pcResultSection}>
+          <button
+            className={styles.pcResultToggle}
+            onClick={() => setResultExpanded(!resultExpanded)}
+          >
+            <span className={`${styles.pcSubtaskChevron} ${resultExpanded ? styles.pcSubtaskChevronOpen : ''}`}>▾</span>
+            {resultExpanded ? 'Result' : `View result: ${getResultSummary(root.result, 60)}`}
+          </button>
+          {resultExpanded && (
+            <div className={styles.pcResultContent}>
+              <PipelineResultSummary result={root.result} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Action bar */}
+      <div className={styles.pcActionBar}>
+        <button
+          className={styles.pcActionBtn}
+          title="View pipeline diagram"
+          onClick={() => onShowDiagram(root.id)}
+        >
+          🔗 Diagram
+        </button>
+        {isCompleted && (
+          <button
+            className={`${styles.pcActionBtn} ${styles.pcActionBtnPrimary}`}
+            onClick={() => onFollowUp(root)}
+          >
+            + Follow-up
+          </button>
+        )}
+        {isCancellable && (
+          <button
+            className={`${styles.pcActionBtn} ${styles.pcActionBtnWarning}`}
+            onClick={() => onCancel(root.id)}
+          >
+            ⛔ Cancel
+          </button>
+        )}
+        <button
+          className={`${styles.pcActionBtn} ${styles.pcActionBtnDanger}`}
+          title="Delete pipeline"
+          onClick={() => onDeletePipeline(root.id)}
+        >
+          🗑 Delete
+        </button>
+      </div>
+    </div>
+  )
+}
 
 /** Human-readable parsed result for inline pipeline display */
 function PipelineResultSummary({ result }: { result: string }) {
   const parsed = parseResult(result)
   if (parsed.type === 'empty') return null
   if (parsed.type === 'string') {
-    return <div className={styles.pipelineResultText}>{parsed.text}</div>
+    return <div className={styles.pcResultText}>{parsed.text}</div>
   }
   if (parsed.type === 'subtasks') {
     return (
-      <div className={styles.pipelineResultSubtasks}>
+      <div className={styles.pcResultSubtasks}>
         {parsed.items.map((item, i) => (
-          <div key={i} className={styles.pipelineResultSubtaskRow}>
-            <span className={styles.pipelineResultSubtaskIcon}>
+          <div key={i} className={styles.pcResultSubtaskRow}>
+            <span className={styles.pcResultSubtaskIcon}>
               {item.status === 'completed' ? '✓' : item.status === 'failed' ? '✗' : '○'}
             </span>
-            <span className={styles.pipelineResultSubtaskTitle}>
+            <span className={styles.pcResultSubtaskTitle}>
               {item.title ?? `Subtask ${i + 1}`}
             </span>
-            {item.agent && <code className={styles.pipelineResultSubtaskAgent}>{item.agent}</code>}
-            {item.message && <span className={styles.pipelineResultSubtaskMsg}>{item.message}</span>}
+            {item.agent && <code className={styles.pcResultSubtaskAgent}>{item.agent}</code>}
+            {item.message && <span className={styles.pcResultSubtaskMsg}>{item.message}</span>}
           </div>
         ))}
       </div>
@@ -62,143 +294,36 @@ function PipelineResultSummary({ result }: { result: string }) {
   }
   // type === 'object'
   return (
-    <div className={styles.pipelineResultKv}>
+    <div className={styles.pcResultKv}>
       {parsed.summary.map(({ key, value }) => (
-        <div key={key} className={styles.pipelineResultKvRow}>
-          <span className={styles.pipelineResultKvKey}>{key.replace(/_/g, ' ')}</span>
-          <span className={styles.pipelineResultKvValue}>{value}</span>
+        <div key={key} className={styles.pcResultKvRow}>
+          <span className={styles.pcResultKvKey}>{key.replace(/_/g, ' ')}</span>
+          <span className={styles.pcResultKvValue}>{value}</span>
         </div>
       ))}
     </div>
   )
 }
 
-/** Pipeline tree row — shows task with indentation and connector lines */
-function PipelineRow({
-  node,
-  onSelect,
-  isLast,
-  onFollowUp,
-}: {
-  node: TaskTreeNode
-  onSelect: () => void
-  isLast: boolean
-  onFollowUp?: (task: ConductorTask) => void
-}) {
-  const { task, children, depth } = node
-  const hasChildren = children.length > 0
-  const [expanded, setExpanded] = useState(false)
-
-  const statusColor = task.status === 'completed' ? 'completed'
-    : task.status === 'in_progress' ? 'inProgress'
-    : task.status === 'failed' ? 'failed' : 'pending'
-
-  const isCompleted = task.status === 'completed'
-  const resultSummary = isCompleted ? getResultSummary(task.result, 80) : ''
-  const duration = getTaskDuration(task)
-
-  return (
-    <div>
-      <div
-        className={`${styles.pipelineRow} ${depth === 0 ? styles.pipelineRowRoot : ''}`}
-        onClick={onSelect}
-        style={{ paddingLeft: `${depth * 36 + 20}px` }}
-      >
-        {depth > 0 && (
-          <span
-            className={`${styles.connector} ${isLast ? styles.connectorLast : styles.connectorMid}`}
-            data-status={statusColor}
-          />
-        )}
-        <span className={`${styles.pipelineDot} ${
-          task.status === 'completed' ? styles.dotCompleted
-          : task.status === 'in_progress' ? styles.dotInProgress
-          : task.status === 'failed' ? styles.dotFailed
-          : styles.dotPending
-        }`} />
-        <span className={`${styles.pipelineTitle} ${depth === 0 ? styles.pipelineTitleRoot : ''}`}>
-          {hasChildren && <span className={styles.pipelineExpandIcon}>▾</span>}
-          {task.title}
-        </span>
-        <span className={styles.pipelineFlow}>
-          {task.created_by_agent && <code className={styles.flowAgent}>{task.created_by_agent}</code>}
-          {task.assigned_to_agent && (
-            <>
-              <span className={styles.flowArrow}>→</span>
-              <code className={styles.flowAgent}>{task.assigned_to_agent}</code>
-            </>
-          )}
-          {task.completed_by && task.completed_by !== task.assigned_to_agent && (
-            <>
-              <span className={styles.flowArrow}>→</span>
-              <code className={styles.flowAgentDone}>{task.completed_by}</code>
-            </>
-          )}
-        </span>
-        <StatusBadge status={task.status} />
-        {isCompleted && task.result && (
-          <button
-            className={`${styles.rowExpandBtn} ${expanded ? styles.rowExpandBtnOpen : ''}`}
-            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded) }}
-            title={expanded ? 'Collapse result' : 'Expand result'}
-          >
-            ▾
-          </button>
-        )}
-      </div>
-      {/* Result outcome line (collapsed summary) */}
-      {resultSummary && !expanded && (
-        <div
-          className={styles.pipelineOutcome}
-          style={{ paddingLeft: `${depth * 36 + 20}px`, cursor: 'pointer' }}
-          onClick={(e) => { e.stopPropagation(); setExpanded(true) }}
-        >
-          {resultSummary}
-          {duration && <span className={styles.pipelineDuration}>⏱ {duration}</span>}
-        </div>
-      )}
-      {/* Expanded result section */}
-      {expanded && isCompleted && task.result && (
-        <div
-          className={styles.pipelineResultExpanded}
-          style={{ paddingLeft: `${depth * 36 + 20}px` }}
-        >
-          {duration && (
-            <div className={styles.pipelineResultDuration}>Completed in {duration}</div>
-          )}
-          <PipelineResultSummary result={task.result} />
-          {onFollowUp && (
-            <button
-              className={styles.followUpBtn}
-              onClick={(e) => { e.stopPropagation(); onFollowUp(task) }}
-            >
-              + Create follow-up task
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** Classic Pipeline view — renders task tree with delegation arrows + per-pipeline diagram & delete */
-function PipelineView({
+/** Pipeline card grid — renders all tasks as pipeline cards */
+function PipelineGrid({
   tasks,
   onSelectTask,
   onDeletePipeline,
   onShowDiagram,
   onFollowUp,
+  onCancel,
 }: {
   tasks: ConductorTask[]
   onSelectTask: (task: ConductorTask) => void
   onDeletePipeline: (rootTaskId: string) => void
   onShowDiagram: (rootTaskId: string) => void
   onFollowUp: (task: ConductorTask) => void
+  onCancel: (taskId: string) => void
 }) {
   const tree = useMemo(() => buildTaskTree(tasks), [tasks])
-  const flat = useMemo(() => flattenTree(tree), [tree])
 
-  if (flat.length === 0) {
+  if (tree.length === 0) {
     return (
       <div className={`card ${styles.emptyState}`}>
         <span className={styles.emptyIcon}>T</span>
@@ -210,115 +335,24 @@ function PipelineView({
     )
   }
 
-  const pipelines = flat.filter((n) => n.depth === 0 && n.children.length > 0)
-  const standalone = flat.filter((n) => n.depth === 0 && n.children.length === 0)
-
+  // Every root node is a "pipeline" (even standalone tasks)
   return (
-    <div>
-      {pipelines.length > 0 && (
-        <div className={`card ${styles.pipelineCard}`}>
-          <div className={styles.pipelineHeader}>
-            <h3 className={styles.pipelineHeaderTitle}>Task Pipelines</h3>
-            <span className={styles.pipelineHeaderCount}>{pipelines.length} pipelines</span>
-          </div>
-          {pipelines.map((rootNode) => {
-            const subtreeFlat = flattenTree([rootNode])
-            const root = rootNode.task
-            const subtaskCount = rootNode.children.length
-            const completedCount = rootNode.children.filter((c) => c.task.status === 'completed').length
-            const allComplete = subtaskCount > 0 && completedCount === subtaskCount
-
-            let rootCaps: string[] = []
-            if (root.required_capabilities) {
-              try {
-                const parsed = JSON.parse(root.required_capabilities)
-                if (Array.isArray(parsed)) rootCaps = parsed
-              } catch { /* ignore */ }
-            }
-
-            return (
-              <div key={rootNode.task.id}>
-                <div className={styles.orchestratorHeader} style={{ cursor: 'pointer' }} onClick={() => onSelectTask(root)}>
-                  <div className={styles.orchestratorInfo}>
-                    <div className={styles.orchestratorAgent}>
-                      Orchestrator: <code>{root.created_by_agent ?? 'unknown'}</code>
-                    </div>
-                    {rootCaps.length > 0 && (
-                      <div className={styles.orchestratorCaps}>
-                        {rootCaps.map((cap) => {
-                          const capColor = getCapColor(cap)
-                          return <span key={cap} className={`${styles.capBadge} ${capColor ? styles[capColor] : ''}`}>{cap}</span>
-                        })}
-                      </div>
-                    )}
-                    {root.description && (
-                      <div className={styles.orchestratorOutcome}>
-                        {root.description.slice(0, 200)}{root.description.length > 200 ? '...' : ''}
-                      </div>
-                    )}
-                  </div>
-                  <div className={styles.orchestratorMeta}>
-                    <span className={`${styles.orchestratorProgress} ${allComplete ? styles.orchestratorProgressComplete : ''}`}>
-                      {completedCount}/{subtaskCount} subtasks
-                    </span>
-                    <StatusBadge status={root.status} />
-                    <div className={styles.pipelineActions}>
-                      <button
-                        className={styles.pipelineActionBtn}
-                        title="View pipeline diagram"
-                        onClick={(e) => { e.stopPropagation(); onShowDiagram(root.id) }}
-                      >
-                        🔗
-                      </button>
-                      <button
-                        className={`${styles.pipelineActionBtn} ${styles.pipelineActionBtnDanger}`}
-                        title="Delete entire pipeline"
-                        onClick={(e) => { e.stopPropagation(); onDeletePipeline(root.id) }}
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {subtreeFlat.map((node) => {
-                  const siblings = subtreeFlat.filter((n) =>
-                    n.depth === node.depth && n.task.parent_task_id === node.task.parent_task_id
-                  )
-                  const isLast = siblings[siblings.length - 1]?.task.id === node.task.id
-                  return (
-                    <PipelineRow
-                      key={node.task.id}
-                      node={node}
-                      onSelect={() => onSelectTask(node.task)}
-                      isLast={isLast}
-                      onFollowUp={onFollowUp}
-                    />
-                  )
-                })}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {standalone.length > 0 && (
-        <div className={`card ${styles.pipelineCard}`} style={{ marginTop: pipelines.length > 0 ? 'var(--space-4)' : undefined }}>
-          <div className={styles.pipelineHeader}>
-            <h3 className={styles.pipelineHeaderTitle}>Standalone Tasks</h3>
-            <span className={styles.pipelineHeaderCount}>{standalone.length}</span>
-          </div>
-          {standalone.map((node) => (
-            <PipelineRow
-              key={node.task.id}
-              node={node}
-              onSelect={() => onSelectTask(node.task)}
-              isLast
-              onFollowUp={onFollowUp}
-            />
-          ))}
-        </div>
-      )}
+    <div className={styles.pcGrid}>
+      {tree.map((rootNode) => {
+        const subtreeFlat = flattenTree([rootNode])
+        return (
+          <PipelineCard
+            key={rootNode.task.id}
+            rootNode={rootNode}
+            allNodes={subtreeFlat}
+            onSelectTask={onSelectTask}
+            onDeletePipeline={onDeletePipeline}
+            onShowDiagram={onShowDiagram}
+            onFollowUp={onFollowUp}
+            onCancel={onCancel}
+          />
+        )
+      })}
     </div>
   )
 }
@@ -639,13 +673,14 @@ export default function ConductorPage() {
           <div className={styles.errorBanner}>Failed to load tasks</div>
         )}
 
-        {/* Pipeline View */}
-        <PipelineView
+        {/* Pipeline Cards */}
+        <PipelineGrid
           tasks={filteredTasks}
           onSelectTask={setSelectedTask}
-          onDeletePipeline={(rootId) => setDeleteConfirm(rootId)}
-          onShowDiagram={(rootId) => setDiagramPipelineId(rootId)}
+          onDeletePipeline={(rootId: string) => setDeleteConfirm(rootId)}
+          onShowDiagram={(rootId: string) => setDiagramPipelineId(rootId)}
           onFollowUp={handleNewTaskFromOutcome}
+          onCancel={handleCancel}
         />
       </div>
 

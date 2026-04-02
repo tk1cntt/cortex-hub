@@ -66,7 +66,8 @@
   background: var(--bg-secondary);
   border: 2px solid var(--border);
   border-radius: var(--radius-lg);
-  min-width: 180px;
+  min-width: 200px;
+  max-width: 280px;
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
@@ -82,7 +83,7 @@
 .nodeOrchestrator {
   border-color: var(--primary);
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(168, 85, 247, 0.06));
-  min-width: 220px;
+  min-width: 240px;
 }
 
 .nodeOrchestrator::after {
@@ -100,15 +101,31 @@
   border: 1px solid rgba(99, 102, 241, 0.3);
 }
 
+/* Handle styling */
+.handle {
+  background: var(--border) !important;
+  width: 8px !important;
+  height: 8px !important;
+  border: 1px solid var(--bg-secondary) !important;
+}
+
 /* Status variants */
 .nodeActive {
   border-color: var(--status-healthy, #10b981);
   animation: nodeActiveGlow 2s ease infinite;
 }
 
+.nodeActive .handle {
+  background: var(--status-healthy, #10b981) !important;
+}
+
 .nodeAnalyzing {
   border-color: var(--primary);
   animation: nodeAnalyzeGlow 1.5s ease infinite;
+}
+
+.nodeAnalyzing .handle {
+  background: var(--primary) !important;
 }
 
 .nodeWaiting {
@@ -121,9 +138,17 @@
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.06), var(--bg-secondary));
 }
 
+.nodeComplete .handle {
+  background: var(--status-healthy, #10b981) !important;
+}
+
 .nodeFailed {
   border-color: var(--status-error, #ef4444);
   background: linear-gradient(135deg, rgba(239, 68, 68, 0.06), var(--bg-secondary));
+}
+
+.nodeFailed .handle {
+  background: var(--status-error, #ef4444) !important;
 }
 
 .nodeBlocked {
@@ -166,11 +191,55 @@
   max-width: 200px;
 }
 
+/* ── Agent row with IDE icon ── */
+.nodeAgentRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: var(--space-1);
+}
+
+.nodeIdeIcon {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.nodeIdeIcon.ideBlue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.nodeIdeIcon.ideGreen { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.nodeIdeIcon.idePurple { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+.nodeIdeIcon.ideOrange { background: rgba(249, 115, 22, 0.15); color: #f97316; }
+
 .nodeAgent {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
   color: var(--text-tertiary);
+}
+
+/* ── Capability badges ── */
+.nodeCaps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
   margin-bottom: var(--space-1);
+}
+
+.nodeCapBadge {
+  font-size: 0.5625rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--text-tertiary);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  white-space: nowrap;
 }
 
 .nodeResult {
@@ -315,12 +384,16 @@
   }
 
   .pipelineNode {
-    min-width: 140px;
+    min-width: 160px;
     padding: var(--space-3) var(--space-4);
   }
 
   .nodeTitle {
     max-width: 100px;
     font-size: 0.75rem;
+  }
+
+  .nodeCaps {
+    display: none;
   }
 }

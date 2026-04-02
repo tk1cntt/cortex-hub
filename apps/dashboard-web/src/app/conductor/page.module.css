@@ -2447,6 +2447,31 @@
   background: rgba(239, 68, 68, 0.08);
 }
 
+/* ══════ Force Cancel Button ══════ */
+
+.forceCancelBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--status-warning);
+  background: transparent;
+  color: var(--status-warning);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.forceCancelBtn:hover {
+  background: var(--status-warning);
+  color: white;
+}
+
 /* ══════ Diagram Modal ══════ */
 .diagramModalOverlay {
   position: fixed;
@@ -3147,5 +3172,781 @@
 
   .confirmPanel {
     width: 95vw;
+  }
+}
+
+/* ══════ Pipeline Row Expand Button ══════ */
+.rowExpandBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  transform: rotate(-90deg);
+}
+
+.rowExpandBtn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.rowExpandBtnOpen {
+  transform: rotate(0deg);
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--primary);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+/* ══════ Pipeline Expanded Result Section ══════ */
+.pipelineResultExpanded {
+  padding: var(--space-3) var(--space-4);
+  padding-right: var(--space-4);
+  background: rgba(16, 185, 129, 0.03);
+  border-bottom: 1px solid var(--border-subtle);
+  animation: fadeInUp 0.2s ease both;
+}
+
+.pipelineResultDuration {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  margin-bottom: var(--space-2);
+}
+
+.pipelineResultText {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Subtask result rows */
+.pipelineResultSubtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pipelineResultSubtaskRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  padding: 2px 0;
+}
+
+.pipelineResultSubtaskIcon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  color: var(--status-healthy, #10b981);
+  font-weight: 600;
+}
+
+.pipelineResultSubtaskTitle {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.pipelineResultSubtaskAgent {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary, rgba(255,255,255,0.05));
+  padding: 1px 6px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.pipelineResultSubtaskMsg {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+/* Key-value result display */
+.pipelineResultKv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--space-3);
+  font-size: 0.8125rem;
+}
+
+.pipelineResultKvRow {
+  display: contents;
+}
+
+.pipelineResultKvKey {
+  color: var(--text-tertiary);
+  font-weight: 500;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.pipelineResultKvValue {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* ══════ Follow-up Task Button ══════ */
+.followUpBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  margin-top: var(--space-3);
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: var(--radius-md, 6px);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.followUpBtn:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.12);
+}
+
+/* ══════════════════════════════════════════════════
+   Pipeline Card (pc*) — Modern Pipeline-First UI
+   ══════════════════════════════════════════════════ */
+
+/* Grid */
+.pcGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Card */
+.pcCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease;
+  animation: fadeInUp 0.35s ease both;
+}
+
+.pcCard:hover {
+  border-color: var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* Card accent states */
+.pcCardRunning {
+  border-left: 3px solid var(--primary, #6366f1);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.08);
+  animation: fadeInUp 0.35s ease both, pcRunningGlow 3s ease infinite;
+}
+
+.pcCardCompleted {
+  border-left: 3px solid var(--status-healthy, #10b981);
+}
+
+.pcCardFailed {
+  border-left: 3px solid var(--status-error, #ef4444);
+}
+
+.pcCardPending {
+  border-left: 3px solid var(--status-warning, #f59e0b);
+}
+
+.pcCardCancelled {
+  border-left: 3px solid var(--text-tertiary, #6b7280);
+  opacity: 0.7;
+}
+
+@keyframes pcRunningGlow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.08); }
+  50% { box-shadow: 0 0 16px rgba(99, 102, 241, 0.12), 0 0 0 1px rgba(99, 102, 241, 0.15); }
+}
+
+/* Header */
+.pcHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pcHeader:hover {
+  background: rgba(99, 102, 241, 0.03);
+}
+
+.pcHeaderLeft {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.pcHeaderRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Status dot */
+.pcDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.pcDotCompleted { background: var(--status-healthy, #10b981); box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
+.pcDotRunning { background: var(--primary, #6366f1); box-shadow: 0 0 10px rgba(99, 102, 241, 0.5); animation: pulse 2s infinite; }
+.pcDotFailed { background: var(--status-error, #ef4444); box-shadow: 0 0 6px rgba(239, 68, 68, 0.4); }
+.pcDotPending { background: var(--status-warning, #f59e0b); box-shadow: 0 0 4px rgba(245, 158, 11, 0.3); }
+.pcDotCancelled { background: var(--text-tertiary, #6b7280); }
+
+/* Title block */
+.pcTitleBlock {
+  flex: 1;
+  min-width: 0;
+}
+
+.pcTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.pcDesc {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: var(--space-1) 0 0;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pcDuration {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* Progress section */
+.pcProgressSection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-5) var(--space-3);
+}
+
+.pcProgressBar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.pcProgressFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.pcProgressFillActive {
+  background: linear-gradient(90deg, #6366f1, #818cf8);
+  animation: pcShimmer 2s ease infinite;
+}
+
+.pcProgressFillComplete {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.pcProgressFillFailed {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+@keyframes pcShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.pcProgressLabel {
+  font-size: 0.6875rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pcProgressFailed {
+  color: var(--status-error, #ef4444);
+  font-weight: 600;
+}
+
+/* Agent section */
+.pcAgentSection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pcAgentSectionLabel {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.pcAgentRoster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pcAgentPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.pcAgentPill:hover {
+  transform: scale(1.05);
+}
+
+.pcAgentPillIcon {
+  font-weight: 700;
+  font-size: 0.625rem;
+  opacity: 0.8;
+}
+
+.pcAgentActive {
+  background: rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.25);
+  font-weight: 600;
+}
+
+.pcAgentActiveDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: pulse 1.5s infinite;
+  margin-left: 2px;
+}
+
+/* Active indicator banner */
+.pcActiveIndicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.06), transparent);
+  font-size: 0.75rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.pcActiveIcon {
+  font-size: 0.875rem;
+  animation: pulse 2s infinite;
+}
+
+.pcActiveText {
+  color: var(--text-secondary);
+}
+
+.pcActiveText strong {
+  color: var(--primary);
+  font-family: var(--font-mono);
+}
+
+.pcActiveText em {
+  color: var(--text-primary);
+  font-style: italic;
+}
+
+/* Subtask section */
+.pcSubtaskSection {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pcSubtaskToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-align: left;
+}
+
+.pcSubtaskToggle:hover {
+  background: rgba(99, 102, 241, 0.03);
+  color: var(--text-primary);
+}
+
+.pcSubtaskChevron {
+  font-size: 0.6875rem;
+  transition: transform 0.2s ease;
+  transform: rotate(-90deg);
+  display: inline-block;
+}
+
+.pcSubtaskChevronOpen {
+  transform: rotate(0deg);
+}
+
+/* Subtask list */
+.pcSubtaskList {
+  display: flex;
+  flex-direction: column;
+  animation: dmSlideDown 0.25s ease;
+}
+
+.pcSubtaskRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  padding-left: calc(var(--space-5) + 8px);
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 0.8125rem;
+}
+
+.pcSubtaskRow:hover {
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.pcSubtaskRow:last-child {
+  border-bottom: none;
+}
+
+.pcSubtaskIcon {
+  width: 16px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.subtaskDone .pcSubtaskIcon { color: var(--status-healthy, #10b981); }
+.subtaskActive .pcSubtaskIcon { color: var(--primary, #6366f1); animation: pulse 1.5s infinite; }
+.subtaskFailed .pcSubtaskIcon { color: var(--status-error, #ef4444); }
+.subtaskPending .pcSubtaskIcon { color: var(--status-warning, #f59e0b); }
+.subtaskCancelled .pcSubtaskIcon { color: var(--text-tertiary); }
+
+.pcSubtaskTitle {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pcSubtaskAgent {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--accent-primary);
+  padding: 1px 6px;
+  background: var(--accent-glow);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.pcSubtaskDuration {
+  font-size: 0.625rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+/* Result section */
+.pcResultSection {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pcResultToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  background: none;
+  border: none;
+  color: var(--status-healthy, #10b981);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.pcResultToggle:hover {
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.pcResultContent {
+  padding: 0 var(--space-5) var(--space-4);
+  animation: dmSlideDown 0.2s ease;
+}
+
+.pcResultText {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pcResultSubtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pcResultSubtaskRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  padding: 2px 0;
+}
+
+.pcResultSubtaskIcon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  color: var(--status-healthy, #10b981);
+  font-weight: 600;
+}
+
+.pcResultSubtaskTitle {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.pcResultSubtaskAgent {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.pcResultSubtaskMsg {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
+.pcResultKv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--space-3);
+  font-size: 0.8125rem;
+}
+
+.pcResultKvRow {
+  display: contents;
+}
+
+.pcResultKvKey {
+  color: var(--text-tertiary);
+  font-weight: 500;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.pcResultKvValue {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* Action bar */
+.pcActionBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.pcActionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.pcActionBtn:hover {
+  border-color: var(--border);
+  background: var(--bg-primary);
+  transform: translateY(-1px);
+}
+
+.pcActionBtnPrimary {
+  border-color: rgba(99, 102, 241, 0.3);
+  color: var(--primary);
+}
+
+.pcActionBtnPrimary:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: var(--primary);
+}
+
+.pcActionBtnWarning {
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--status-warning, #f59e0b);
+}
+
+.pcActionBtnWarning:hover {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: var(--status-warning, #f59e0b);
+}
+
+.pcActionBtnDanger {
+  margin-left: auto;
+  border-color: rgba(239, 68, 68, 0.2);
+  color: var(--text-tertiary);
+}
+
+.pcActionBtnDanger:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: var(--status-error, #ef4444);
+  color: var(--status-error, #ef4444);
+}
+
+/* ═══ Pipeline Card Responsive ═══ */
+@media (max-width: 768px) {
+  .pcHeader {
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+  }
+
+  .pcHeaderRight {
+    flex-direction: row;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .pcProgressSection {
+    padding: 0 var(--space-4) var(--space-2);
+  }
+
+  .pcAgentSection {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .pcSubtaskRow {
+    padding: var(--space-2) var(--space-4);
+    padding-left: calc(var(--space-4) + 8px);
+  }
+
+  .pcSubtaskToggle {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .pcActionBar {
+    padding: var(--space-2) var(--space-4);
+    flex-wrap: wrap;
+  }
+
+  .pcActionBtnDanger {
+    margin-left: 0;
+  }
+
+  .pcActiveIndicator {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .pcResultToggle {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .pcResultContent {
+    padding: 0 var(--space-4) var(--space-3);
+  }
+}
+
+@media (max-width: 480px) {
+  .pcTitle {
+    font-size: 0.875rem;
+  }
+
+  .pcDesc {
+    font-size: 0.75rem;
+  }
+
+  .pcAgentPill {
+    font-size: 0.625rem;
+    padding: 2px 8px;
+  }
+
+  .pcSubtaskRow {
+    font-size: 0.75rem;
+    gap: var(--space-2);
+  }
+
+  .pcActionBtn {
+    font-size: 0.625rem;
+    padding: var(--space-1) var(--space-2);
   }
 }

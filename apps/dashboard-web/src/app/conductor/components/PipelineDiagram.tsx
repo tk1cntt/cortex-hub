@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import {
   ReactFlow,
   Background,
@@ -13,14 +13,24 @@ import {
   MarkerType,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { buildTaskTree, getResultSummary, getTaskDuration, type ConductorTask, type TaskTreeNode } from './shared'
+import type { ConductorAgent } from '@/lib/api'
+import { buildTaskTree, getResultSummary, getTaskDuration, getIdeInfo, type ConductorTask, type TaskTreeNode } from './shared'
 import styles from './PipelineDiagram.module.css'
 
+/* ── Typed node data for @xyflow/react v12 ── */
+type PipelineNodeData = {
+  task: ConductorTask
+  isOrchestrator: boolean
+  agentIde?: string
+  agentCapabilities?: string[]
+  [key: string]: unknown
+}
+
+type PipelineNode = Node<PipelineNodeData, 'pipeline'>
+
 /* ── Custom Node Component ── */
-function PipelineNodeComponent({ data }: NodeProps) {
-  const task = data.task as ConductorTask
-  const isOrchestrator = data.isOrchestrator as boolean
-  const onNodeClick = data.onNodeClick as ((task: ConductorTask) => void) | undefined
+function PipelineNodeComponent({ data }: NodeProps<PipelineNode>) {
+  const { task, isOrchestrator, agentIde, agentCapabilities } = data
 
   const statusClass = (() => {
     switch (task.status) {
@@ -69,21 +79,38 @@ function PipelineNodeComponent({ data }: NodeProps) {
     ? getResultSummary(task.result, 60) : ''
   const duration = getTaskDuration(task)
 
+  // Agent IDE info
+  const ideInfo = agentIde ? getIdeInfo(agentIde) : null
+
   return (
-    <div
-      className={`${styles.pipelineNode} ${statusClass} ${isOrchestrator ? styles.nodeOrchestrator : ''}`}
-      onClick={() => onNodeClick?.(task)}
-    >
-      <Handle type="target" position={Position.Top} style={{ background: 'var(--border)', width: 8, height: 8 }} />
+    <div className={`${styles.pipelineNode} ${statusClass} ${isOrchestrator ? styles.nodeOrchestrator : ''}`}>
+      <Handle type="target" position={Position.Left} className={styles.handle} />
 
       <div className={styles.nodeHeader}>
         <span className={`${styles.nodeIcon} ${iconColor}`}>{roleEmoji}</span>
         <span className={styles.nodeTitle}>{task.title.replace(/^\[Delegated\]\s*/, '').slice(0, 50)}</span>
       </div>
 
-      <div className={styles.nodeAgent}>
-        {task.assigned_to_agent ?? 'unassigned'}
+      <div className={styles.nodeAgentRow}>
+        {ideInfo && (
+          <span className={`${styles.nodeIdeIcon} ${ideInfo.colorClass ? styles[ideInfo.colorClass] : ''}`} title={ideInfo.label}>
+            {ideInfo.icon}
+          </span>
+        )}
+        <span className={styles.nodeAgent}>{task.assigned_to_agent ?? 'unassigned'}</span>
       </div>
+
+      {/* Capability badges */}
+      {agentCapabilities && agentCapabilities.length > 0 && (
+        <div className={styles.nodeCaps}>
+          {agentCapabilities.slice(0, 3).map((cap) => (
+            <span key={cap} className={styles.nodeCapBadge}>{cap}</span>
+          ))}
+          {agentCapabilities.length > 3 && (
+            <span className={styles.nodeCapBadge}>+{agentCapabilities.length - 3}</span>
+          )}
+        </div>
+      )}
 
       {/* Result preview for completed tasks */}
       {resultSummary && (
@@ -96,7 +123,7 @@ function PipelineNodeComponent({ data }: NodeProps) {
         {duration && <span className={styles.nodeDuration}>⏱ {duration}</span>}
       </div>
 
-      <Handle type="source" position={Position.Bottom} style={{ background: 'var(--border)', width: 8, height: 8 }} />
+      <Handle type="source" position={Position.Right} className={styles.handle} />
     </div>
   )
 }
@@ -120,53 +147,62 @@ function getEdgeLabel(parentTask: ConductorTask, childTask: ConductorTask): stri
 /* ── Pipeline Diagram ── */
 interface Props {
   tasks: ConductorTask[]
+  agents?: ConductorAgent[]
   onNodeClick?: (task: ConductorTask) => void
 }
 
-export function PipelineDiagram({ tasks, onNodeClick }: Props) {
-  // Build tree and convert to React Flow nodes/edges
+export function PipelineDiagram({ tasks, agents, onNodeClick }: Props) {
+  // Build agent lookup for IDE/capabilities display
+  const agentMap = useMemo(() => {
+    const map = new Map<string, ConductorAgent>()
+    if (agents) {
+      for (const a of agents) map.set(a.agentId, a)
+    }
+    return map
+  }, [agents])
+
+  // Build tree and convert to React Flow nodes/edges — horizontal left-to-right layout
   const { nodes, edges } = useMemo(() => {
     if (tasks.length === 0) return { nodes: [], edges: [] }
 
     const tree = buildTaskTree(tasks)
-    const flowNodes: Node[] = []
+    const flowNodes: PipelineNode[] = []
     const flowEdges: Edge[] = []
-    const HORIZ_GAP = 280
-    const VERT_GAP = 160
+    const DEPTH_GAP = 320   // horizontal gap between depth levels
+    const SIBLING_GAP = 140 // vertical gap between siblings
 
     // Build a task lookup for edge labels
     const taskMap = new Map<string, ConductorTask>()
     for (const t of tasks) taskMap.set(t.id, t)
 
-    function layoutNode(treeNode: TaskTreeNode, x: number, y: number, _parentId?: string): number {
+    /**
+     * Horizontal layout: parent on left, children stacked vertically to the right.
+     * Returns the total vertical height consumed by this subtree.
+     */
+    function layoutNode(treeNode: TaskTreeNode, x: number, y: number, parentId?: string): number {
       const nodeId = treeNode.task.id
 
-      flowNodes.push({
-        id: nodeId,
-        type: 'pipeline',
-        position: { x, y },
-        data: {
-          task: treeNode.task,
-          isOrchestrator: treeNode.depth === 0,
-          onNodeClick,
-        },
-      })
+      // Look up agent info
+      const assignedAgent = treeNode.task.assigned_to_agent
+        ? agentMap.get(treeNode.task.assigned_to_agent)
+        : undefined
 
-      if (_parentId) {
+      if (parentId) {
         const isActive = treeNode.task.status === 'in_progress' || treeNode.task.status === 'analyzing'
         const isComplete = treeNode.task.status === 'completed' || treeNode.task.status === 'approved'
-        const parentTask = taskMap.get(_parentId)
+        const isFailed = treeNode.task.status === 'failed'
+        const parentTask = taskMap.get(parentId)
         const label = parentTask ? getEdgeLabel(parentTask, treeNode.task) : ''
 
         flowEdges.push({
-          id: `e-${_parentId}-${nodeId}`,
-          source: _parentId,
+          id: `e-${parentId}-${nodeId}`,
+          source: parentId,
           target: nodeId,
           animated: isActive,
           label: label || undefined,
           labelStyle: {
             fontSize: 10,
-            fill: isComplete ? '#10b981' : isActive ? '#6366f1' : 'var(--text-tertiary)',
+            fill: isComplete ? '#10b981' : isActive ? '#6366f1' : isFailed ? '#ef4444' : 'var(--text-tertiary)',
             fontWeight: 500,
           },
           labelBgStyle: {
@@ -176,42 +212,78 @@ export function PipelineDiagram({ tasks, onNodeClick }: Props) {
           labelBgPadding: [4, 2] as [number, number],
           labelBgBorderRadius: 4,
           style: {
-            stroke: isComplete ? '#10b981' : isActive ? '#6366f1' : 'var(--border)',
+            stroke: isComplete ? '#10b981' : isActive ? '#6366f1' : isFailed ? '#ef4444' : 'var(--border)',
             strokeWidth: isActive ? 2.5 : isComplete ? 2 : 1.5,
           },
           markerEnd: {
             type: MarkerType.ArrowClosed,
             width: 12,
             height: 12,
-            color: isComplete ? '#10b981' : isActive ? '#6366f1' : 'var(--border)',
+            color: isComplete ? '#10b981' : isActive ? '#6366f1' : isFailed ? '#ef4444' : 'var(--border)',
           },
         })
       }
 
-      if (treeNode.children.length === 0) return x
-
-      // Layout children horizontally below parent
-      const totalWidth = (treeNode.children.length - 1) * HORIZ_GAP
-      let childX = x - totalWidth / 2
-
-      for (const child of treeNode.children) {
-        childX = layoutNode(child, childX, y + VERT_GAP, nodeId)
-        childX += HORIZ_GAP
+      if (treeNode.children.length === 0) {
+        // Leaf node — place at (x, y), occupies SIBLING_GAP height
+        flowNodes.push({
+          id: nodeId,
+          type: 'pipeline',
+          position: { x, y },
+          data: {
+            task: treeNode.task,
+            isOrchestrator: treeNode.depth === 0,
+            agentIde: assignedAgent?.ide,
+            agentCapabilities: assignedAgent?.capabilities,
+          },
+        })
+        return SIBLING_GAP
       }
 
-      return x
+      // Layout children vertically at x + DEPTH_GAP
+      let childY = y
+      const childHeights: number[] = []
+      for (const child of treeNode.children) {
+        const h = layoutNode(child, x + DEPTH_GAP, childY, nodeId)
+        childHeights.push(h)
+        childY += h
+      }
+
+      // Total height consumed by children
+      const totalChildHeight = childHeights.reduce((a, b) => a + b, 0)
+
+      // Center parent vertically relative to its children
+      const parentY = y + (totalChildHeight - SIBLING_GAP) / 2
+
+      flowNodes.push({
+        id: nodeId,
+        type: 'pipeline',
+        position: { x, y: parentY },
+        data: {
+          task: treeNode.task,
+          isOrchestrator: treeNode.depth === 0,
+          agentIde: assignedAgent?.ide,
+          agentCapabilities: assignedAgent?.capabilities,
+        },
+      })
+
+      return Math.max(totalChildHeight, SIBLING_GAP)
     }
 
-    // Layout each root tree
-    let startX = 0
+    // Layout each root tree, stacking vertically
+    let startY = 0
     for (const root of tree) {
-      const subtreeWidth = countLeaves(root) * HORIZ_GAP
-      layoutNode(root, startX + subtreeWidth / 2, 40)
-      startX += subtreeWidth + HORIZ_GAP
+      const height = layoutNode(root, 40, startY)
+      startY += height + SIBLING_GAP / 2
     }
 
     return { nodes: flowNodes, edges: flowEdges }
-  }, [tasks, onNodeClick])
+  }, [tasks, agentMap])
+
+  // Handle node click via ReactFlow's onNodeClick — avoids stale callback in node data
+  const handleNodeClick = useCallback((_event: React.MouseEvent, node: PipelineNode) => {
+    onNodeClick?.(node.data.task)
+  }, [onNodeClick])
 
   if (tasks.length === 0) {
     return (
@@ -231,6 +303,7 @@ export function PipelineDiagram({ tasks, onNodeClick }: Props) {
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          onNodeClick={handleNodeClick}
           fitView
           fitViewOptions={{ padding: 0.3 }}
           nodesDraggable={true}
@@ -275,10 +348,4 @@ export function PipelineDiagram({ tasks, onNodeClick }: Props) {
       </div>
     </div>
   )
-}
-
-/** Count leaf nodes in a tree for layout width calculation */
-function countLeaves(node: TaskTreeNode): number {
-  if (node.children.length === 0) return 1
-  return node.children.reduce((acc, child) => acc + countLeaves(child), 0)
 }

@@ -2,8 +2,6 @@ import type { ConductorTask, ConductorTaskLog } from '@/lib/api'
 
 // ── Types ──
 export type StatusFilter = 'all' | 'pending' | 'assigned' | 'accepted' | 'in_progress' | 'review' | 'completed' | 'failed' | 'cancelled'
-export type ViewMode = 'list' | 'pipeline'
-
 export interface TaskTreeNode {
   task: ConductorTask
   children: TaskTreeNode[]
@@ -285,6 +283,67 @@ export function getCapColor(cap: string): string {
   if (['design'].includes(cap)) return 'capDesign'
   if (['security'].includes(cap)) return 'capSecurity'
   return ''
+}
+
+/** Get all unique participating agents in a pipeline tree */
+export function getParticipatingAgents(node: TaskTreeNode): { agentId: string; role: 'creator' | 'assignee' | 'completer' }[] {
+  const seen = new Map<string, 'creator' | 'assignee' | 'completer'>()
+  function walk(n: TaskTreeNode) {
+    if (n.task.created_by_agent && !seen.has(n.task.created_by_agent)) {
+      seen.set(n.task.created_by_agent, 'creator')
+    }
+    if (n.task.assigned_to_agent) {
+      seen.set(n.task.assigned_to_agent, 'assignee')
+    }
+    if (n.task.completed_by) {
+      seen.set(n.task.completed_by, 'completer')
+    }
+    for (const child of n.children) walk(child)
+  }
+  walk(node)
+  return Array.from(seen.entries()).map(([agentId, role]) => ({ agentId, role }))
+}
+
+/** Find the currently active (in_progress) subtask with its agent */
+export function getActiveSubtask(node: TaskTreeNode): { title: string; agent: string | null } | null {
+  function walk(n: TaskTreeNode): { title: string; agent: string | null } | null {
+    if (n.task.status === 'in_progress' || n.task.status === 'analyzing' || n.task.status === 'accepted') {
+      return { title: n.task.title, agent: n.task.assigned_to_agent ?? null }
+    }
+    for (const child of n.children) {
+      const found = walk(child)
+      if (found) return found
+    }
+    return null
+  }
+  // Check children first, then root
+  for (const child of node.children) {
+    const found = walk(child)
+    if (found) return found
+  }
+  if (node.task.status === 'in_progress' || node.task.status === 'analyzing' || node.task.status === 'accepted') {
+    return { title: node.task.title, agent: node.task.assigned_to_agent ?? null }
+  }
+  return null
+}
+
+/** Calculate pipeline completion progress */
+export function getPipelineProgress(node: TaskTreeNode): { completed: number; total: number; percent: number; failed: number } {
+  let completed = 0
+  let total = 0
+  let failed = 0
+  function walk(n: TaskTreeNode) {
+    // Only count non-root tasks as subtasks
+    if (n.depth > 0) {
+      total++
+      if (n.task.status === 'completed') completed++
+      if (n.task.status === 'failed') failed++
+    }
+    for (const child of n.children) walk(child)
+  }
+  walk(node)
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0
+  return { completed, total, percent, failed }
 }
 
 // Re-export for convenient imports
