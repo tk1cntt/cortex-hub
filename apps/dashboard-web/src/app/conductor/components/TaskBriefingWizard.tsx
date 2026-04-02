@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   type AcceptanceCriterion,
   type ImageAttachment,
@@ -57,8 +57,10 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
   const [leadAgent, setLeadAgent] = useState(resume?.task.assigned_to_agent ?? '')
 
   // ── Step 3: Strategy Review ──
-  const [analyzing, setAnalyzing] = useState(false)
-  const [strategy, setStrategy] = useState<TaskStrategy | null>(resume?.strategy ?? null)
+  // If resuming an accepted/analyzing task (no strategy yet), start in analyzing mode
+  const resumeIsAnalyzing = resume && !resume.strategy
+  const [analyzing, setAnalyzing] = useState(!!resumeIsAnalyzing)
+  const [strategy, setStrategy] = useState<TaskStrategy | null>(resume?.strategy && resume.strategy.summary ? resume.strategy : null)
   const [createdTask, setCreatedTask] = useState<ConductorTask | null>(resume?.task ?? null)
   const [progressMessages, setProgressMessages] = useState<string[]>([])
   const [analysisError, setAnalysisError] = useState<string | null>(null)
@@ -72,6 +74,30 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
 
   // Ref to abort polling on unmount/retry
   const pollAbortRef = useRef<AbortController | null>(null)
+
+  // Auto-start polling when resuming an accepted/analyzing task
+  useEffect(() => {
+    if (!resumeIsAnalyzing || !resume?.task.id) return
+    const taskId = resume.task.id
+
+    const startPoll = async () => {
+      const result = await pollForStrategy(taskId)
+      if (result?.type === 'strategy') {
+        setStrategy(result.strategy)
+        setAnalyzing(false)
+      } else if (result?.type === 'completed') {
+        setCreatedTaskIds([taskId])
+        onCreated()
+        setStep(4)
+      } else if (result?.type === 'error') {
+        setAnalysisError(result.message)
+        setAnalyzing(false)
+      }
+    }
+    startPoll()
+
+    return () => { pollAbortRef.current?.abort() }
+  }, []) // eslint-disable-line
 
   // ── Image paste handler ──
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
