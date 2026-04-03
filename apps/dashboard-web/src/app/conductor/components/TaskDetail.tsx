@@ -13,12 +13,14 @@ export function TaskDetail({
   onClose,
   onCancel,
   onDelete,
+  onMarkDone,
   onNewTaskFromOutcome,
 }: {
   task: ConductorTask
   onClose: () => void
   onCancel: () => void
   onDelete: () => void
+  onMarkDone?: () => void
   onNewTaskFromOutcome?: (task: ConductorTask) => void
 }) {
   const isRunning = task.status === 'in_progress' || task.status === 'accepted' || task.status === 'analyzing'
@@ -227,14 +229,25 @@ export function TaskDetail({
 
           {/* Actions */}
           <div className={styles.detailActions}>
-            {(task.status === 'pending' || task.status === 'assigned' || task.status === 'accepted' || task.status === 'in_progress' || task.status === 'analyzing') && (
-              <button
-                className="btn btn-sm"
-                style={{ background: 'var(--status-warning)', color: 'white', border: 'none' }}
-                onClick={onCancel}
-              >
-                ⛔ Force Cancel
-              </button>
+            {(task.status === 'pending' || task.status === 'assigned' || task.status === 'accepted' || task.status === 'in_progress' || task.status === 'analyzing' || task.status === 'review') && (
+              <>
+                {onMarkDone && (
+                  <button
+                    className="btn btn-sm"
+                    style={{ background: 'var(--status-healthy, #10b981)', color: 'white', border: 'none' }}
+                    onClick={onMarkDone}
+                  >
+                    ✓ Mark Done
+                  </button>
+                )}
+                <button
+                  className="btn btn-sm"
+                  style={{ background: 'var(--status-warning)', color: 'white', border: 'none' }}
+                  onClick={onCancel}
+                >
+                  ⛔ Force Cancel
+                </button>
+              </>
             )}
             <button
               className="btn btn-secondary btn-sm"
