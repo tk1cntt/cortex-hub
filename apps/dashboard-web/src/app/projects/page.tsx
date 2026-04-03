@@ -12,25 +12,28 @@ import {
   type IndexStatus, type IndexJobSummary, type BranchIndexStatus,
   getProjectState, type ProjectStateResponse,
 } from '@/lib/api'
+import { Link, Cloud, Monitor, Clock, Search, Brain, CheckCircle, XCircle, AlertTriangle, RefreshCw, Rocket, Puzzle, Plug, BookMarked, ClipboardList, BarChart3, Bot, Repeat, Timer, Play, type LucideIcon, ICON_INLINE } from '@/lib/icons'
 import styles from './page.module.css'
 
-const GIT_PROVIDERS = [
-  { value: 'github', label: 'GitHub', icon: '🐙' },
-  { value: 'gitlab', label: 'GitLab', icon: '🦊' },
-  { value: 'bitbucket', label: 'Bitbucket', icon: '🪣' },
-  { value: 'azure', label: 'Azure', icon: '☁️' },
-  { value: 'local', label: 'Local', icon: '💻' },
+const GIT_PROVIDERS: { value: string; label: string; icon: LucideIcon }[] = [
+  { value: 'github', label: 'GitHub', icon: Link },
+  { value: 'gitlab', label: 'GitLab', icon: Link },
+  { value: 'bitbucket', label: 'Bitbucket', icon: Link },
+  { value: 'azure', label: 'Azure', icon: Cloud },
+  { value: 'local', label: 'Local', icon: Monitor },
 ]
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  pending:   { label: 'Pending',   color: '#888', icon: '⏳' },
-  cloning:   { label: 'Cloning',   color: '#f5a623', icon: '📥' },
-  analyzing: { label: 'Analyzing', color: '#4a90d9', icon: '🔍' },
-  ingesting: { label: 'Ingesting', color: '#9b59b6', icon: '🧠' },
-  done:      { label: 'Done',      color: '#27ae60', icon: '✅' },
-  error:     { label: 'Error',     color: '#e74c3c', icon: '❌' },
-  none:      { label: 'Not indexed', color: '#666', icon: '—' },
+const STATUS_CONFIG: Record<string, { label: string; color: string; icon: LucideIcon }> = {
+  pending:   { label: 'Pending',   color: '#888', icon: Clock },
+  cloning:   { label: 'Cloning',   color: '#f5a623', icon: Clock },
+  analyzing: { label: 'Analyzing', color: '#4a90d9', icon: Search },
+  ingesting: { label: 'Ingesting', color: '#9b59b6', icon: Brain },
+  done:      { label: 'Done',      color: '#27ae60', icon: CheckCircle },
+  error:     { label: 'Error',     color: '#e74c3c', icon: XCircle },
+  none:      { label: 'Not indexed', color: '#666', icon: Clock },
 }
+
+function Ico({ icon: Icon }: { icon: LucideIcon }) { return <Icon {...ICON_INLINE} /> }
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now()
@@ -61,7 +64,7 @@ function ProjectStatePanel({ projectId }: { projectId: string }) {
 
   return (
     <div className={`card ${styles.stateCard}`}>
-      <h3 className={styles.infoTitle}>🧠 Project Memory State</h3>
+      <h3 className={styles.infoTitle}><Brain {...ICON_INLINE} /> Project Memory State</h3>
       {memories.length === 0 ? (
         <p className={styles.emptyHint}>No recent progress memories found for this project.</p>
       ) : (
@@ -175,7 +178,7 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
     }
   }, [projectId, mutateStatus, mutateHistory])
 
-  const statusInfo = STATUS_CONFIG[status?.status ?? 'none'] ?? { label: 'Unknown', color: '#666', icon: '—' }
+  const statusInfo = STATUS_CONFIG[status?.status ?? 'none'] ?? { label: 'Unknown', color: '#666', icon: Clock }
   const history = historyData?.jobs ?? []
   const branches = branchesData?.branches ?? []
   const indexedBranches = branchIndexData?.branches ?? []
@@ -199,10 +202,10 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
     <div className={`card ${styles.indexingCard}`}>
       <div className={styles.indexingHeader}>
         <h3 className={styles.infoTitle}>
-          🚀 Code Indexing
+          <Rocket {...ICON_INLINE} /> Code Indexing
         </h3>
         <span className={styles.statusBadge} style={{ background: statusInfo.color }}>
-          {statusInfo.icon} {statusInfo.label}
+          <Ico icon={statusInfo.icon} /> {statusInfo.label}
         </span>
       </div>
 
@@ -219,13 +222,13 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
             <span className={styles.progressText}>{status.progress ?? 0}%</span>
           </div>
           <div className={styles.indexingMeta}>
-            {status.branch && <span>📌 Branch: <strong>{status.branch}</strong></span>}
-            {(status.symbolsFound ?? 0) > 0 && <span>🧩 {status.symbolsFound} symbols</span>}
-            {(status.totalFiles ?? 0) > 0 && <span>📄 {status.totalFiles} files</span>}
+            {status.branch && <span>Branch: <strong>{status.branch}</strong></span>}
+            {(status.symbolsFound ?? 0) > 0 && <span><Puzzle {...ICON_INLINE} /> {status.symbolsFound} symbols</span>}
+            {(status.totalFiles ?? 0) > 0 && <span>{status.totalFiles} files</span>}
           </div>
           {status.error && (
             <div className={styles.indexingError}>
-              ⚠️ {status.error}
+              <AlertTriangle {...ICON_INLINE} /> {status.error}
             </div>
           )}
           {status.log && (
@@ -276,7 +279,7 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
               disabled={branchesLoading || isActive}
               title="Refresh branches from remote"
             >
-              {branchesLoading ? '⏳' : '🔄'}
+              {branchesLoading ? <Clock {...ICON_INLINE} /> : <RefreshCw {...ICON_INLINE} />}
             </button>
           </div>
           {isActive ? (
@@ -294,7 +297,7 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
               onClick={handleStart}
               disabled={starting || !branch.trim()}
             >
-              {starting ? 'Starting...' : '🚀 Start Indexing'}
+              {starting ? 'Starting...' : <><Rocket {...ICON_INLINE} /> Start Indexing</>}
             </button>
           )}
         </div>
@@ -343,7 +346,7 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
           <h4 className={styles.historyTitle}>Indexed Branches</h4>
           <div className={styles.branchStatusGrid}>
             {indexedBranches.map((b: BranchIndexStatus) => {
-              const bStatus = STATUS_CONFIG[b.status] ?? { label: b.status, color: '#666', icon: '?' }
+              const bStatus = STATUS_CONFIG[b.status] ?? { label: b.status, color: '#666', icon: Clock }
               const mem9Status = b.mem9_status ?? 'pending'
               const mem9Done = mem9Status === 'done' && (b.mem9_chunks ?? 0) > 0
               const mem9Running = mem9Status === 'embedding'
@@ -357,16 +360,16 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
                   </div>
                   {/* GitNexus row */}
                   <div className={styles.branchStatusMeta}>
-                    <span>{bStatus.icon} {bStatus.label}</span>
+                    <span><Ico icon={bStatus.icon} /> {bStatus.label}</span>
                     <span>{b.symbols_found} symbols</span>
                     <span>{b.total_files} files</span>
                   </div>
                   {/* mem9 row */}
                   <div className={styles.branchMem9Row}>
-                    <span className={styles.branchMem9Label}>🧠 mem9:</span>
+                    <span className={styles.branchMem9Label}><Brain {...ICON_INLINE} /> mem9:</span>
                     {mem9Done && (
                       <span className={styles.branchMem9Badge} data-status="done">
-                        ✅ {b.mem9_chunks} chunks
+                        <CheckCircle {...ICON_INLINE} /> {b.mem9_chunks} chunks
                       </span>
                     )}
                     {mem9Running && (
@@ -381,14 +384,14 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
                           <span className={styles.mem9ProgressText}>
                             {(b.mem9_progress ?? 0) > 0
                               ? `${b.mem9_progress}% · ${b.mem9_chunks}/${b.mem9_total_chunks}`
-                              : '⏳ Starting...'}
+                              : <><Clock {...ICON_INLINE} /> Starting...</>}
                           </span>
                         </span>
                       </span>
                     )}
                     {mem9Status === 'error' && (
                       <span className={styles.branchMem9Badge} data-status="error">
-                        ❌ Error
+                        <XCircle {...ICON_INLINE} /> Error
                       </span>
                     )}
                     {mem9Pending && (
@@ -402,7 +405,7 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
                         onClick={() => handleRunMem9(b.branch)}
                         disabled={embeddingBranch === b.branch}
                       >
-                        {embeddingBranch === b.branch ? '⏳' : mem9Status === 'error' ? '🔄' : '▶'}
+                        {embeddingBranch === b.branch ? <Clock {...ICON_INLINE} /> : mem9Status === 'error' ? <RefreshCw {...ICON_INLINE} /> : <Play {...ICON_INLINE} />}
                       </button>
                     )}
                     {gnDone && mem9Done && (
@@ -412,24 +415,24 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
                         disabled={embeddingBranch === b.branch}
                         title="Re-run mem9 embedding"
                       >
-                        🔄
+                        <RefreshCw {...ICON_INLINE} />
                       </button>
                     )}
                   </div>
                   {/* Knowledge docs row */}
                   <div className={styles.branchMem9Row}>
-                    <span className={styles.branchMem9Label}>📚 knowledge:</span>
+                    <span className={styles.branchMem9Label}><BookMarked {...ICON_INLINE} /> knowledge:</span>
                     {(b.docs_knowledge_count ?? 0) > 0 ? (
                       <span className={styles.branchMem9Badge} data-status="done">
-                        ✅ {b.docs_knowledge_count} items
+                        <CheckCircle {...ICON_INLINE} /> {b.docs_knowledge_count} items
                       </span>
                     ) : b.docs_knowledge_status === 'processing' ? (
                       <span className={styles.branchMem9Badge} data-status="embedding">
-                        ⏳ Building...
+                        <Clock {...ICON_INLINE} /> Building...
                       </span>
                     ) : b.docs_knowledge_status === 'error' ? (
                       <span className={styles.branchMem9Badge} data-status="error">
-                        ❌ Error
+                        <XCircle {...ICON_INLINE} /> Error
                       </span>
                     ) : (
                       <span className={styles.branchMem9Badge} data-status="pending">
@@ -468,14 +471,14 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
               <span>Time</span>
             </div>
             {history.map((job: IndexJobSummary) => {
-              const jobStatus = STATUS_CONFIG[job.status] ?? { label: 'Unknown', color: '#666', icon: '—' }
+              const jobStatus = STATUS_CONFIG[job.status] ?? { label: 'Unknown', color: '#666', icon: Clock }
               const ts = job.completed_at ?? job.started_at ?? job.created_at
-              const triggerIcon = job.triggered_by === 'push' ? '🔄' : job.triggered_by === 'reindex' ? '🔁' : job.triggered_by === 'schedule' ? '⏰' : '▶️'
+              const TriggerIcon = job.triggered_by === 'push' ? RefreshCw : job.triggered_by === 'reindex' ? Repeat : job.triggered_by === 'schedule' ? Timer : Play
               return (
                 <div key={job.id} className={styles.historyRow}>
                   <span className={styles.historyBranch}>{job.branch}</span>
                   <span className={styles.historyStatus} style={{ color: jobStatus.color }}>
-                    {jobStatus.icon} {jobStatus.label}
+                    <Ico icon={jobStatus.icon} /> {jobStatus.label}
                   </span>
                   <span className={styles.historyCommit} title={job.commit_message ?? undefined}>
                     {job.commit_hash ? (
@@ -492,7 +495,7 @@ function IndexingPanel({ projectId, hasGitUrl }: { projectId: string; hasGitUrl:
                   <span>{job.symbols_found}</span>
                   <span>{job.total_files}</span>
                   <span className={styles.historyDate} title={new Date(ts).toLocaleString()}>
-                    <span className={styles.triggerIcon}>{triggerIcon}</span>
+                    <span className={styles.triggerIcon}><TriggerIcon {...ICON_INLINE} /></span>
                     {formatRelativeTime(ts)}
                   </span>
                 </div>
@@ -570,7 +573,7 @@ function ProjectContent() {
     try {
       const result = await buildDocsKnowledge(projectId)
       if (result.success) {
-        setDocsResult({ success: true, message: `📚 ${result.docsProcessed}/${result.docsFound} docs → ${result.chunksCreated} knowledge chunks` })
+        setDocsResult({ success: true, message: `${result.docsProcessed}/${result.docsFound} docs → ${result.chunksCreated} knowledge chunks` })
       } else {
         setDocsResult({ success: false, error: result.error ?? 'Unknown error' })
       }
@@ -598,7 +601,7 @@ function ProjectContent() {
   if (!projectId) {
     return (
       <div className={styles.errorBanner}>
-        ⚠️ No project ID specified. Navigate from the Organizations page.
+        <AlertTriangle {...ICON_INLINE} /> No project ID specified. Navigate from the Organizations page.
       </div>
     )
   }
@@ -610,7 +613,7 @@ function ProjectContent() {
   if (error || !project) {
     return (
       <div className={styles.errorBanner}>
-        ⚠️ Failed to load project. Make sure the backend is running.
+        <AlertTriangle {...ICON_INLINE} /> Failed to load project. Make sure the backend is running.
       </div>
     )
   }
@@ -629,7 +632,7 @@ function ProjectContent() {
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>📋</span>
+          <span className={styles.statIcon}><ClipboardList {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>{stats.queryLogs}</div>
             <div className={styles.statLabel}>Queries</div>
@@ -643,7 +646,7 @@ function ProjectContent() {
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>🧩</span>
+          <span className={styles.statIcon}><Puzzle {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>{project.indexed_symbols}</div>
             <div className={styles.statLabel}>Indexed Symbols</div>
@@ -675,7 +678,7 @@ function ProjectContent() {
               <div className={styles.gitRow}>
                 <span className={styles.gitLabel}>Provider</span>
                 <span className={styles.gitValue}>
-                  {GIT_PROVIDERS.find((p) => p.value === project.git_provider)?.icon ?? '🔗'}{' '}
+                  {(() => { const found = GIT_PROVIDERS.find((p) => p.value === project.git_provider); return found ? <Ico icon={found.icon} /> : <Link {...ICON_INLINE} /> })()}{' '}
                   {GIT_PROVIDERS.find((p) => p.value === project.git_provider)?.label ?? project.git_provider}
                 </span>
               </div>
@@ -704,7 +707,7 @@ function ProjectContent() {
                   onClick={handleTestConnection}
                   disabled={testing}
                 >
-                  {testing ? '⏳ Testing...' : '🔌 Test Connection'}
+                  {testing ? <><Clock {...ICON_INLINE} /> Testing...</> : <><Plug {...ICON_INLINE} /> Test Connection</>}
                 </button>
                 <button
                   className="btn btn-secondary btn-sm"
@@ -712,23 +715,23 @@ function ProjectContent() {
                   disabled={buildingDocs}
                   title="Scan repo docs and build knowledge items"
                 >
-                  {buildingDocs ? '⏳ Building...' : '📚 Build Knowledge'}
+                  {buildingDocs ? <><Clock {...ICON_INLINE} /> Building...</> : <><BookMarked {...ICON_INLINE} /> Build Knowledge</>}
                 </button>
               </div>
               {testResult && (
                 <div className={styles.testResult} data-success={testResult.success}>
-                  {testResult.success ? '✅' : '❌'} {testResult.message ?? testResult.error}
+                  {testResult.success ? <CheckCircle {...ICON_INLINE} /> : <XCircle {...ICON_INLINE} />} {testResult.message ?? testResult.error}
                 </div>
               )}
               {docsResult && (
                 <div className={styles.testResult} data-success={docsResult.success}>
-                  {docsResult.success ? '✅' : '❌'} {docsResult.message ?? docsResult.error}
+                  {docsResult.success ? <CheckCircle {...ICON_INLINE} /> : <XCircle {...ICON_INLINE} />} {docsResult.message ?? docsResult.error}
                 </div>
               )}
             </div>
           ) : (
             <div className={styles.emptyGit}>
-              <span className={styles.emptyGitIcon}>🔗</span>
+              <span className={styles.emptyGitIcon}><Link {...ICON_INLINE} /></span>
               <p>No git repository connected.</p>
               <p className={styles.emptyGitHint}>
                 Connect a repository to enable code indexing and symbol tracking.
@@ -790,7 +793,7 @@ function ProjectContent() {
               const isQuery = item.type === 'query'
               return (
                 <div key={i} className={styles.activityRow}>
-                  <span className={styles.activityIcon}>{isQuery ? '🔍' : '🤖'}</span>
+                  <span className={styles.activityIcon}>{isQuery ? <Search {...ICON_INLINE} /> : <Bot {...ICON_INLINE} />}</span>
                   <div className={styles.activityInfo}>
                     <span className={styles.activityDetail}>
                       {isQuery ? (item.detail as string) || 'query' : (item.detail as string) || 'session'}
@@ -809,7 +812,7 @@ function ProjectContent() {
           </div>
         ) : (
           <div className={styles.emptyActivity}>
-            <span className={styles.emptyActivityIcon}>📊</span>
+            <span className={styles.emptyActivityIcon}><BarChart3 {...ICON_INLINE} /></span>
             <p>Activity data will appear here once agents start working in this project scope.</p>
             <p className={styles.emptyActivityHint}>
               Assign this project ID in your MCP config: <code>{project.id}</code>
@@ -832,7 +835,7 @@ function ProjectContent() {
                     className={`${styles.providerBtn} ${gitProvider === p.value ? styles.providerActive : ''}`}
                     onClick={() => setGitProvider(p.value)}
                   >
-                    <span>{p.icon}</span>
+                    <span><Ico icon={p.icon} /></span>
                     <span>{p.label}</span>
                   </button>
                 ))}

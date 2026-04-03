@@ -5,6 +5,17 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
 import { config } from '@/lib/config'
 import styles from './page.module.css'
+import {
+  Bot, Sparkles, Puzzle, Link, Globe, Zap, Search, Waves, Rocket, Package,
+  CheckCircle, XCircle, MessageSquare, Brain, FlaskConical, Trash2,
+  Dna, Hourglass, Lock, Pause, Play,
+  type LucideIcon, ICON_INLINE,
+} from '@/lib/icons'
+
+/** Tiny helper — renders a LucideIcon inline at 16 px */
+function Ico({ icon: Icon }: { icon: LucideIcon }) {
+  return <Icon {...ICON_INLINE} />
+}
 
 // ── Types ──
 interface ProviderAccount {
@@ -47,7 +58,7 @@ interface TestKeyResult {
 interface ProviderTypeDef {
   id: string
   label: string
-  icon: string
+  icon: LucideIcon
   authType: 'oauth' | 'api_key'
   defaultBase: string
   oauthProvider?: string  // for OAuth types: CLIProxy provider name
@@ -59,7 +70,7 @@ const PROVIDER_TYPES: ProviderTypeDef[] = [
   {
     id: 'chatgpt_oauth',
     label: 'ChatGPT Subscription (OAuth)',
-    icon: '🤖',
+    icon: Bot,
     authType: 'oauth',
     defaultBase: 'http://llm-proxy:8317/v1',
     oauthProvider: 'openai',
@@ -68,7 +79,7 @@ const PROVIDER_TYPES: ProviderTypeDef[] = [
   {
     id: 'gemini_oauth',
     label: 'Google Gemini (OAuth)',
-    icon: '✨',
+    icon: Sparkles,
     authType: 'oauth',
     defaultBase: 'http://llm-proxy:8317/v1',
     oauthProvider: 'gemini',
@@ -77,7 +88,7 @@ const PROVIDER_TYPES: ProviderTypeDef[] = [
   {
     id: 'anthropic_oauth',
     label: 'Anthropic Claude (OAuth)',
-    icon: '🧩',
+    icon: Puzzle,
     authType: 'oauth',
     defaultBase: 'http://llm-proxy:8317/v1',
     oauthProvider: 'anthropic',
@@ -87,69 +98,69 @@ const PROVIDER_TYPES: ProviderTypeDef[] = [
   {
     id: 'openai_compat',
     label: 'OpenAI Compatible',
-    icon: '🔗',
+    icon: Link,
     authType: 'api_key',
     defaultBase: 'https://api.openai.com/v1',
   },
   {
     id: 'gemini',
     label: 'Google Gemini (API Key)',
-    icon: '✨',
+    icon: Sparkles,
     authType: 'api_key',
     defaultBase: 'https://generativelanguage.googleapis.com/v1beta',
   },
   {
     id: 'openrouter',
     label: 'OpenRouter',
-    icon: '🌐',
+    icon: Globe,
     authType: 'api_key',
     defaultBase: 'https://openrouter.ai/api/v1',
   },
   {
     id: 'groq',
     label: 'Groq',
-    icon: '⚡',
+    icon: Zap,
     authType: 'api_key',
     defaultBase: 'https://api.groq.com/openai/v1',
   },
   {
     id: 'deepseek',
     label: 'DeepSeek',
-    icon: '🔍',
+    icon: Search,
     authType: 'api_key',
     defaultBase: 'https://api.deepseek.com/v1',
   },
   {
     id: 'mistral',
     label: 'Mistral AI',
-    icon: '🌊',
+    icon: Waves,
     authType: 'api_key',
     defaultBase: 'https://api.mistral.ai/v1',
   },
   {
     id: 'xai',
     label: 'xAI (Grok)',
-    icon: '🚀',
+    icon: Rocket,
     authType: 'api_key',
     defaultBase: 'https://api.x.ai/v1',
   },
   {
     id: 'cohere',
     label: 'Cohere',
-    icon: '🧬',
+    icon: Dna,
     authType: 'api_key',
     defaultBase: 'https://api.cohere.com/v1',
   },
   {
     id: 'ollama',
     label: 'Ollama (Local)',
-    icon: '🦙',
+    icon: Link,
     authType: 'api_key',
     defaultBase: 'http://localhost:11434/v1',
   },
 ]
 
-const TYPE_ICONS: Record<string, string> = Object.fromEntries(PROVIDER_TYPES.map((t) => [t.id, t.icon]))
+const TYPE_ICONS: Record<string, LucideIcon> = Object.fromEntries(PROVIDER_TYPES.map((t) => [t.id, t.icon]))
 const TYPE_LABELS: Record<string, string> = Object.fromEntries(PROVIDER_TYPES.map((t) => [t.id, t.label]))
 
 // ── Fetcher ──
@@ -203,8 +214,8 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
   const [saving, setSaving] = useState<string | null>(null)
 
   const purposes = [
-    { key: 'chat', label: '💬 Chat Model', desc: 'Used for conversations, fact extraction, memory dedup' },
-    { key: 'embedding', label: '🧠 Embedding Model', desc: 'Used for vector search, semantic similarity' },
+    { key: 'chat', label: 'Chat Model', icon: MessageSquare, desc: 'Used for conversations, fact extraction, memory dedup' },
+    { key: 'embedding', label: 'Embedding Model', icon: Brain, desc: 'Used for vector search, semantic similarity' },
   ]
 
   // Get current model for a purpose
@@ -213,7 +224,7 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
     return entry?.chain?.[0] ?? null
   }
 
-  // Build options: all enabled accounts + their cached models  
+  // Build options: all enabled accounts + their cached models
   const enabledAccounts = accounts.filter((a) => a.status === 'enabled')
 
   const handleChange = async (purpose: string, accountId: string, model: string) => {
@@ -235,18 +246,18 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
 
   return (
     <div className={styles.activeConfigGrid}>
-      {purposes.map(({ key, label, desc }) => {
+      {purposes.map(({ key, label, icon: PurposeIcon, desc }) => {
         const active = getActive(key)
         return (
           <div key={key} className={styles.activeCard}>
             <div className={styles.activeCardHeader}>
-              <span className={styles.activeCardTitle}>{label}</span>
+              <span className={styles.activeCardTitle}><PurposeIcon {...ICON_INLINE} /> {label}</span>
               {saving === key && <span style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>saving...</span>}
             </div>
             <p className={styles.activeCardDesc}>{desc}</p>
             {active ? (
               <div className={styles.activeModel}>
-                <span className={styles.activeModelIcon}>{TYPE_ICONS[enabledAccounts.find(a => a.id === active.accountId)?.type ?? ''] ?? '📦'}</span>
+                <span className={styles.activeModelIcon}><Ico icon={TYPE_ICONS[enabledAccounts.find(a => a.id === active.accountId)?.type ?? ''] ?? Package} /></span>
                 <div>
                   <div className={styles.activeModelName}>{active.model}</div>
                   <div className={styles.activeModelProvider}>{active.accountName ?? 'Unknown'}</div>
@@ -273,13 +284,13 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
                   // Show all models if no match — user can pick whatever
                   return models.map((m) => (
                     <option key={`${acc.id}|${m}`} value={`${acc.id}|${m}`}>
-                      {TYPE_ICONS[acc.type] ?? '📦'} {acc.name} → {m}
+                      {acc.name} &rarr; {m}
                     </option>
                   ))
                 }
                 return (relevantModels.length > 0 ? relevantModels : models).map((m) => (
                   <option key={`${acc.id}|${m}`} value={`${acc.id}|${m}`}>
-                    {TYPE_ICONS[acc.type] ?? '📦'} {acc.name} → {m}
+                    {acc.name} &rarr; {m}
                   </option>
                 ))
               })}
@@ -443,9 +454,9 @@ function AddProviderDialog({
       <div className={styles.dialog}>
         <h3 className={styles.dialogTitle}>
           {step === 'config' && 'Add Provider'}
-          {step === 'testing' && '⏳ Testing Connection...'}
-          {step === 'models' && '✅ Connected — Select Models'}
-          {step === 'saving' && '⏳ Saving...'}
+          {step === 'testing' && <><Ico icon={Hourglass} /> Testing Connection...</>}
+          {step === 'models' && <><Ico icon={CheckCircle} /> Connected — Select Models</>}
+          {step === 'saving' && <><Ico icon={Hourglass} /> Saving...</>}
         </h3>
 
         {step === 'config' && (
@@ -467,12 +478,12 @@ function AddProviderDialog({
               >
                 <optgroup label="OAuth (CLIProxy)">
                   {PROVIDER_TYPES.filter((t) => t.authType === 'oauth').map((t) => (
-                    <option key={t.id} value={t.id}>{t.icon} {t.label}</option>
+                    <option key={t.id} value={t.id}>{t.label}</option>
                   ))}
                 </optgroup>
                 <optgroup label="API Key">
                   {PROVIDER_TYPES.filter((t) => t.authType === 'api_key').map((t) => (
-                    <option key={t.id} value={t.id}>{t.icon} {t.label}</option>
+                    <option key={t.id} value={t.id}>{t.label}</option>
                   ))}
                 </optgroup>
               </select>
@@ -504,11 +515,11 @@ function AddProviderDialog({
                     onClick={handleOAuthStart}
                     disabled={step === 'testing'}
                   >
-                    🔐 Sign in with {selectedType.label.split(' (')[0]}
+                    <Ico icon={Lock} /> Sign in with {selectedType.label.split(' (')[0]}
                   </button>
                 ) : (
                   <div style={{ padding: '0.5rem', borderRadius: '8px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', fontSize: '0.8rem', color: 'var(--accent)', marginBottom: '0.75rem', textAlign: 'center' }}>
-                    {oauthChecking ? '⏳ Waiting for OAuth completion...' : '✅ OAuth window opened. Complete login, then click Test.'}
+                    {oauthChecking ? <><Ico icon={Hourglass} /> Waiting for OAuth completion...</> : <><Ico icon={CheckCircle} /> OAuth window opened. Complete login, then click Test.</>}
                   </div>
                 )}
               </>
@@ -542,7 +553,7 @@ function AddProviderDialog({
 
             {testError && (
               <div style={{ padding: '0.5rem', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', fontSize: '0.8rem', color: '#ef4444', marginBottom: '0.75rem' }}>
-                ❌ {testError}
+                <Ico icon={XCircle} /> {testError}
               </div>
             )}
 
@@ -553,7 +564,7 @@ function AddProviderDialog({
                 disabled={!name.trim() || step === 'testing' || (!isOAuth && !apiKey.trim())}
                 onClick={handleTestKey}
               >
-                {step === 'testing' ? '⏳ Testing...' : '🧪 Test Connection'}
+                {step === 'testing' ? <><Ico icon={Hourglass} /> Testing...</> : <><Ico icon={FlaskConical} /> Test Connection</>}
               </button>
             </div>
           </>
@@ -563,12 +574,12 @@ function AddProviderDialog({
         {step === 'models' && testResult && (
           <>
             <div style={{ padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', fontSize: '0.8rem', color: '#22c55e', marginBottom: '1rem' }}>
-              ✅ Connected — {testResult.totalModels} models found ({testResult.latency}ms)
+              <Ico icon={CheckCircle} /> Connected — {testResult.totalModels} models found ({testResult.latency}ms)
             </div>
 
             {testResult.chatModels && testResult.chatModels.length > 0 && (
               <div className={styles.dialogField}>
-                <label className={styles.dialogLabel}>💬 Chat Model</label>
+                <label className={styles.dialogLabel}><Ico icon={MessageSquare} /> Chat Model</label>
                 <select
                   className={styles.dialogSelect}
                   value={selectedChatModel}
@@ -583,7 +594,7 @@ function AddProviderDialog({
 
             {testResult.embedModels && testResult.embedModels.length > 0 && (
               <div className={styles.dialogField}>
-                <label className={styles.dialogLabel}>🧠 Embedding Model</label>
+                <label className={styles.dialogLabel}><Ico icon={Brain} /> Embedding Model</label>
                 <select
                   className={styles.dialogSelect}
                   value={selectedEmbedModel}
@@ -616,7 +627,7 @@ function AddProviderDialog({
 
         {step === 'saving' && (
           <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
-            ⏳ Saving provider...
+            <Ico icon={Hourglass} /> Saving provider...
           </div>
         )}
       </div>
@@ -651,10 +662,10 @@ export default function ProvidersPage() {
           method: 'DELETE',
           signal: AbortSignal.timeout(5000),
         })
-        showToast('success', `🗑️ Provider "${name}" removed`)
+        showToast('success', `Provider "${name}" removed`)
         mutate()
       } catch (err) {
-        showToast('error', `❌ ${String(err)}`)
+        showToast('error', String(err))
       }
     },
     [mutate, showToast]
@@ -673,13 +684,13 @@ export default function ProvidersPage() {
           const parts = []
           if (result.chatModels?.length) parts.push(`${result.chatModels.length} chat`)
           if (result.embedModels?.length) parts.push(`${result.embedModels.length} embed`)
-          showToast('success', `✅ Connected — ${parts.join(', ')} models`)
+          showToast('success', `Connected — ${parts.join(', ')} models`)
           mutate()
         } else {
-          showToast('error', `❌ ${result.error || 'Test failed'}`)
+          showToast('error', result.error || 'Test failed')
         }
       } catch (err) {
-        showToast('error', `❌ ${String(err)}`)
+        showToast('error', String(err))
       } finally {
         setTestingId(null)
       }
@@ -699,7 +710,7 @@ export default function ProvidersPage() {
         })
         mutate()
       } catch (err) {
-        showToast('error', `❌ ${String(err)}`)
+        showToast('error', String(err))
       }
     },
     [mutate, showToast]
@@ -717,14 +728,14 @@ export default function ProvidersPage() {
           style={{ borderColor: toast.type === 'success' ? 'var(--success)' : 'var(--danger)' }}
         >
           <span>{toast.message}</span>
-          <button className={styles.toastClose} onClick={() => setToast(null)}>×</button>
+          <button className={styles.toastClose} onClick={() => setToast(null)}>&times;</button>
         </div>
       )}
 
       {/* Header */}
       <div className={styles.headerRow}>
         <div className={styles.searchWrapper}>
-          <span className={styles.searchIcon}>🔍</span>
+          <span className={styles.searchIcon}><Ico icon={Search} /></span>
           <input
             className={styles.searchBar}
             placeholder="Search providers..."
@@ -780,7 +791,7 @@ export default function ProvidersPage() {
               <tr>
                 <td colSpan={7}>
                   <div className={styles.emptyState}>
-                    <div className={styles.emptyIcon}>📦</div>
+                    <div className={styles.emptyIcon}><Ico icon={Package} /></div>
                     <p className={styles.emptyText}>No providers configured yet</p>
                     <button className="btn btn-primary btn-sm" onClick={() => setShowAddDialog(true)}>
                       + Add your first provider
@@ -793,7 +804,7 @@ export default function ProvidersPage() {
                 <tr key={acc.id}>
                   <td>
                     <div className={styles.nameCell}>
-                      <span className={styles.nameIcon}>{TYPE_ICONS[acc.type] || '📦'}</span>
+                      <span className={styles.nameIcon}><Ico icon={TYPE_ICONS[acc.type] || Package} /></span>
                       <div>
                         <div>{acc.name}</div>
                         {acc.auth_type === 'oauth' && (
@@ -812,7 +823,7 @@ export default function ProvidersPage() {
                   </td>
                   <td>
                     <span className={styles.apiKeyMask}>
-                      {acc.auth_type === 'oauth' ? '🔐 OAuth' : acc.api_key ? acc.api_key : '—'}
+                      {acc.auth_type === 'oauth' ? <><Ico icon={Lock} /> OAuth</> : acc.api_key ? acc.api_key : '—'}
                     </span>
                   </td>
                   <td>
@@ -833,21 +844,21 @@ export default function ProvidersPage() {
                         onClick={() => handleTest(acc.id)}
                         disabled={testingId === acc.id}
                       >
-                        {testingId === acc.id ? '⏳' : '🧪'}
+                        {testingId === acc.id ? <Ico icon={Hourglass} /> : <Ico icon={FlaskConical} />}
                       </button>
                       <button
                         className={styles.iconBtn}
                         title={acc.status === 'enabled' ? 'Disable' : 'Enable'}
                         onClick={() => handleToggleStatus(acc.id, acc.status)}
                       >
-                        {acc.status === 'enabled' ? '⏸' : '▶'}
+                        {acc.status === 'enabled' ? <Ico icon={Pause} /> : <Ico icon={Play} />}
                       </button>
                       <button
                         className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
                         title="Delete"
                         onClick={() => handleDelete(acc.id, acc.name)}
                       >
-                        🗑
+                        <Ico icon={Trash2} />
                       </button>
                     </div>
                   </td>
@@ -861,8 +872,8 @@ export default function ProvidersPage() {
             <span>{pagination.total} items</span>
             <div className={styles.pagination}>
               <span>Page {pagination.page} of {pagination.totalPages}</span>
-              <button className={styles.pageBtn} disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</button>
-              <button className={styles.pageBtn} disabled={page >= pagination.totalPages} onClick={() => setPage(p => p + 1)}>›</button>
+              <button className={styles.pageBtn} disabled={page <= 1} onClick={() => setPage(p => p - 1)}>&lsaquo;</button>
+              <button className={styles.pageBtn} disabled={page >= pagination.totalPages} onClick={() => setPage(p => p + 1)}>&rsaquo;</button>
             </div>
           </div>
         )}
@@ -874,7 +885,7 @@ export default function ProvidersPage() {
           onClose={() => setShowAddDialog(false)}
           onSaved={() => {
             setShowAddDialog(false)
-            showToast('success', '✅ Provider added successfully')
+            showToast('success', 'Provider added successfully')
             mutate()
           }}
         />

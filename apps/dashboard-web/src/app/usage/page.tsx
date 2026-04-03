@@ -13,6 +13,7 @@ import {
   getToolStats,
 } from '@/lib/api'
 import { Tooltip } from '@/components/ui/Tooltip'
+import { AlertTriangle, Settings, Flame, Wrench, Bot, CheckCircle, BarChart3, Lightbulb, ICON_INLINE } from '@/lib/icons'
 import styles from './page.module.css'
 
 // ── Helpers ──
@@ -47,7 +48,7 @@ function BudgetAlert() {
     <>
       {hasAlerts && (
         <div className={styles.budgetAlert}>
-          <span>⚠️</span>
+          <span><AlertTriangle {...ICON_INLINE} /></span>
           <div>
             {budget.dailyAlert && (
               <p>Daily token usage at {formatNumber(budget.dailyUsed)}/{formatNumber(budget.daily_limit)} ({Math.round(budget.dailyUsed / budget.daily_limit * 100)}%)</p>
@@ -96,7 +97,7 @@ function BudgetAlert() {
           setMonthlyLimit(String(budget.monthly_limit || ''))
           setShowConfig(true)
         }}>
-          ⚙️ Budget Settings
+          <Settings {...ICON_INLINE} /> Budget Settings
         </button>
       </div>
 
@@ -130,39 +131,39 @@ function CortexSavingsSection() {
   return (
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
-        <h2 className={styles.sectionTitle}>💎 Cortex Tool Savings (7 days)</h2>
+        <h2 className={styles.sectionTitle}>Cortex Tool Savings (7 days)</h2>
       </div>
       <div className={styles.statsGrid}>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>💎</span>
+          <span className={styles.statIcon}><BarChart3 {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue} style={{ color: '#22c55e' }}>{formatNumber(summary.estimatedTokensSaved)}</div>
             <div className={styles.statLabel}>Tokens Saved</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>🔥</span>
+          <span className={styles.statIcon}><Flame {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue} style={{ color: '#ef4444' }}>{formatNumber(summary.totalComputeTokens || 0)}</div>
             <div className={styles.statLabel}>Compute Cost</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>🔧</span>
+          <span className={styles.statIcon}><Wrench {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>{formatNumber(summary.totalCalls)}</div>
             <div className={styles.statLabel}>Tool Calls</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>🤖</span>
+          <span className={styles.statIcon}><Bot {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>{summary.activeAgents}</div>
             <div className={styles.statLabel}>Active Agents</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>✅</span>
+          <span className={styles.statIcon}><CheckCircle {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>{summary.overallSuccessRate}%</div>
             <div className={styles.statLabel}>Success Rate</div>
@@ -271,28 +272,28 @@ export default function UsagePage() {
       {/* Stats Row */}
       <div className={styles.statsGrid}>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>📊</span>
+          <span className={styles.statIcon}><BarChart3 {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>{formatNumber(totalRequests)}</div>
             <div className={styles.statLabel}>Total Requests</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>🔤</span>
+          <span className={styles.statIcon}><BarChart3 {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>{formatNumber(totalTokens)}</div>
             <div className={styles.statLabel}>Total Tokens</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>💰</span>
+          <span className={styles.statIcon}><BarChart3 {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>${estimatedCost.toFixed(2)}</div>
             <div className={styles.statLabel}>Est. Cost</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>📅</span>
+          <span className={styles.statIcon}><BarChart3 {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>{todayRequests}</div>
             <div className={styles.statLabel}>Today</div>
@@ -309,10 +310,10 @@ export default function UsagePage() {
             onClick={refreshAll}
             disabled={summaryLoading}
           >
-            {summaryLoading ? 'Loading…' : 'Refresh'}
+            {summaryLoading ? 'Loading...' : 'Refresh'}
           </button>
         </div>
-        
+
         <div className={`card ${styles.trendCard}`}>
           {/* 14-Day Bar Chart */}
           <div className={styles.trendChart}>
@@ -451,7 +452,7 @@ export default function UsagePage() {
 
       {/* Info Banner */}
       <div className={`card ${styles.infoCard}`}>
-        <span className={styles.infoIcon}>💡</span>
+        <span className={styles.infoIcon}><Lightbulb {...ICON_INLINE} /></span>
         <div className={styles.infoContent}>
           <strong>Powered by LLM Gateway</strong> — all API calls are routed through the centralized
           proxy with automatic usage logging, budget enforcement, and multi-provider fallback.

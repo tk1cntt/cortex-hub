@@ -7,6 +7,7 @@ import {
   type TaskStrategy,
   getIdeInfo,
 } from './shared'
+import { Target, ICON_INLINE } from '@/lib/icons'
 import { StrategyReview } from './StrategyReview'
 import {
   createConductorTask,
@@ -608,7 +609,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             <p className={styles.wizardSubtitle}>This agent will own and orchestrate the task</p>
 
             <div className={styles.orchestratorCallout}>
-              <span className={styles.orchestratorCalloutIcon}>🎯</span>
+              <span className={styles.orchestratorCalloutIcon}><Target {...ICON_INLINE} /></span>
               <div className={styles.orchestratorCalloutText}>
                 <strong>The lead agent will:</strong> analyze task requirements, propose a strategy with role assignments, and coordinate execution after your approval.
               </div>

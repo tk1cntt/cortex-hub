@@ -1,0 +1,34 @@
+/* ── TrendBadge ── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.up {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.down {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.flat {
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+}
+
+.arrow {
+  font-size: 0.85rem;
+  line-height: 1;
+}

@@ -8,22 +8,19 @@ import {
   getDashboardOverview,
   getActivityFeed,
   getSystemMetrics,
-  type ActivityEvent,
   type SystemMetrics,
 } from '@/lib/api'
 import {
   STAT_ICONS,
   GAUGE_ICONS,
-  ACTIVITY_ICONS,
   INTEL_ICONS,
-  ICON_DEFAULTS,
 } from '@/lib/icons'
-import { Server, Mailbox } from 'lucide-react'
-import { SkeletonText, SkeletonCircle } from '@/components/ui/Skeleton'
+import { Server } from 'lucide-react'
+import { Skeleton, SkeletonText, SkeletonCircle } from '@/components/ui/Skeleton'
 import { NumberTransition } from '@/components/ui/NumberTransition'
 import { MetricCard } from '@/components/ui/MetricCard'
 import { GaugeChart } from '@/components/ui/GaugeChart'
-import { TimelineEvent } from '@/components/ui/TimelineEvent'
+import { ActivityFeed } from '@/components/ui/ActivityFeed'
 import { StatusDot } from '@/components/ui/StatusDot'
 import styles from './page.module.css'
 
@@ -35,30 +32,71 @@ function formatNumber(n: number): string {
   return n.toString()
 }
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
+// ── Skeleton Loaders ──
+
+function ActivitySkeleton() {
+  return (
+    <div className={styles.activitySkeletonList}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <div key={i} className={styles.activitySkeletonRow} style={{ animationDelay: `${i * 80}ms` }}>
+          <SkeletonCircle size={20} />
+          <div className={styles.activitySkeletonContent}>
+            <SkeletonText width="70%" height="0.75rem" />
+            <SkeletonText width="40%" height="0.625rem" />
+          </div>
+          <SkeletonText width={40} height="0.625rem" />
+        </div>
+      ))}
+    </div>
+  )
 }
 
-// ── Activity Row (uses shared TimelineEvent) ──
-
-function ActivityRow({ event }: { event: ActivityEvent }) {
-  const IconComp = ACTIVITY_ICONS[event.type as keyof typeof ACTIVITY_ICONS] ?? ACTIVITY_ICONS.default
-  const statusClass = event.status === 'ok' || event.status === 'completed' ? 'healthy' : event.status === 'error' ? 'error' : 'warning'
+function GaugeSkeleton() {
   return (
-    <TimelineEvent
-      icon={<IconComp size={16} strokeWidth={ICON_DEFAULTS.strokeWidth} />}
-      detail={event.detail}
-      meta={`${event.agent_id}${event.latency_ms ? ` · ${event.latency_ms}ms` : ''}`}
-      status={event.status}
-      statusVariant={statusClass}
-      time={timeAgo(event.created_at)}
-    />
+    <div className={styles.gaugeSkeletonCard}>
+      <Skeleton width={100} height={100} className={styles.gaugeSkeletonRing} />
+      <SkeletonText width={40} height="0.75rem" />
+      <SkeletonText width={60} height="0.625rem" />
+    </div>
+  )
+}
+
+function IntelCardSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div className={`card ${styles.intelCard} ${styles.intelCardSkeleton}`}>
+      <div className={styles.intelHeader}>
+        <SkeletonText width={120} height="0.8125rem" />
+      </div>
+      <div className={styles.intelGrid}>
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className={styles.intelStat}>
+            <SkeletonText width={48} height="1.5rem" />
+            <SkeletonText width={40} height="0.625rem" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ContainersSkeleton() {
+  return (
+    <div className={`card ${styles.containersCard}`}>
+      <div className={styles.containersHeader}>
+        <span>Container</span><span>CPU</span><span>Memory</span><span>Status</span>
+      </div>
+      {[0, 1, 2].map((i) => (
+        <div key={i} className={styles.containerRow} style={{ animationDelay: `${i * 60}ms` }}>
+          <div className={styles.containerInfo}>
+            <SkeletonCircle size={8} />
+            <SkeletonText width={80} height="0.75rem" />
+          </div>
+          <SkeletonText width={32} height="0.75rem" />
+          <SkeletonText width={64} height="0.75rem" />
+          <SkeletonText width={48} height="0.6875rem" />
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -163,27 +201,39 @@ export default function DashboardPage() {
             )}
           </div>
           <div className={styles.gaugesGrid}>
-            <GaugeChart
-              id="cpu"
-              value={systemData?.cpu.percent ?? 0} label="CPU"
-              subtitle={systemData ? `Load: ${systemData.cpu.loadAvg.join(' / ')}` : <SkeletonText width={60} />}
-              color="#4a90d9" Icon={GAUGE_ICONS.cpu}
-            />
-            <GaugeChart
-              id="mem"
-              value={systemData?.memory.percent ?? 0} label="Memory"
-              subtitle={systemData ? `${systemData.memory.usedHuman} / ${systemData.memory.totalHuman}` : <SkeletonText width={60} />}
-              color="#9b59b6" Icon={GAUGE_ICONS.memory}
-            />
-            <GaugeChart
-              id="disk"
-              value={systemData?.disk[0]?.usedPercent ?? 0} label="Disk"
-              subtitle={systemData?.disk[0] ? `${systemData.disk[0].used} / ${systemData.disk[0].size}` : <SkeletonText width={60} />}
-              color="#27ae60" Icon={GAUGE_ICONS.disk}
-            />
+            {systemData ? (
+              <>
+                <GaugeChart
+                  id="cpu"
+                  value={systemData.cpu.percent} label="CPU"
+                  subtitle={`Load: ${systemData.cpu.loadAvg.join(' / ')}`}
+                  color="#4a90d9" Icon={GAUGE_ICONS.cpu}
+                />
+                <GaugeChart
+                  id="mem"
+                  value={systemData.memory.percent} label="Memory"
+                  subtitle={`${systemData.memory.usedHuman} / ${systemData.memory.totalHuman}`}
+                  color="#9b59b6" Icon={GAUGE_ICONS.memory}
+                />
+                <GaugeChart
+                  id="disk"
+                  value={systemData.disk[0]?.usedPercent ?? 0} label="Disk"
+                  subtitle={systemData.disk[0] ? `${systemData.disk[0].used} / ${systemData.disk[0].size}` : '—'}
+                  color="#27ae60" Icon={GAUGE_ICONS.disk}
+                />
+              </>
+            ) : (
+              <>
+                <GaugeSkeleton />
+                <GaugeSkeleton />
+                <GaugeSkeleton />
+              </>
+            )}
           </div>
           {/* Docker Containers */}
-          {systemData?.containers && systemData.containers.length > 0 && (
+          {!systemData ? (
+            <ContainersSkeleton />
+          ) : systemData.containers && systemData.containers.length > 0 ? (
             <div className={`card ${styles.containersCard}`}>
               <div className={styles.containersHeader}>
                 <span>Container</span><span>CPU</span><span>Memory</span><span>Status</span>
@@ -192,47 +242,51 @@ export default function DashboardPage() {
                 <ContainerRow key={c.name} container={c} />
               ))}
             </div>
-          )}
+          ) : null}
 
           {/* Cortex Savings */}
           <div style={{ marginTop: 'var(--space-8)' }}>
             <h2 className={styles.sectionTitle} style={{ marginBottom: 'var(--space-4)' }}>Cortex Savings</h2>
-            <div className={`card ${styles.intelCard}`}>
-              <div className={styles.intelHeader}>
-                <span><INTEL_ICONS.tokens size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Token Analytics</span>
-                <Link href="/usage" className={styles.intelLink}>View →</Link>
+            {!overview ? (
+              <IntelCardSkeleton />
+            ) : (
+              <div className={`card ${styles.intelCard} ${styles.intelCardFadeIn}`}>
+                <div className={styles.intelHeader}>
+                  <span><INTEL_ICONS.tokens size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Token Analytics</span>
+                  <Link href="/usage" className={styles.intelLink}>View →</Link>
+                </div>
+                <div className={styles.intelGrid}>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue} style={{ color: '#22c55e' }}>
+                      <NumberTransition value={overview.tokenSavings?.totalTokensSaved ?? 0} format={formatNumber} />
+                    </span>
+                    <span className={styles.intelLabel}>Tokens Saved</span>
+                  </div>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.tokenSavings?.totalToolCalls ?? 0} format={formatNumber} />
+                    </span>
+                    <span className={styles.intelLabel}>Tool Calls</span>
+                  </div>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.tokenSavings?.avgTokensPerCall ?? 0} />
+                    </span>
+                    <span className={styles.intelLabel}>Avg/Call</span>
+                  </div>
+                </div>
+                {overview.tokenSavings?.topTools && overview.tokenSavings.topTools.length > 0 && (
+                  <div className={styles.topToolsList}>
+                    {overview.tokenSavings.topTools.slice(0, 3).map((t) => (
+                      <div key={t.tool} className={styles.topToolRow}>
+                        <code className={styles.topToolName}>{t.tool.replace('cortex_', '')}</code>
+                        <span className={styles.topToolValue}>{formatNumber(t.tokensSaved)} tokens</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className={styles.intelGrid}>
-                <div className={styles.intelStat}>
-                  <span className={styles.intelValue} style={{ color: '#22c55e' }}>
-                    {overview ? <NumberTransition value={overview.tokenSavings?.totalTokensSaved ?? 0} format={formatNumber} /> : <SkeletonText width={48} />}
-                  </span>
-                  <span className={styles.intelLabel}>Tokens Saved</span>
-                </div>
-                <div className={styles.intelStat}>
-                  <span className={styles.intelValue}>
-                    {overview ? <NumberTransition value={overview.tokenSavings?.totalToolCalls ?? 0} format={formatNumber} /> : <SkeletonText width={32} />}
-                  </span>
-                  <span className={styles.intelLabel}>Tool Calls</span>
-                </div>
-                <div className={styles.intelStat}>
-                  <span className={styles.intelValue}>
-                    {overview ? <NumberTransition value={overview.tokenSavings?.avgTokensPerCall ?? 0} /> : <SkeletonText width={32} />}
-                  </span>
-                  <span className={styles.intelLabel}>Avg/Call</span>
-                </div>
-              </div>
-              {overview?.tokenSavings?.topTools && overview.tokenSavings.topTools.length > 0 && (
-                <div className={styles.topToolsList}>
-                  {overview.tokenSavings.topTools.slice(0, 3).map((t) => (
-                    <div key={t.tool} className={styles.topToolRow}>
-                      <code className={styles.topToolName}>{t.tool.replace('cortex_', '')}</code>
-                      <span className={styles.topToolValue}>{formatNumber(t.tokensSaved)} tokens</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </section>
 
@@ -240,86 +294,96 @@ export default function DashboardPage() {
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Intelligence</h2>
 
-          {/* Quality */}
-          <div className={`card ${styles.intelCard}`}>
-            <div className={styles.intelHeader}>
-              <span><INTEL_ICONS.quality size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Quality Gates</span>
-              <Link href="/quality" className={styles.intelLink}>View →</Link>
-            </div>
-            <div className={styles.intelGrid}>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue} style={{ color: overview?.quality.lastGrade === 'A' ? '#22c55e' : overview?.quality.lastGrade === 'F' ? '#ef4444' : '#eab308' }}>
-                  {overview ? overview.quality.lastGrade || '—' : <SkeletonText width={20} />}
-                </span>
-                <span className={styles.intelLabel}>Last Grade</span>
+          {!overview ? (
+            <>
+              <IntelCardSkeleton />
+              <IntelCardSkeleton />
+              <IntelCardSkeleton />
+            </>
+          ) : (
+            <>
+              {/* Quality */}
+              <div className={`card ${styles.intelCard} ${styles.intelCardFadeIn}`}>
+                <div className={styles.intelHeader}>
+                  <span><INTEL_ICONS.quality size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Quality Gates</span>
+                  <Link href="/quality" className={styles.intelLink}>View →</Link>
+                </div>
+                <div className={styles.intelGrid}>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue} style={{ color: overview.quality.lastGrade === 'A' ? '#22c55e' : overview.quality.lastGrade === 'F' ? '#ef4444' : '#eab308' }}>
+                      {overview.quality.lastGrade || '—'}
+                    </span>
+                    <span className={styles.intelLabel}>Last Grade</span>
+                  </div>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.quality.averageScore ?? 0} />
+                    </span>
+                    <span className={styles.intelLabel}>Avg Score</span>
+                  </div>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.quality.reportsToday ?? 0} />
+                    </span>
+                    <span className={styles.intelLabel}>Today</span>
+                  </div>
+                </div>
               </div>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>
-                  {overview ? <NumberTransition value={overview.quality.averageScore ?? 0} /> : <SkeletonText width={32} />}
-                </span>
-                <span className={styles.intelLabel}>Avg Score</span>
-              </div>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>
-                  {overview ? <NumberTransition value={overview.quality.reportsToday ?? 0} /> : <SkeletonText width={32} />}
-                </span>
-                <span className={styles.intelLabel}>Today</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Knowledge */}
-          <div className={`card ${styles.intelCard}`}>
-            <div className={styles.intelHeader}>
-              <span><INTEL_ICONS.knowledge size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Knowledge Base</span>
-              <Link href="/knowledge" className={styles.intelLink}>View →</Link>
-            </div>
-            <div className={styles.intelGrid}>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>
-                  {overview ? <NumberTransition value={overview.knowledge.totalDocs ?? 0} /> : <SkeletonText width={32} />}
-                </span>
-                <span className={styles.intelLabel}>Documents</span>
+              {/* Knowledge */}
+              <div className={`card ${styles.intelCard} ${styles.intelCardFadeIn}`} style={{ animationDelay: '60ms' }}>
+                <div className={styles.intelHeader}>
+                  <span><INTEL_ICONS.knowledge size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Knowledge Base</span>
+                  <Link href="/knowledge" className={styles.intelLink}>View →</Link>
+                </div>
+                <div className={styles.intelGrid}>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.knowledge.totalDocs ?? 0} />
+                    </span>
+                    <span className={styles.intelLabel}>Documents</span>
+                  </div>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.knowledge.totalChunks ?? 0} format={formatNumber} />
+                    </span>
+                    <span className={styles.intelLabel}>Chunks</span>
+                  </div>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.knowledge.totalHits ?? 0} format={formatNumber} />
+                    </span>
+                    <span className={styles.intelLabel}>Hits</span>
+                  </div>
+                </div>
               </div>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>
-                  {overview ? <NumberTransition value={overview.knowledge.totalChunks ?? 0} format={formatNumber} /> : <SkeletonText width={48} />}
-                </span>
-                <span className={styles.intelLabel}>Chunks</span>
-              </div>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>
-                  {overview ? <NumberTransition value={overview.knowledge.totalHits ?? 0} format={formatNumber} /> : <SkeletonText width={48} />}
-                </span>
-                <span className={styles.intelLabel}>Hits</span>
-              </div>
-            </div>
-          </div>
 
-          {/* Sessions + Keys */}
-          <div className={`card ${styles.intelCard}`}>
-            <div className={styles.intelHeader}><span><INTEL_ICONS.platform size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Platform</span></div>
-            <div className={styles.intelGrid}>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>
-                  {overview ? <NumberTransition value={overview.activeKeys ?? 0} /> : <SkeletonText width={32} />}
-                </span>
-                <span className={styles.intelLabel}>API Keys</span>
+              {/* Sessions + Keys */}
+              <div className={`card ${styles.intelCard} ${styles.intelCardFadeIn}`} style={{ animationDelay: '120ms' }}>
+                <div className={styles.intelHeader}><span><INTEL_ICONS.platform size={16} strokeWidth={1.5} style={{ display: 'inline', verticalAlign: 'text-bottom', marginRight: 4 }} /> Platform</span></div>
+                <div className={styles.intelGrid}>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.activeKeys ?? 0} />
+                    </span>
+                    <span className={styles.intelLabel}>API Keys</span>
+                  </div>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.totalSessions ?? 0} />
+                    </span>
+                    <span className={styles.intelLabel}>Sessions</span>
+                  </div>
+                  <div className={styles.intelStat}>
+                    <span className={styles.intelValue}>
+                      <NumberTransition value={overview.organizations ?? 0} />
+                    </span>
+                    <span className={styles.intelLabel}>Orgs</span>
+                  </div>
+                </div>
               </div>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>
-                  {overview ? <NumberTransition value={overview.totalSessions ?? 0} /> : <SkeletonText width={32} />}
-                </span>
-                <span className={styles.intelLabel}>Sessions</span>
-              </div>
-              <div className={styles.intelStat}>
-                <span className={styles.intelValue}>
-                  {overview ? <NumberTransition value={overview.organizations ?? 0} /> : <SkeletonText width={32} />}
-                </span>
-                <span className={styles.intelLabel}>Orgs</span>
-              </div>
-            </div>
-          </div>
+            </>
+          )}
 
         </section>
       </div>
@@ -330,45 +394,11 @@ export default function DashboardPage() {
           <h2 className={styles.sectionTitle}>Recent Activity</h2>
           <Link href="/sessions" className="btn btn-secondary btn-sm">All Sessions →</Link>
         </div>
-        <div className={`card ${styles.activityCard}`}>
-          {activityData?.activity && activityData.activity.length > 0 ? (
-            <div className={styles.activityList}>
-              {(() => {
-                const today = new Date().toDateString()
-                const yesterday = new Date(Date.now() - 86400000).toDateString()
-                
-                const groups: { Today: ActivityEvent[], Yesterday: ActivityEvent[], Earlier: ActivityEvent[] } = {
-                  Today: [],
-                  Yesterday: [],
-                  Earlier: []
-                }
-                
-                activityData.activity.forEach(event => {
-                  const eDate = new Date(event.created_at).toDateString()
-                  if (eDate === today) groups.Today.push(event)
-                  else if (eDate === yesterday) groups.Yesterday.push(event)
-                  else groups.Earlier.push(event)
-                })
-                
-                return Object.entries(groups)
-                  .filter(([_, evts]) => evts.length > 0)
-                  .map(([label, evts]) => (
-                    <div key={label} className={styles.timelineGroup}>
-                      <h3 className={styles.timelineHeader}>{label}</h3>
-                      {evts.map((event, i) => (
-                        <ActivityRow key={`${event.created_at}-${i}`} event={event} />
-                      ))}
-                    </div>
-                  ))
-              })()}
-            </div>
-          ) : (
-            <div className={styles.emptyActivity}>
-              <span><Mailbox size={24} strokeWidth={1.5} /></span>
-              <p>No activity yet. Events appear when agents make API calls.</p>
-            </div>
-          )}
-        </div>
+        {!activityData ? (
+          <div className={`card ${styles.activityCard}`}><ActivitySkeleton /></div>
+        ) : (
+          <ActivityFeed events={activityData.activity ?? []} />
+        )}
       </section>
 
       {/* ── Quick Connect ── */}

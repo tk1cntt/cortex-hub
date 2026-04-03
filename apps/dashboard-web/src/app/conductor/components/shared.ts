@@ -1,4 +1,9 @@
 import type { ConductorTask, ConductorTaskLog } from '@/lib/api'
+import {
+  ClipboardList, Target, GitBranch, Hand, Zap, CheckCircle,
+  Search, Unlock, ArrowUpFromLine, XCircle, AlertTriangle, CircleDot,
+  type LucideIcon,
+} from '@/lib/icons'
 
 // ── Types ──
 export type StatusFilter = 'all' | 'pending' | 'assigned' | 'accepted' | 'in_progress' | 'review' | 'completed' | 'failed' | 'cancelled'
@@ -189,21 +194,21 @@ export function getTaskDuration(task: { created_at: string; accepted_at?: string
 }
 
 /** Map log action types to human-readable labels */
-export function getLogActionLabel(action: string): { label: string; icon: string; color: string } {
+export function getLogActionLabel(action: string): { label: string; icon: LucideIcon; color: string } {
   switch (action) {
-    case 'created': return { label: 'Created', icon: '📋', color: 'var(--text-secondary)' }
-    case 'auto_assigned': return { label: 'Auto-assigned', icon: '🎯', color: 'var(--status-info)' }
-    case 'delegated': return { label: 'Delegated', icon: '🔀', color: 'var(--status-info)' }
-    case 'picked_up': return { label: 'Picked up', icon: '🤚', color: 'var(--status-info)' }
-    case 'progress': return { label: 'Progress', icon: '⚡', color: 'var(--text-tertiary)' }
-    case 'completed': return { label: 'Completed', icon: '✅', color: 'var(--status-success)' }
-    case 'auto_completed': return { label: 'Auto-completed', icon: '✅', color: 'var(--status-success)' }
-    case 'auto_review': return { label: 'Review created', icon: '🔍', color: 'var(--status-warning)' }
-    case 'unblocked': return { label: 'Unblocked', icon: '🔓', color: 'var(--status-info)' }
-    case 'submitted_for_review': return { label: 'Submitted for review', icon: '📤', color: 'var(--status-warning)' }
-    case 'rejected': return { label: 'Rejected', icon: '❌', color: 'var(--status-error)' }
-    case 'subtask_failed': return { label: 'Subtask failed', icon: '⚠️', color: 'var(--status-error)' }
-    default: return { label: action.replace(/_/g, ' '), icon: '•', color: 'var(--text-tertiary)' }
+    case 'created': return { label: 'Created', icon: ClipboardList, color: 'var(--text-secondary)' }
+    case 'auto_assigned': return { label: 'Auto-assigned', icon: Target, color: 'var(--status-info)' }
+    case 'delegated': return { label: 'Delegated', icon: GitBranch, color: 'var(--status-info)' }
+    case 'picked_up': return { label: 'Picked up', icon: Hand, color: 'var(--status-info)' }
+    case 'progress': return { label: 'Progress', icon: Zap, color: 'var(--text-tertiary)' }
+    case 'completed': return { label: 'Completed', icon: CheckCircle, color: 'var(--status-success)' }
+    case 'auto_completed': return { label: 'Auto-completed', icon: CheckCircle, color: 'var(--status-success)' }
+    case 'auto_review': return { label: 'Review created', icon: Search, color: 'var(--status-warning)' }
+    case 'unblocked': return { label: 'Unblocked', icon: Unlock, color: 'var(--status-info)' }
+    case 'submitted_for_review': return { label: 'Submitted for review', icon: ArrowUpFromLine, color: 'var(--status-warning)' }
+    case 'rejected': return { label: 'Rejected', icon: XCircle, color: 'var(--status-error)' }
+    case 'subtask_failed': return { label: 'Subtask failed', icon: AlertTriangle, color: 'var(--status-error)' }
+    default: return { label: action.replace(/_/g, ' '), icon: CircleDot, color: 'var(--text-tertiary)' }
   }
 }
 

@@ -13,26 +13,27 @@ import {
   restartService,
 } from '@/lib/api'
 import { config } from '@/lib/config'
+import { Bot, Radio, Package, CheckCircle, XCircle, AlertTriangle, RefreshCw, Hourglass, Dna, type LucideIcon, ICON_INLINE } from '@/lib/icons'
 import styles from './page.module.css'
 
 // ── Types ──
 type ServiceRowProps = {
   name: string
   url: string
-  icon: string
+  icon: LucideIcon
 }
 
 type DockerServiceProps = {
   containerName: string
   label: string
-  icon: string
+  icon: LucideIcon
 }
 
 // ── Components ──
-function ServiceRow({ name, url, icon }: ServiceRowProps) {
+function ServiceRow({ name, url, icon: Icon }: ServiceRowProps) {
   return (
     <div className={styles.serviceRow}>
-      <span className={styles.serviceIcon}>{icon}</span>
+      <span className={styles.serviceIcon}><Icon {...ICON_INLINE} /></span>
       <div className={styles.serviceInfo}>
         <span className={styles.serviceName}>{name}</span>
         <code className={styles.serviceUrl}>{url}</code>
@@ -113,11 +114,11 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`
 }
 
-const SERVICE_ICONS: Record<string, string> = {
-  cliproxy: '🤖',
-  qdrant: '🔮',
-  gitnexus: '🧬',
-  dashboardApi: '📡',
+const SERVICE_ICONS: Record<string, LucideIcon> = {
+  cliproxy: Bot,
+  qdrant: Dna,
+  gitnexus: Dna,
+  dashboardApi: Radio,
 }
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -176,9 +177,9 @@ export default function SettingsPage() {
   }, [hubConfig])
 
   const dockerServices: DockerServiceProps[] = [
-    { containerName: 'cortex-llm-proxy', label: 'CLIProxy (LLM)', icon: '🤖' },
-    { containerName: 'cortex-qdrant', label: 'Qdrant Vector DB', icon: '🔮' },
-    { containerName: 'cortex-gitnexus', label: 'GitNexus (Code Intelligence)', icon: '🧬' },
+    { containerName: 'cortex-llm-proxy', label: 'CLIProxy (LLM)', icon: Bot },
+    { containerName: 'cortex-qdrant', label: 'Qdrant Vector DB', icon: Dna },
+    { containerName: 'cortex-gitnexus', label: 'GitNexus (Code Intelligence)', icon: Dna },
   ]
 
   async function handleSaveHubConfig() {
@@ -264,7 +265,7 @@ export default function SettingsPage() {
           }}
         >
           <span>
-            {actionStatus.type === 'success' ? '✅' : '❌'} {actionStatus.message}
+            {actionStatus.type === 'success' ? <CheckCircle {...ICON_INLINE} /> : <XCircle {...ICON_INLINE} />} {actionStatus.message}
           </span>
           <button
             className={styles.toastClose}
@@ -466,7 +467,7 @@ export default function SettingsPage() {
         <div className={`card ${styles.servicesCard}`}>
           {error && (
             <div className={styles.errorBanner}>
-              ⚠️ Failed to load settings. Is the API running?
+              <AlertTriangle {...ICON_INLINE} /> Failed to load settings. Is the API running?
             </div>
           )}
           {isLoading && !data ? (
@@ -477,7 +478,7 @@ export default function SettingsPage() {
                 key={key}
                 name={SERVICE_LABELS[key] ?? key}
                 url={url}
-                icon={SERVICE_ICONS[key] ?? '📦'}
+                icon={SERVICE_ICONS[key] ?? Package}
               />
             ))
           ) : null}
@@ -488,9 +489,11 @@ export default function SettingsPage() {
       <div className={styles.section}>
         <h2 className={styles.sectionTitle}>Docker Services</h2>
         <div className={`card ${styles.servicesCard}`}>
-          {dockerServices.map((svc) => (
+          {dockerServices.map((svc) => {
+            const SvcIcon = svc.icon
+            return (
             <div key={svc.containerName} className={styles.serviceRow}>
-              <span className={styles.serviceIcon}>{svc.icon}</span>
+              <span className={styles.serviceIcon}><SvcIcon {...ICON_INLINE} /></span>
               <div className={styles.serviceInfo}>
                 <span className={styles.serviceName}>{svc.label}</span>
                 <code className={styles.serviceUrl}>{svc.containerName}</code>
@@ -500,10 +503,11 @@ export default function SettingsPage() {
                 onClick={() => handleRestart(svc.containerName)}
                 disabled={restartingService === svc.containerName}
               >
-                {restartingService === svc.containerName ? '⏳ Restarting...' : '🔄 Restart'}
+                {restartingService === svc.containerName ? <><Hourglass {...ICON_INLINE} /> Restarting...</> : <><RefreshCw {...ICON_INLINE} /> Restart</>}
               </button>
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -532,7 +536,7 @@ export default function SettingsPage() {
       {/* Danger Zone */}
       <div className={styles.section}>
         <h2 className={styles.sectionTitle} style={{ color: 'var(--danger)' }}>
-          ⚠️ Danger Zone
+          <AlertTriangle {...ICON_INLINE} /> Danger Zone
         </h2>
         <div className={`card ${styles.dangerCard}`}>
           <div className={styles.dangerRow}>

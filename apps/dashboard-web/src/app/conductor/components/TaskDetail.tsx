@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { formatJson, getResultSummary, getTaskDuration, type ConductorTask, type StructuredTaskResult } from './shared'
+import { ClipboardList, Hand, CheckCircle, XCircle, Hourglass, ICON_INLINE } from '@/lib/icons'
 import { StatusBadge, PriorityBadge, ResultDisplay } from './StatusBadge'
 import { DecisionMatrix } from './DecisionMatrix'
 import { LiveOutput } from './LiveOutput'
@@ -90,7 +91,7 @@ export function TaskDetail({
               <div className={styles.timelineStep}>
                 <span className={`${styles.timelineDot} ${styles.timelineDotActive}`} />
                 <div className={styles.timelineInfo}>
-                  <span className={styles.timelineLabel}>📋 Created</span>
+                  <span className={styles.timelineLabel}><ClipboardList {...ICON_INLINE} /> Created</span>
                   <span className={styles.timelineTime}>
                     {task.created_at ? new Date(task.created_at).toLocaleString() : '--'}
                   </span>
@@ -99,7 +100,7 @@ export function TaskDetail({
               <div className={styles.timelineStep}>
                 <span className={`${styles.timelineDot} ${task.accepted_at ? styles.timelineDotActive : styles.timelineDotPending}`} />
                 <div className={styles.timelineInfo}>
-                  <span className={styles.timelineLabel}>🤚 Accepted</span>
+                  <span className={styles.timelineLabel}><Hand {...ICON_INLINE} /> Accepted</span>
                   <span className={styles.timelineTime}>
                     {task.accepted_at ? new Date(task.accepted_at).toLocaleString() : 'Pending'}
                   </span>
@@ -109,7 +110,7 @@ export function TaskDetail({
                 <span className={`${styles.timelineDot} ${task.completed_at ? styles.timelineDotActive : styles.timelineDotPending}`} />
                 <div className={styles.timelineInfo}>
                   <span className={styles.timelineLabel}>
-                    {task.status === 'completed' ? '✅' : task.status === 'failed' ? '❌' : '⏳'} {task.status === 'failed' ? 'Failed' : 'Completed'}
+                    {task.status === 'completed' ? <CheckCircle {...ICON_INLINE} /> : task.status === 'failed' ? <XCircle {...ICON_INLINE} /> : <Hourglass {...ICON_INLINE} />} {task.status === 'failed' ? 'Failed' : 'Completed'}
                   </span>
                   <span className={styles.timelineTime}>
                     {task.completed_at ? `${new Date(task.completed_at).toLocaleString()} (${getTaskDuration(task)})` : 'In progress...'}

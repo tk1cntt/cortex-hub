@@ -6,6 +6,7 @@ import useSWR from 'swr'
 import { getSessions, type SessionHandoff } from '@/lib/api'
 import { SkeletonText, SkeletonCircle } from '@/components/ui/Skeleton'
 import { NumberTransition } from '@/components/ui/NumberTransition'
+import { Clock, RefreshCw, CheckCircle, ClipboardList, AlertTriangle, KeyRound, Gem, ICON_INLINE } from '@/lib/icons'
 import styles from './page.module.css'
 
 // ── Types ──
@@ -59,7 +60,7 @@ function SessionCard({
         <div className={styles.sessionIdRow}>
           <code className={styles.sessionId}>{session.id.slice(0, 8)}</code>
           {session.api_key_name && (
-            <span className={styles.apiKeyTag}>🔑 {session.api_key_name}</span>
+            <span className={styles.apiKeyTag}><KeyRound {...ICON_INLINE} /> {session.api_key_name}</span>
           )}
         </div>
         <StatusBadge status={session.status} />
@@ -96,7 +97,7 @@ function SessionCard({
         </span>
         {session.savings && session.savings.tokensSaved > 0 && (
           <span className={styles.savingsBadge}>
-            💎 {session.savings.tokensSaved >= 1000 ? `${(session.savings.tokensSaved / 1000).toFixed(1)}k` : session.savings.tokensSaved} tokens · {session.savings.toolCalls} calls
+            <Gem {...ICON_INLINE} /> {session.savings.tokensSaved >= 1000 ? `${(session.savings.tokensSaved / 1000).toFixed(1)}k` : session.savings.tokensSaved} tokens · {session.savings.toolCalls} calls
           </span>
         )}
         {session.claimed_by && (
@@ -142,7 +143,7 @@ function SessionDetail({
           <div className={styles.detailRow}>
             <span className={styles.detailLabel}>From</span>
             <span className={styles.detailValue}>
-              {session.api_key_name ? `🔑 ${session.api_key_name}` : session.from_agent}
+              {session.api_key_name ? <><KeyRound {...ICON_INLINE} /> {session.api_key_name}</> : session.from_agent}
             </span>
           </div>
           <div className={styles.detailRow}>
@@ -250,37 +251,37 @@ export default function SessionsPage() {
 
   const filterTabs: { key: StatusFilter; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: allSessions.length },
-    { key: 'pending', label: '⏳ Pending', count: pendingCount },
-    { key: 'claimed', label: '🔄 In Progress', count: claimedCount },
-    { key: 'completed', label: '✅ Completed', count: completedCount },
+    { key: 'pending', label: 'Pending', count: pendingCount },
+    { key: 'claimed', label: 'In Progress', count: claimedCount },
+    { key: 'completed', label: 'Completed', count: completedCount },
   ]
 
   return (
     <DashboardLayout title="Sessions" subtitle="Agent task handoffs and execution tracking">
       <div className={styles.statsGrid}>
         <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 0 } as React.CSSProperties}>
-          <span className={styles.statIcon}>📋</span>
+          <span className={styles.statIcon}><ClipboardList {...ICON_INLINE} /></span>
           <div>
             <div className={`${styles.statValue} live-value`}><NumberTransition value={allSessions.length} /></div>
             <div className={styles.statLabel}>Total Sessions</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 1 } as React.CSSProperties}>
-          <span className={styles.statIcon}>⏳</span>
+          <span className={styles.statIcon}><Clock {...ICON_INLINE} /></span>
           <div>
             <div className={`${styles.statValue} live-value`}><NumberTransition value={pendingCount} /></div>
             <div className={styles.statLabel}>Pending</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 2 } as React.CSSProperties}>
-          <span className={styles.statIcon}>🔄</span>
+          <span className={styles.statIcon}><RefreshCw {...ICON_INLINE} /></span>
           <div>
             <div className={`${styles.statValue} live-value`}><NumberTransition value={claimedCount} /></div>
             <div className={styles.statLabel}>In Progress</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 3 } as React.CSSProperties}>
-          <span className={styles.statIcon}>✅</span>
+          <span className={styles.statIcon}><CheckCircle {...ICON_INLINE} /></span>
           <div>
             <div className={`${styles.statValue} live-value`}><NumberTransition value={completedCount} /></div>
             <div className={styles.statLabel}>Completed</div>
@@ -317,7 +318,7 @@ export default function SessionsPage() {
         </div>
 
         {error && (
-          <div className={styles.errorBanner}>⚠️ Failed to load sessions</div>
+          <div className={styles.errorBanner}><AlertTriangle {...ICON_INLINE} /> Failed to load sessions</div>
         )}
 
         {filteredSessions.length === 0 && !isLoading ? (

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { type TaskStrategy } from './shared'
 import type { ConductorAgent } from '@/lib/api'
+import { Brain, Timer, Zap, ICON_INLINE } from '@/lib/icons'
 import styles from './StrategyReview.module.css'
 
 interface Props {
@@ -83,7 +84,7 @@ export function StrategyReview({
       <div className={styles.strategyBody}>
         <div className={styles.analyzingState}>
           <div className={styles.analyzingOrb}>
-            <div className={styles.analyzingOrbInner}>🧠</div>
+            <div className={styles.analyzingOrbInner}><Brain size={24} strokeWidth={1.5} /></div>
             <div className={styles.analyzingRing} />
           </div>
           <h3 className={styles.analyzingTitle}>Agent is analyzing...</h3>
@@ -139,7 +140,7 @@ export function StrategyReview({
       <div className={styles.strategySummary}>
         <p className={styles.strategySummaryText}>{strategy.summary}</p>
         {strategy.estimatedEffort && (
-          <span className={styles.strategyEffort}>⏱ {strategy.estimatedEffort}</span>
+          <span className={styles.strategyEffort}><Timer {...ICON_INLINE} /> {strategy.estimatedEffort}</span>
         )}
       </div>
 
@@ -151,7 +152,7 @@ export function StrategyReview({
             {roles.map((role, i) => (
               <div key={role.role} className={styles.roleCard}>
                 <span className={styles.roleEmoji}>
-                  {role.label.match(/^(\S+)/)?.[1] || '⚡'}
+                  {role.label.match(/^(\S+)/)?.[1] || <Zap {...ICON_INLINE} />}
                 </span>
                 <div className={styles.roleInfo}>
                   <div className={styles.roleLabel}>{role.label.replace(/^(\S+)\s*/, '')}</div>

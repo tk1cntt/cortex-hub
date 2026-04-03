@@ -16,5 +16,7 @@ export type { TooltipProps } from './Tooltip'
 
 export { Sparkline } from './Sparkline'
 export { TrendBadge } from './TrendBadge'
+export { ActivityFeed } from './ActivityFeed'
+export type { ActivityFeedProps } from './ActivityFeed'
 export { NumberTransition } from './NumberTransition'
 export { SkeletonText, SkeletonCircle } from './Skeleton'

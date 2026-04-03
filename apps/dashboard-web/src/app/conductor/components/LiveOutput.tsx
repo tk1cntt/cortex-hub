@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { getLogActionLabel } from './shared'
+import { ICON_INLINE } from '@/lib/icons'
 import styles from '../page.module.css'
 
 interface LogEntry {
@@ -47,7 +48,7 @@ export function LiveOutput({ taskId, isActive }: { taskId: string; isActive: boo
   return (
     <div>
       {logs.map((log) => {
-        const { label, icon, color } = getLogActionLabel(log.action)
+        const { label, icon: Icon, color } = getLogActionLabel(log.action)
         const isProgress = log.action === 'progress'
 
         if (isProgress) {
@@ -62,7 +63,7 @@ export function LiveOutput({ taskId, isActive }: { taskId: string; isActive: boo
         // Lifecycle event — styled differently
         return (
           <div key={log.id} className={styles.liveOutputLifecycle} style={{ borderLeftColor: color }}>
-            <span className={styles.liveOutputLifecycleIcon}>{icon}</span>
+            <span className={styles.liveOutputLifecycleIcon}><Icon {...ICON_INLINE} /></span>
             <span className={styles.liveOutputLifecycleAction} style={{ color }}>{label}</span>
             <span className={styles.liveOutputLifecycleMsg}>
               {log.message || log.agent_id}

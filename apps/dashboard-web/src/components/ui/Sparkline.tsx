@@ -6,7 +6,11 @@ interface SparklineProps {
   width?: number
   height?: number
   strokeWidth?: number
+  /** Show gradient fill beneath the line */
+  fill?: boolean
 }
+
+let sparklineIdCounter = 0
 
 export function Sparkline({
   data,
@@ -14,27 +18,50 @@ export function Sparkline({
   width = 80,
   height = 24,
   strokeWidth = 2,
+  fill = true,
 }: SparklineProps) {
   if (!data || data.length === 0) return null
+
+  const gradientId = React.useMemo(() => `spark-grad-${++sparklineIdCounter}`, [])
 
   const min = Math.min(...data)
   const max = Math.max(...data)
   const range = max - min || 1
 
-  // Map data points into paths
-  const pts = data.map((d, i) => {
-    const x = (i / (data.length - 1)) * width
-    const y = height - ((d - min) / range) * (height - strokeWidth * 2) - strokeWidth
-    return `${x},${y}`
-  })
+  // Map data points into coordinate pairs
+  const points = data.map((d, i) => ({
+    x: (i / (data.length - 1)) * width,
+    y: height - ((d - min) / range) * (height - strokeWidth * 2) - strokeWidth,
+  }))
 
-  // Smooth line representation
-  const pathData = `M ${pts.join(' L ')}`
+  const linePath = `M ${points.map((p) => `${p.x},${p.y}`).join(' L ')}`
+
+  // Closed area path for gradient fill
+  const areaPath = fill
+    ? `${linePath} L ${width},${height} L 0,${height} Z`
+    : undefined
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} fill="none" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      fill="none"
+      style={{ display: 'inline-block', verticalAlign: 'middle' }}
+    >
+      {fill && (
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+      )}
+      {areaPath && (
+        <path d={areaPath} fill={`url(#${gradientId})`} />
+      )}
       <path
-        d={pathData}
+        d={linePath}
         stroke={color}
         strokeWidth={strokeWidth}
         strokeLinecap="round"

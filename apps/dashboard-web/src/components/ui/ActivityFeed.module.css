@@ -1,0 +1,59 @@
+/* ── ActivityFeed ── */
+
+.card {
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding: var(--space-3);
+}
+
+/* Vertical timeline connector */
+.list::before {
+  content: '';
+  position: absolute;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  left: calc(var(--space-3) + 9px);
+  width: 2px;
+  background: var(--border-subtle);
+  z-index: 0;
+}
+
+.group {
+  margin-bottom: var(--space-4);
+  position: relative;
+}
+
+.group:last-child {
+  margin-bottom: 0;
+}
+
+.groupHeader {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--space-2);
+  padding-left: calc(20px + var(--space-3));
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+}
+
+.empty span {
+  font-size: 1.5rem;
+}

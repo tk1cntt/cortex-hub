@@ -16,9 +16,12 @@ import {
   type Project,
   type ProjectSummary,
 } from '@/lib/api'
+import { Cloud, Link as LinkIcon, Package, Search, Brain, BarChart3, AlertTriangle, Building2, Folder, type LucideIcon, ICON_INLINE } from '@/lib/icons'
 import styles from './page.module.css'
 
 // ── Helpers ──
+
+function Ico({ icon: Icon }: { icon: LucideIcon }) { return <Icon {...ICON_INLINE} /> }
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -36,24 +39,21 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-function providerIcon(provider: string | null): string {
+function getProviderIcon(provider: string | null): LucideIcon {
   switch (provider) {
-    case 'github': return '⬛'
-    case 'gitlab': return '🦊'
-    case 'bitbucket': return '🪣'
-    case 'azure': return '☁️'
-    case 'gitea': return '🍵'
-    default: return '📦'
+    case 'azure': return Cloud
+    case 'local': return LinkIcon
+    default: return Package
   }
 }
 
 function statusBadge(status: string): { label: string; className: string } {
   switch (status) {
-    case 'done': return { label: '✓ Done', className: 'healthy' }
+    case 'done': return { label: 'Done', className: 'healthy' }
     case 'indexing':
-    case 'embedding': return { label: '⏳ Processing', className: 'warning' }
-    case 'error': return { label: '✕ Error', className: 'error' }
-    case 'pending': return { label: '○ Pending', className: 'muted' }
+    case 'embedding': return { label: 'Processing', className: 'warning' }
+    case 'error': return { label: 'Error', className: 'error' }
+    case 'pending': return { label: 'Pending', className: 'muted' }
     default: return { label: '—', className: 'muted' }
   }
 }
@@ -144,12 +144,13 @@ function ProjectCard({
 
   const gnStatus = enriched ? statusBadge(enriched.gitnexus.status) : null
   const m9Status = enriched ? statusBadge(enriched.mem9.status) : null
+  const ProviderIcon = getProviderIcon(project.git_provider)
 
   return (
     <div className={`card ${styles.projectCard}`}>
       <div className={styles.projectHeader}>
         <div className={styles.projectHeaderLeft}>
-          <span className={styles.providerIcon}>{providerIcon(project.git_provider)}</span>
+          <span className={styles.providerIcon}><Ico icon={ProviderIcon} /></span>
           <div>
             <h4 className={styles.projectName}>
               <Link href={`/projects?id=${project.id}`} className={styles.projectLink}>
@@ -172,7 +173,7 @@ function ProjectCard({
       {enriched ? (
         <div className={styles.indexStatusGrid}>
           <div className={styles.indexStatusRow}>
-            <span className={styles.indexStatusLabel}>🔍 GitNexus</span>
+            <span className={styles.indexStatusLabel}><Search {...ICON_INLINE} /> GitNexus</span>
             <span className={`badge badge-${gnStatus!.className}`}>{gnStatus!.label}</span>
             {enriched.gitnexus.status === 'done' && (
               <span className={styles.indexStatusDetail}>
@@ -181,7 +182,7 @@ function ProjectCard({
             )}
           </div>
           <div className={styles.indexStatusRow}>
-            <span className={styles.indexStatusLabel}>🧠 Mem9</span>
+            <span className={styles.indexStatusLabel}><Brain {...ICON_INLINE} /> Mem9</span>
             <span className={`badge badge-${m9Status!.className}`}>{m9Status!.label}</span>
             {(enriched.mem9.status === 'done' || enriched.mem9.chunks > 0) && (
               <span className={styles.indexStatusDetail}>
@@ -190,10 +191,10 @@ function ProjectCard({
             )}
           </div>
           <div className={styles.indexStatusRow}>
-            <span className={styles.indexStatusLabel}>📚 Knowledge</span>
+            <span className={styles.indexStatusLabel}>Knowledge</span>
             {enriched.knowledge.docs > 0 ? (
               <>
-                <span className="badge badge-healthy">✓ {enriched.knowledge.docs} docs</span>
+                <span className="badge badge-healthy">{enriched.knowledge.docs} docs</span>
                 <span className={styles.indexStatusDetail}>
                   {formatNumber(enriched.knowledge.chunks)} chunks
                 </span>
@@ -207,14 +208,14 @@ function ProjectCard({
         <div className={styles.projectMeta}>
           {project.git_repo_url ? (
             <span className={styles.projectGit}>
-              🔗 {project.git_provider ?? 'git'}: {project.git_repo_url}
+              <LinkIcon {...ICON_INLINE} /> {project.git_provider ?? 'git'}: {project.git_repo_url}
             </span>
           ) : (
             <span className={styles.projectNoGit}>No git repo linked</span>
           )}
           {project.indexed_at && (
             <span className={styles.projectIndexed}>
-              📊 {project.indexed_symbols} symbols indexed
+              <BarChart3 {...ICON_INLINE} /> {project.indexed_symbols} symbols indexed
             </span>
           )}
         </div>
@@ -313,7 +314,7 @@ function OrgSection({ org, enrichedMap, onDeleted }: { org: Organization; enrich
       <div className={styles.orgHeader}>
         <div className={styles.orgInfo}>
           <h2 className={styles.orgName}>
-            <span className={styles.orgIcon}>🏢</span>
+            <span className={styles.orgIcon}><Ico icon={Building2} /></span>
             {org.name}
           </h2>
           <span className={styles.orgSlug}>{org.slug}</span>
@@ -458,14 +459,14 @@ export default function OrganizationsPage() {
       {/* Stats */}
       <div className={styles.statsGrid}>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>🏢</span>
+          <span className={styles.statIcon}><Ico icon={Building2} /></span>
           <div>
             <div className={styles.statValue}>{orgs.length}</div>
             <div className={styles.statLabel}>Organizations</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>📁</span>
+          <span className={styles.statIcon}><Folder {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}>
               {orgs.reduce((sum, o) => sum + (o.project_count ?? 0), 0)}
@@ -484,7 +485,7 @@ export default function OrganizationsPage() {
             onClick={() => mutate()}
             disabled={isLoading}
           >
-            {isLoading ? 'Loading…' : 'Refresh'}
+            {isLoading ? 'Loading...' : 'Refresh'}
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => setShowCreateOrg(true)}>
             + New Organization
@@ -494,14 +495,14 @@ export default function OrganizationsPage() {
 
       {error && (
         <div className={styles.errorBanner}>
-          ⚠️ Failed to load organizations. Make sure the backend is running.
+          <AlertTriangle {...ICON_INLINE} /> Failed to load organizations. Make sure the backend is running.
         </div>
       )}
 
       {/* Org Sections */}
       {orgs.length === 0 && !isLoading && !error ? (
         <div className={`card ${styles.emptyState}`}>
-          <span className={styles.emptyIcon}>🏢</span>
+          <span className={styles.emptyIcon}><Ico icon={Building2} /></span>
           <p>No organizations yet.</p>
           <p className={styles.emptyHint}>
             Create your first organization to start grouping projects.

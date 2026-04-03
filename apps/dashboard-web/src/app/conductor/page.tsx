@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { Target } from 'lucide-react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
+import { ClipboardList, Clock, Zap, CheckCircle, XCircle, Link, Trash2, ICON_INLINE } from '@/lib/icons'
 import useSWR from 'swr'
 import {
   getConductorTasks,
@@ -134,7 +135,7 @@ function PipelineCard({
         </div>
         <div className={styles.pcHeaderRight}>
           <StatusBadge status={root.status} />
-          {duration && <span className={styles.pcDuration}>⏱ {duration}</span>}
+          {duration && <span className={styles.pcDuration}><Clock {...ICON_INLINE} /> {duration}</span>}
         </div>
       </div>
 
@@ -185,7 +186,7 @@ function PipelineCard({
       {/* Active agent indicator */}
       {activeSubtask && (
         <div className={styles.pcActiveIndicator}>
-          <span className={styles.pcActiveIcon}>⚡</span>
+          <span className={styles.pcActiveIcon}><Zap {...ICON_INLINE} /></span>
           <span className={styles.pcActiveText}>
             <strong>{activeSubtask.agent ?? 'Agent'}</strong> is working on <em>&quot;{activeSubtask.title}&quot;</em>
           </span>
@@ -241,7 +242,7 @@ function PipelineCard({
           title="View pipeline diagram"
           onClick={() => onShowDiagram(root.id)}
         >
-          🔗 Diagram
+          <Link {...ICON_INLINE} /> Diagram
         </button>
         {isCompleted && (
           <button
@@ -264,7 +265,7 @@ function PipelineCard({
           title="Delete pipeline"
           onClick={() => onDeletePipeline(root.id)}
         >
-          🗑 Delete
+          <Trash2 {...ICON_INLINE} /> Delete
         </button>
       </div>
 
@@ -511,35 +512,35 @@ export default function ConductorPage() {
       {/* Stats */}
       <div className={styles.statsGrid}>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>📋</span>
+          <span className={styles.statIcon}><ClipboardList {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}><NumberTransition value={counts.all} /></div>
             <div className={styles.statLabel}>Total</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>⏳</span>
+          <span className={styles.statIcon}><Clock {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}><NumberTransition value={counts.pending} /></div>
             <div className={styles.statLabel}>Pending</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>⚡</span>
+          <span className={styles.statIcon}><Zap {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}><NumberTransition value={counts.in_progress} /></div>
             <div className={styles.statLabel}>Running</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>✅</span>
+          <span className={styles.statIcon}><CheckCircle {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}><NumberTransition value={counts.completed} /></div>
             <div className={styles.statLabel}>Done</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
-          <span className={styles.statIcon}>❌</span>
+          <span className={styles.statIcon}><XCircle {...ICON_INLINE} /></span>
           <div>
             <div className={styles.statValue}><NumberTransition value={counts.failed} /></div>
             <div className={styles.statLabel}>Failed</div>
@@ -635,7 +636,7 @@ export default function ConductorPage() {
               setShowCreateForm(true)
             }}
           >
-            <span style={{ fontSize: '1.25rem' }}>{hasStrategy ? '📋' : '⏳'}</span>
+            <span style={{ fontSize: '1.25rem' }}>{hasStrategy ? <ClipboardList {...ICON_INLINE} /> : <Clock {...ICON_INLINE} />}</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600 }}>{task.title}</div>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -710,7 +711,7 @@ export default function ConductorPage() {
           <div className={styles.diagramModalPanel} onClick={(e) => e.stopPropagation()}>
             <div className={styles.diagramModalHeader}>
               <h2 className={styles.diagramModalTitle}>
-                🔗 Pipeline Diagram
+                <Link {...ICON_INLINE} /> Pipeline Diagram
                 <span className={styles.diagramModalSubtitle}>
                   {diagramTasks.length} tasks
                 </span>
@@ -731,7 +732,7 @@ export default function ConductorPage() {
       {deleteConfirm && (
         <div className={styles.confirmOverlay} onClick={() => setDeleteConfirm(null)}>
           <div className={styles.confirmPanel} onClick={(e) => e.stopPropagation()}>
-            <h3 className={styles.confirmTitle}>🗑️ Delete Pipeline</h3>
+            <h3 className={styles.confirmTitle}><Trash2 {...ICON_INLINE} /> Delete Pipeline</h3>
             <p className={styles.confirmText}>
               This will <strong>cancel all pending/running tasks</strong> and <strong>permanently delete</strong> the entire pipeline including all subtasks.
             </p>

@@ -12,7 +12,31 @@ import {
   configureProvider,
 } from '@/lib/api'
 import { config } from '@/lib/config'
+import {
+  Bot,
+  Sparkles,
+  Puzzle,
+  Globe,
+  Zap,
+  Search,
+  Waves,
+  Rocket,
+  Settings,
+  Clock,
+  CheckCircle,
+  FlaskConical,
+  RefreshCw,
+  Monitor,
+  Lock,
+  KeyRound,
+  type LucideIcon,
+  ICON_INLINE,
+} from '@/lib/icons'
 import styles from './page.module.css'
+
+function Ico({ icon: Icon }: { icon: LucideIcon }) {
+  return <Icon {...ICON_INLINE} />
+}
 
 type Step = 'provider' | 'auth' | 'models' | 'complete'
 type AuthMethod = 'oauth' | 'apikey'
@@ -29,7 +53,7 @@ const providers = [
     id: 'openai',
     name: 'OpenAI',
     desc: 'GPT-4o, o3, Codex (via subscription)',
-    icon: '🤖',
+    icon: Bot,
     supportsOAuth: true,
     oauthLabel: 'ChatGPT Plus/Pro',
     keyPlaceholder: 'sk-...',
@@ -40,7 +64,7 @@ const providers = [
     id: 'gemini',
     name: 'Google Gemini',
     desc: 'Gemini 2.5 Pro, Flash',
-    icon: '✨',
+    icon: Sparkles,
     supportsOAuth: true,
     oauthLabel: 'Google Account',
     keyPlaceholder: 'AIzaSy...',
@@ -51,7 +75,7 @@ const providers = [
     id: 'claude',
     name: 'Anthropic Claude',
     desc: 'Claude 4, Sonnet',
-    icon: '🧩',
+    icon: Puzzle,
     supportsOAuth: true,
     oauthLabel: 'Claude Pro/Max',
     keyPlaceholder: 'sk-ant-...',
@@ -63,7 +87,7 @@ const providers = [
     id: 'openrouter',
     name: 'OpenRouter',
     desc: 'Multi-model gateway',
-    icon: '🌐',
+    icon: Globe,
     supportsOAuth: false,
     oauthLabel: '',
     keyPlaceholder: 'sk-or-...',
@@ -74,7 +98,7 @@ const providers = [
     id: 'groq',
     name: 'Groq',
     desc: 'Ultra-fast inference',
-    icon: '⚡',
+    icon: Zap,
     supportsOAuth: false,
     oauthLabel: '',
     keyPlaceholder: 'gsk_...',
@@ -85,7 +109,7 @@ const providers = [
     id: 'deepseek',
     name: 'DeepSeek',
     desc: 'DeepSeek V3, Coder',
-    icon: '🔍',
+    icon: Search,
     supportsOAuth: false,
     oauthLabel: '',
     keyPlaceholder: 'sk-...',
@@ -96,7 +120,7 @@ const providers = [
     id: 'mistral',
     name: 'Mistral AI',
     desc: 'Mistral Large, Codestral',
-    icon: '🌊',
+    icon: Waves,
     supportsOAuth: false,
     oauthLabel: '',
     keyPlaceholder: 'sk-...',
@@ -107,7 +131,7 @@ const providers = [
     id: 'xai',
     name: 'xAI (Grok)',
     desc: 'Grok 3, Grok Vision',
-    icon: '🚀',
+    icon: Rocket,
     supportsOAuth: false,
     oauthLabel: '',
     keyPlaceholder: 'xai-...',
@@ -118,7 +142,7 @@ const providers = [
     id: 'ollama',
     name: 'Ollama (Local)',
     desc: 'Run models locally',
-    icon: '🦙',
+    icon: Monitor,
     supportsOAuth: false,
     oauthLabel: '',
     keyPlaceholder: '(none needed)',
@@ -129,7 +153,7 @@ const providers = [
     id: 'custom',
     name: 'Custom Provider',
     desc: 'Any OpenAI-compatible API',
-    icon: '⚙️',
+    icon: Settings,
     supportsOAuth: false,
     oauthLabel: '',
     keyPlaceholder: 'sk-...',
@@ -447,17 +471,17 @@ function SetupWizard() {
 
     try {
       // Step 1: Initialize mem9 embedding engine
-      setSetupProgress((prev) => [...prev, '🧠 Initializing mem9 embedding engine...'])
+      setSetupProgress((prev) => [...prev, 'Initializing mem9 embedding engine...'])
       await new Promise((resolve) => setTimeout(resolve, 500))
-      setSetupProgress((prev) => [...prev, '✅ mem9 ready (will embed on first indexing)'])
+      setSetupProgress((prev) => [...prev, 'mem9 ready (will embed on first indexing)'])
 
       // Step 2: Save provider configuration
-      setSetupProgress((prev) => [...prev, '💾 Saving provider configuration...'])
+      setSetupProgress((prev) => [...prev, 'Saving provider configuration...'])
       await new Promise((resolve) => setTimeout(resolve, 500))
-      setSetupProgress((prev) => [...prev, '✅ Provider saved'])
+      setSetupProgress((prev) => [...prev, 'Provider saved'])
 
       // Step 3: Mark setup as complete in the database
-      setSetupProgress((prev) => [...prev, '🏁 Finalizing setup...'])
+      setSetupProgress((prev) => [...prev, 'Finalizing setup...'])
       const result = await completeSetup({
         provider: selectedProvider,
         models: selectedModels,
@@ -467,7 +491,7 @@ function SetupWizard() {
         throw new Error('Backend did not confirm setup completion')
       }
 
-      setSetupProgress((prev) => [...prev, '✅ Setup complete!'])
+      setSetupProgress((prev) => [...prev, 'Setup complete!'])
       localStorage.setItem('cortex_setup_completed', 'true')
 
       // Brief pause so user can see the success state
@@ -494,7 +518,7 @@ function SetupWizard() {
             className={`${styles.progressStep} ${i <= stepIndex ? styles.progressActive : ''}`}
           >
             <div className={styles.progressDot}>
-              {i < stepIndex ? '✓' : i + 1}
+              {i < stepIndex ? <Ico icon={CheckCircle} /> : i + 1}
             </div>
             <span className={styles.progressLabel}>{label}</span>
           </div>
@@ -516,7 +540,7 @@ function SetupWizard() {
                 className={`${styles.providerCard} ${selectedProvider === p.id ? styles.providerSelected : ''}`}
                 onClick={() => handleProviderSelect(p.id)}
               >
-                <span className={styles.providerIcon}>{p.icon}</span>
+                <span className={styles.providerIcon}><Ico icon={p.icon} /></span>
                 <div className={styles.providerName}>{p.name}</div>
                 <div className={styles.providerDesc}>{p.desc}</div>
               </button>
@@ -529,7 +553,7 @@ function SetupWizard() {
             onClick={() => setStep('auth')}
             style={{ marginTop: 'var(--space-6)', width: '100%' }}
           >
-            Continue →
+            Continue
           </button>
         </div>
       )}
@@ -556,7 +580,7 @@ function SetupWizard() {
                   setAuthError('')
                 }}
               >
-                🔐 OAuth Login
+                <Ico icon={Lock} /> OAuth Login
               </button>
               <button
                 className={`${styles.authTab} ${authMethod === 'apikey' ? styles.authTabActive : ''}`}
@@ -565,7 +589,7 @@ function SetupWizard() {
                   setAuthError('')
                 }}
               >
-                🔑 API Key
+                <Ico icon={KeyRound} /> API Key
               </button>
             </div>
           )}
@@ -594,7 +618,7 @@ function SetupWizard() {
                   >
                     <div className={styles.glowEffect} />
                     <span style={{ position: 'relative', zIndex: 1 }}>
-                      🔐 Sign in with {currentProvider.oauthLabel}
+                      <Ico icon={Lock} /> Sign in with {currentProvider.oauthLabel}
                     </span>
                   </button>
                 </>
@@ -647,7 +671,7 @@ function SetupWizard() {
                       onClick={handlePasteCallback}
                       disabled={isRelaying || !callbackUrl.trim()}
                     >
-                      {isRelaying ? '⏳' : '✓'}
+                      {isRelaying ? <Ico icon={Clock} /> : <Ico icon={CheckCircle} />}
                     </button>
                   </div>
 
@@ -708,7 +732,7 @@ function SetupWizard() {
                   onClick={handleApiKeySubmit}
                   disabled={isAuthenticating || !apiKeyInput.trim()}
                 >
-                  {isAuthenticating ? '⏳' : '→'}
+                  {isAuthenticating ? <Ico icon={Clock} /> : <>&#8594;</>}
                 </button>
               </div>
             </div>
@@ -741,7 +765,7 @@ function SetupWizard() {
             }}
             style={{ marginTop: 'var(--space-4)' }}
           >
-            ← Back
+            &#8592; Back
           </button>
         </div>
       )}
@@ -792,7 +816,7 @@ function SetupWizard() {
                   onClick={fetchModels}
                   style={{ marginTop: 'var(--space-3)' }}
                 >
-                  🔄 Retry
+                  <Ico icon={RefreshCw} /> Retry
                 </button>
               </div>
             ) : detectedModels.length > 0 ? (
@@ -825,7 +849,7 @@ function SetupWizard() {
                   onClick={fetchModels}
                   style={{ marginTop: 'var(--space-3)' }}
                 >
-                  🔄 Retry
+                  <Ico icon={RefreshCw} /> Retry
                 </button>
               </div>
             )}
@@ -839,11 +863,11 @@ function SetupWizard() {
                 onClick={handleTestConnection}
                 disabled={testing}
               >
-                {testing ? '⏳ Testing...' : '🧪 Test Connection'}
+                {testing ? <><Ico icon={Clock} /> Testing...</> : <><Ico icon={FlaskConical} /> Test Connection</>}
               </button>
               {testResult === 'success' && (
                 <span className={styles.testSuccess}>
-                  ✓ Connection verified
+                  <Ico icon={CheckCircle} /> Connection verified
                 </span>
               )}
               {testResult === 'error' && (
@@ -851,7 +875,7 @@ function SetupWizard() {
                   className={styles.testError}
                   style={{ color: 'var(--danger)', marginLeft: '1rem' }}
                 >
-                  ✗ Connection failed
+                  Connection failed
                 </span>
               )}
             </div>
@@ -868,7 +892,7 @@ function SetupWizard() {
               }}
             >
               <h4 style={{ margin: '0 0 var(--space-3)', color: 'var(--primary)' }}>
-                ⚙️ Setting up Cortex Hub...
+                <Ico icon={Settings} /> Setting up Cortex Hub...
               </h4>
               {setupProgress.map((msg, i) => (
                 <div
@@ -934,7 +958,7 @@ function SetupWizard() {
             }
             style={{ marginTop: 'var(--space-6)', width: '100%' }}
           >
-            {isSettingUp ? '⏳ Setting up...' : 'Complete Setup →'}
+            {isSettingUp ? <><Ico icon={Clock} /> Setting up...</> : <>Complete Setup &#8594;</>}
           </button>
 
           <button
@@ -942,7 +966,7 @@ function SetupWizard() {
             onClick={() => setStep('auth')}
             style={{ marginTop: 'var(--space-4)' }}
           >
-            ← Back
+            &#8592; Back
           </button>
         </div>
       )}
@@ -950,7 +974,7 @@ function SetupWizard() {
       {/* Step: Complete */}
       {step === 'complete' && (
         <div className={styles.stepContent} style={{ textAlign: 'center' }}>
-          <div className={styles.completeIcon}>✅</div>
+          <div className={styles.completeIcon}><CheckCircle size={48} strokeWidth={1.5} /></div>
           <h1 className={styles.stepTitle}>You&apos;re All Set!</h1>
           <p className={styles.stepSubtitle}>
             Cortex Hub is ready. Head to the dashboard to explore.
@@ -965,7 +989,7 @@ function SetupWizard() {
             }}
           >
             <a href="/" className="btn btn-primary btn-lg">
-              Open Dashboard →
+              Open Dashboard &#8594;
             </a>
             <a href="/keys" className="btn btn-secondary btn-lg">
               Generate API Key

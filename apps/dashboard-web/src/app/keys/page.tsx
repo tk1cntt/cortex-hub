@@ -6,6 +6,7 @@ import styles from './page.module.css'
 
 import useSWR from 'swr'
 import { listApiKeys, createApiKey, revokeApiKey } from '@/lib/api'
+import { KeyRound, ClipboardList, ICON_INLINE } from '@/lib/icons'
 
 const allPermissions = [
   { id: 'cortex.health', label: 'Health Check', group: 'System' },
@@ -54,7 +55,7 @@ export default function KeysPage() {
 
   async function handleRevoke(id: string) {
     if (!confirm('Are you sure you want to revoke this key? This action cannot be undone.')) return
-    
+
     try {
       await revokeApiKey(id)
       mutate() // Refresh list
@@ -69,7 +70,7 @@ export default function KeysPage() {
       {newKeyResult && (
         <div className={styles.newKeyBanner}>
           <div className={styles.newKeyHeader}>
-            <span>🔑</span>
+            <span><KeyRound {...ICON_INLINE} /></span>
             <strong>API Key Created</strong>
             <span style={{ color: 'var(--status-warning)', fontSize: '0.8125rem' }}>
               Copy now — won't be shown again
@@ -83,7 +84,7 @@ export default function KeysPage() {
               setNewKeyResult(null)
             }}
           >
-            📋 Copy & Close
+            <ClipboardList {...ICON_INLINE} /> Copy &amp; Close
           </button>
         </div>
       )}

@@ -14,6 +14,11 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import type { ConductorAgent } from '@/lib/api'
+import {
+  Search, Palette, Wrench, Rocket, FlaskConical, Target, Zap, Link, Timer,
+  ICON_INLINE,
+  type LucideIcon,
+} from '@/lib/icons'
 import { buildTaskTree, getResultSummary, getTaskDuration, getIdeInfo, type ConductorTask, type TaskTreeNode } from './shared'
 import styles from './PipelineDiagram.module.css'
 
@@ -27,6 +32,18 @@ type PipelineNodeData = {
 }
 
 type PipelineNode = Node<PipelineNodeData, 'pipeline'>
+
+/** Get a role icon based on task title keywords */
+function getRoleIcon(title: string, isOrchestrator: boolean): LucideIcon {
+  const lower = title.toLowerCase()
+  if (lower.includes('review')) return Search
+  if (lower.includes('ui') || lower.includes('frontend') || lower.includes('design')) return Palette
+  if (lower.includes('backend') || lower.includes('api')) return Wrench
+  if (lower.includes('deploy') || lower.includes('devops')) return Rocket
+  if (lower.includes('test')) return FlaskConical
+  if (isOrchestrator) return Target
+  return Zap
+}
 
 /* ── Custom Node Component ── */
 function PipelineNodeComponent({ data }: NodeProps<PipelineNode>) {
@@ -56,16 +73,7 @@ function PipelineNodeComponent({ data }: NodeProps<PipelineNode>) {
     }
   })()
 
-  const roleEmoji = (() => {
-    const title = task.title.toLowerCase()
-    if (title.includes('review')) return '🔍'
-    if (title.includes('ui') || title.includes('frontend') || title.includes('design')) return '🎨'
-    if (title.includes('backend') || title.includes('api')) return '🔧'
-    if (title.includes('deploy') || title.includes('devops')) return '🚀'
-    if (title.includes('test')) return '🧪'
-    if (isOrchestrator) return '🎯'
-    return '⚡'
-  })()
+  const RoleIcon = getRoleIcon(task.title, isOrchestrator)
 
   const iconColor = (() => {
     if (task.status === 'completed' || task.status === 'approved') return styles.iconGreen
@@ -87,7 +95,7 @@ function PipelineNodeComponent({ data }: NodeProps<PipelineNode>) {
       <Handle type="target" position={Position.Left} className={styles.handle} />
 
       <div className={styles.nodeHeader}>
-        <span className={`${styles.nodeIcon} ${iconColor}`}>{roleEmoji}</span>
+        <span className={`${styles.nodeIcon} ${iconColor}`}><RoleIcon {...ICON_INLINE} /></span>
         <span className={styles.nodeTitle}>{task.title.replace(/^\[Delegated\]\s*/, '').slice(0, 50)}</span>
       </div>
 
@@ -120,7 +128,7 @@ function PipelineNodeComponent({ data }: NodeProps<PipelineNode>) {
       <div className={styles.nodeStatusRow}>
         <span className={`${styles.nodeStatusDot} ${dotClass}`} />
         <span className={styles.nodeStatusLabel}>{task.status.replace('_', ' ')}</span>
-        {duration && <span className={styles.nodeDuration}>⏱ {duration}</span>}
+        {duration && <span className={styles.nodeDuration}><Timer {...ICON_INLINE} /> {duration}</span>}
       </div>
 
       <Handle type="source" position={Position.Right} className={styles.handle} />
@@ -325,7 +333,7 @@ export function PipelineDiagram({ tasks, agents, onNodeClick }: Props) {
     return (
       <div className={styles.diagramWrap}>
         <div className={styles.diagramEmpty}>
-          <span className={styles.diagramEmptyIcon}>🔗</span>
+          <span className={styles.diagramEmptyIcon}><Link {...ICON_INLINE} /></span>
           <span className={styles.diagramEmptyText}>No pipeline tasks. Create an orchestrated task to see the diagram.</span>
         </div>
       </div>
