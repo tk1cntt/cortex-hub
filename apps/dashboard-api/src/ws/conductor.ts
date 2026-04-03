@@ -405,8 +405,24 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       const title = msg['title'] as string
       if (!title) break
 
-      // Hard block: reject ALL review task creation via WS — reviews are disabled
+      // Hard block: reject ALL task creation via WS that looks like strategy/review spam
+      // Agents should implement their assigned task, not create new top-level tasks
       const titleLowerCheck = title.toLowerCase()
+      const hasParent = !!msg['parentTaskId']
+      if (titleLowerCheck.includes('strategy') || titleLowerCheck.includes('overhaul') || titleLowerCheck.includes('premium') || titleLowerCheck.includes('redesign')) {
+        if (!hasParent) {
+          console.warn(`[ws] task.create: BLOCKED top-level task "${title}" from ${agent.agentId} — agents cannot create strategy tasks`)
+          agent.ws.send(JSON.stringify({
+            type: 'task.created',
+            taskId: 'blocked',
+            title,
+            blocked: true,
+            reason: 'Agents cannot create top-level strategy tasks. Implement your assigned task instead.',
+            timestamp: new Date().toISOString(),
+          }))
+          break
+        }
+      }
       if (titleLowerCheck.startsWith('[review]') || titleLowerCheck.startsWith('review:') || titleLowerCheck.includes('plan review')) {
         console.warn(`[ws] task.create: HARD BLOCKED review task "${title}" from ${agent.agentId}`)
         agent.ws.send(JSON.stringify({
