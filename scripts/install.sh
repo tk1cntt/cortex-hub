@@ -781,6 +781,19 @@ HOOKEOF
 EOF
   ok "Settings: .claude/settings.json generated"
 
+  # ── Clean user-level hooks (prevent duplicate/stale hooks) ──
+  USER_SETTINGS="$HOME/.claude/settings.json"
+  if [ -f "$USER_SETTINGS" ] && command -v python3 >/dev/null 2>&1; then
+    if python3 -c "import json; d=json.load(open('$USER_SETTINGS')); exit(0 if 'hooks' in d else 1)" 2>/dev/null; then
+      python3 -c "
+import json
+with open('$USER_SETTINGS') as f: d=json.load(f)
+d.pop('hooks', None)
+with open('$USER_SETTINGS','w') as f: json.dump(d, f, indent=2)
+" 2>/dev/null && ok "Removed stale hooks from user-level settings (~/.claude/settings.json)" || true
+    fi
+  fi
+
   # ── Slash commands (/cs, /ce) ──
   mkdir -p .claude/commands
   cat > .claude/commands/cs.md << 'CMDEOF'

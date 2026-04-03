@@ -489,6 +489,21 @@ exit 0
 
         Write-Ok ("Claude: bash hooks + settings.json installed (v" + $LATEST_VERSION + ")")
 
+        # ── Clean user-level hooks (prevent duplicate/stale hooks) ──
+        $userSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
+        if (Test-Path $userSettings) {
+            try {
+                $userJson = Get-Content $userSettings -Raw | ConvertFrom-Json
+                if ($userJson.hooks) {
+                    $userJson.PSObject.Properties.Remove('hooks')
+                    $userJson | ConvertTo-Json -Depth 10 | Set-Content $userSettings -Encoding UTF8
+                    Write-Ok "Removed stale hooks from user-level settings (~/.claude/settings.json)"
+                }
+            } catch {
+                Write-Warn "Could not clean user-level settings: $_"
+            }
+        }
+
         # ── Slash commands (/cs, /ce) ──
         $cmdDir = Join-Path $ProjectDir ".claude\commands"
         if (-not (Test-Path $cmdDir)) { New-Item -ItemType Directory -Path $cmdDir -Force | Out-Null }
