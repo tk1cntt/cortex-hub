@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef } from 'react'
-import { formatJson, getResultSummary, getTaskDuration, type ConductorTask, type StructuredTaskResult } from './shared'
+import { formatJson, getTaskDuration, type ConductorTask, type StructuredTaskResult } from './shared'
 import { ClipboardList, Hand, CheckCircle, XCircle, Hourglass, ChevronDown, X, Trash2, ICON_INLINE } from '@/lib/icons'
 import { StatusBadge, PriorityBadge, ResultDisplay } from './StatusBadge'
 import { DecisionMatrix } from './DecisionMatrix'
