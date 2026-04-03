@@ -173,23 +173,44 @@
   margin-bottom: var(--space-5);
 }
 
-.strategySummaryText {
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  line-height: 1.6;
-  margin: 0;
+.strategySummaryContent {
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  /* Scrollbar styling */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.2) transparent;
+}
+
+.strategySummaryContent::-webkit-scrollbar {
+  width: 5px;
+}
+
+.strategySummaryContent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.strategySummaryContent::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 4px;
+}
+
+.strategySummaryContent::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.35);
 }
 
 .strategyEffort {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-top: var(--space-2);
+  margin-top: var(--space-3);
   font-size: 0.6875rem;
   color: var(--text-tertiary);
   padding: 2px 8px;
   background: var(--bg-primary);
   border-radius: 999px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-2);
 }
 
 /* ── Role Cards ── */

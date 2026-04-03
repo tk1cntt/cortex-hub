@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { type TaskStrategy } from './shared'
 import type { ConductorAgent } from '@/lib/api'
 import { Brain, Timer, Zap, ICON_INLINE } from '@/lib/icons'
+import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer'
 import styles from './StrategyReview.module.css'
 
 interface Props {
@@ -138,7 +139,9 @@ export function StrategyReview({
 
       {/* Summary */}
       <div className={styles.strategySummary}>
-        <p className={styles.strategySummaryText}>{strategy.summary}</p>
+        <div className={styles.strategySummaryContent}>
+          <MarkdownRenderer content={strategy.summary} />
+        </div>
         {strategy.estimatedEffort && (
           <span className={styles.strategyEffort}><Timer {...ICON_INLINE} /> {strategy.estimatedEffort}</span>
         )}
