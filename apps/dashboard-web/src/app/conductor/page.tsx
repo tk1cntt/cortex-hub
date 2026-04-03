@@ -34,6 +34,8 @@ import {
   StatusBadge,
   type TaskTreeNode,
 } from './components'
+import { SkeletonCircle } from '@/components/ui/Skeleton'
+import { NumberTransition } from '@/components/ui/NumberTransition'
 import styles from './page.module.css'
 
 // ── Pipeline Card Component ──
@@ -263,6 +265,19 @@ function PipelineCard({
           🗑 Delete
         </button>
       </div>
+
+      {hasSubtasks && (
+        <div className={styles.pcBottomEdgeProgress}>
+          <div
+            className={`${styles.pcBottomEdgeFill} ${
+              progress.failed > 0 ? styles.pcProgressFillFailed
+              : progress.percent === 100 ? styles.pcProgressFillComplete
+              : styles.pcBottomEdgeFillActive
+            }`}
+            style={{ width: `${progress.percent}%` }}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -494,35 +509,35 @@ export default function ConductorPage() {
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>📋</span>
           <div>
-            <div className={styles.statValue}>{counts.all}</div>
+            <div className={styles.statValue}><NumberTransition value={counts.all} /></div>
             <div className={styles.statLabel}>Total</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>⏳</span>
           <div>
-            <div className={styles.statValue}>{counts.pending}</div>
+            <div className={styles.statValue}><NumberTransition value={counts.pending} /></div>
             <div className={styles.statLabel}>Pending</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>⚡</span>
           <div>
-            <div className={styles.statValue}>{counts.in_progress}</div>
+            <div className={styles.statValue}><NumberTransition value={counts.in_progress} /></div>
             <div className={styles.statLabel}>Running</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>✅</span>
           <div>
-            <div className={styles.statValue}>{counts.completed}</div>
+            <div className={styles.statValue}><NumberTransition value={counts.completed} /></div>
             <div className={styles.statLabel}>Done</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>❌</span>
           <div>
-            <div className={styles.statValue}>{counts.failed}</div>
+            <div className={styles.statValue}><NumberTransition value={counts.failed} /></div>
             <div className={styles.statLabel}>Failed</div>
           </div>
         </div>
@@ -537,7 +552,7 @@ export default function ConductorPage() {
               onClick={() => setAgentsCollapsed(!agentsCollapsed)}
             >
               <span className={`${styles.collapseIcon} ${agentsCollapsed ? styles.collapseIconClosed : ''}`}>▾</span>
-              Agents <span className={styles.filterCount}>{onlineCount} online</span>
+              Agents <span className={styles.filterCount}><NumberTransition value={onlineCount} /> online</span>
             </h2>
           </div>
           {!agentsCollapsed && (
@@ -649,8 +664,9 @@ export default function ConductorPage() {
               className="btn btn-secondary btn-sm"
               onClick={() => mutate()}
               disabled={isLoading}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px' }}
             >
-              {isLoading ? '...' : '↻'}
+              {isLoading ? <SkeletonCircle size={14} /> : '↻'}
             </button>
           </div>
         </div>

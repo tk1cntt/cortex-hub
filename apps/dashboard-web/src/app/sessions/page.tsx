@@ -4,6 +4,8 @@ import { useState, useMemo } from 'react'
 import DashboardLayout from '@/components/layout/DashboardLayout'
 import useSWR from 'swr'
 import { getSessions, type SessionHandoff } from '@/lib/api'
+import { SkeletonText, SkeletonCircle } from '@/components/ui/Skeleton'
+import { NumberTransition } from '@/components/ui/NumberTransition'
 import styles from './page.module.css'
 
 // ── Types ──
@@ -205,7 +207,7 @@ function SessionDetail({
                 <div className={styles.timelineDot} />
                 <span>Claimed</span>
                 <span className={styles.timelineTime}>
-                  {session.claimed_by ?? 'Waiting...'}
+                  {session.claimed_by ?? <SkeletonText width={60} />}
                 </span>
               </div>
               <div
@@ -214,7 +216,7 @@ function SessionDetail({
                 <div className={styles.timelineDot} />
                 <span>Completed</span>
                 <span className={styles.timelineTime}>
-                  {session.status === 'completed' ? '✓' : 'Pending...'}
+                  {session.status === 'completed' ? '✓' : <SkeletonText width={60} />}
                 </span>
               </div>
             </div>
@@ -253,33 +255,32 @@ export default function SessionsPage() {
 
   return (
     <DashboardLayout title="Sessions" subtitle="Agent task handoffs and execution tracking">
-      {/* Stats */}
       <div className={styles.statsGrid}>
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>📋</span>
           <div>
-            <div className={styles.statValue}>{allSessions.length}</div>
+            <div className={styles.statValue}><NumberTransition value={allSessions.length} /></div>
             <div className={styles.statLabel}>Total Sessions</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>⏳</span>
           <div>
-            <div className={styles.statValue}>{pendingCount}</div>
+            <div className={styles.statValue}><NumberTransition value={pendingCount} /></div>
             <div className={styles.statLabel}>Pending</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>🔄</span>
           <div>
-            <div className={styles.statValue}>{claimedCount}</div>
+            <div className={styles.statValue}><NumberTransition value={claimedCount} /></div>
             <div className={styles.statLabel}>In Progress</div>
           </div>
         </div>
         <div className={`card ${styles.statCard}`}>
           <span className={styles.statIcon}>✅</span>
           <div>
-            <div className={styles.statValue}>{completedCount}</div>
+            <div className={styles.statValue}><NumberTransition value={completedCount} /></div>
             <div className={styles.statLabel}>Completed</div>
           </div>
         </div>
@@ -289,14 +290,15 @@ export default function SessionsPage() {
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Session Handoffs</h2>
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => mutate()}
-            disabled={isLoading}
-          >
-            {isLoading ? 'Loading…' : 'Refresh'}
-          </button>
-        </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => mutate()}
+              disabled={isLoading}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '72px' }}
+            >
+              {isLoading ? <SkeletonCircle size={14} /> : 'Refresh'}
+            </button>
+          </div>
 
         {/* Status Filter Tabs */}
         <div className={styles.filterTabs}>

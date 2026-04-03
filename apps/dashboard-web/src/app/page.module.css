@@ -60,6 +60,13 @@
   letter-spacing: 0.06em;
 }
 
+.statPillTrend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
 /* ── Services Health Strip ── */
 .servicesStrip {
   display: flex;
@@ -527,15 +534,48 @@
 .activityList {
   display: flex;
   flex-direction: column;
+  position: relative;
+  padding: var(--space-3);
+}
+
+.activityList::before {
+  content: '';
+  position: absolute;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  left: calc(var(--space-3) + 9px); /* centers under 20px icon considering paddings */
+  width: 2px;
+  background: var(--border-subtle);
+  z-index: 0;
+}
+
+.timelineGroup {
+  margin-bottom: var(--space-4);
+  position: relative;
+}
+
+.timelineGroup:last-child {
+  margin-bottom: 0;
+}
+
+.timelineHeader {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--space-2);
+  padding-left: calc(20px + var(--space-3));
 }
 
 .activityRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-2) 0;
   transition: background 0.15s ease;
+  position: relative;
+  z-index: 1;
 }
 
 .activityRow:last-child {
@@ -543,6 +583,14 @@
 }
 
 .activityRow:hover {
+  background: var(--accent-glow);
+  border-radius: var(--radius-sm);
+  margin: 0 calc(var(--space-2) * -1);
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+.activityRow:hover .activityIcon {
   background: var(--accent-glow);
 }
 
@@ -553,7 +601,10 @@
   width: 20px;
   height: 20px;
   color: var(--text-tertiary);
+  background: var(--bg-primary); /* mask the line behind */
+  border-radius: 50%;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .activityInfo {

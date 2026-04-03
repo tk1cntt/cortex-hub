@@ -3950,3 +3950,31 @@
     padding: var(--space-1) var(--space-2);
   }
 }
+
+/* Bottom Edge Animated Progress Bar */
+.pcBottomEdgeProgress {
+  height: 3px;
+  width: 100%;
+  background: transparent;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+}
+
+.pcBottomEdgeFill {
+  height: 100%;
+  border-radius: 0;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pcBottomEdgeFillActive {
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+  animation: progressPulseGlow 2s ease infinite;
+}
+
+@keyframes progressPulseGlow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; filter: brightness(1.2); }
+}

@@ -12,6 +12,8 @@ import {
   type QualityTrendData,
   type QueryLog,
 } from '@/lib/api'
+import { SkeletonText, SkeletonCircle } from '@/components/ui/Skeleton'
+import { NumberTransition } from '@/components/ui/NumberTransition'
 import styles from './page.module.css'
 
 // ── Grade Utilities ──
@@ -64,7 +66,7 @@ function ScoreRing({ score, label, max = 25 }: { score: number; label: string; m
         />
       </div>
       <div className={styles.ringInfo}>
-        <span className={styles.ringScore} style={{ color }}>{score}</span>
+        <span className={styles.ringScore} style={{ color }}><NumberTransition value={score} /></span>
         <span className={styles.ringMax}>/{max}</span>
       </div>
       <span className={styles.ringLabel}>{label}</span>
@@ -178,7 +180,7 @@ export default function QualityPage() {
   const [reportPage, setReportPage] = useState(1)
   const [logPage, setLogPage] = useState(1)
 
-  const { data: summaryData } = useSWR('quality-summary', getQualitySummary, { refreshInterval: 15000 })
+  const { data: summaryData, isLoading: isLoadingSummary } = useSWR('quality-summary', getQualitySummary, { refreshInterval: 15000 })
   const { data: trendsData } = useSWR('quality-trends', () => getQualityTrends(30), { refreshInterval: 30000 })
   const { data: reportsData, mutate: mutateReports } = useSWR(
     ['quality-reports', filterGrade, filterAgent, reportPage],
@@ -242,6 +244,15 @@ export default function QualityPage() {
                   </span>
                 </div>
               </>
+            ) : isLoadingSummary ? (
+              <>
+                <SkeletonCircle size={96} />
+                <div className={styles.heroMeta}>
+                  <SkeletonText width={80} height="2rem" />
+                  <SkeletonText width={140} />
+                  <SkeletonText width={180} />
+                </div>
+              </>
             ) : (
               <div className={styles.heroEmpty}>
                 <span className={styles.heroEmptyGrade}>—</span>
@@ -261,6 +272,13 @@ export default function QualityPage() {
               <ScoreRing score={latest.score_standards} label="Standards" />
               <ScoreRing score={latest.score_traceability} label="Traceability" />
             </div>
+          ) : isLoadingSummary ? (
+            <div className={styles.dimensionCards}>
+               <SkeletonCircle size={80} />
+               <SkeletonCircle size={80} />
+               <SkeletonCircle size={80} />
+               <SkeletonCircle size={80} />
+            </div>
           ) : (
             <div className={styles.emptyDimensions}>Run a quality gate to see dimension scores</div>
           )}
@@ -271,19 +289,27 @@ export default function QualityPage() {
           <h3 className={styles.cardTitle}>Statistics</h3>
           <div className={styles.miniStats}>
             <div className={styles.miniStat}>
-              <span className={styles.miniStatValue}>{summary?.total_reports ?? 0}</span>
+              <span className={styles.miniStatValue}>
+                {summary ? <NumberTransition value={summary.total_reports ?? 0} /> : <SkeletonText width={40} />}
+              </span>
               <span className={styles.miniStatLabel}>Total Reports</span>
             </div>
             <div className={styles.miniStat}>
-              <span className={styles.miniStatValue} style={{ color: '#22c55e' }}>{summary?.passed_count ?? 0}</span>
+              <span className={styles.miniStatValue} style={{ color: '#22c55e' }}>
+                {summary ? <NumberTransition value={summary.passed_count ?? 0} /> : <SkeletonText width={40} />}
+              </span>
               <span className={styles.miniStatLabel}>Passed</span>
             </div>
             <div className={styles.miniStat}>
-              <span className={styles.miniStatValue} style={{ color: '#ef4444' }}>{summary?.failed_count ?? 0}</span>
+              <span className={styles.miniStatValue} style={{ color: '#ef4444' }}>
+                {summary ? <NumberTransition value={summary.failed_count ?? 0} /> : <SkeletonText width={40} />}
+              </span>
               <span className={styles.miniStatLabel}>Failed</span>
             </div>
             <div className={styles.miniStat}>
-              <span className={styles.miniStatValue}>{summary?.avg_score != null ? Math.round(summary.avg_score) : '—'}</span>
+              <span className={styles.miniStatValue}>
+                {summary ? <NumberTransition value={summary.avg_score != null ? Math.round(summary.avg_score) : 0} /> : <SkeletonText width={40} />}
+              </span>
               <span className={styles.miniStatLabel}>Avg Score</span>
             </div>
           </div>
