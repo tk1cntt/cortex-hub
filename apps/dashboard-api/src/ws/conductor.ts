@@ -405,6 +405,21 @@ function handleMessage(agent: ConnectedAgent, msg: Record<string, unknown>) {
       const title = msg['title'] as string
       if (!title) break
 
+      // Hard block: reject ALL review task creation via WS — reviews are disabled
+      const titleLowerCheck = title.toLowerCase()
+      if (titleLowerCheck.startsWith('[review]') || titleLowerCheck.startsWith('review:') || titleLowerCheck.includes('plan review')) {
+        console.warn(`[ws] task.create: HARD BLOCKED review task "${title}" from ${agent.agentId}`)
+        agent.ws.send(JSON.stringify({
+          type: 'task.created',
+          taskId: 'blocked',
+          title,
+          blocked: true,
+          deduplicated: true,
+          timestamp: new Date().toISOString(),
+        }))
+        break
+      }
+
       // Global rate limiter: max 5 tasks per agent per 60 seconds
       const recentCount = db.prepare(
         "SELECT COUNT(*) as c FROM conductor_tasks WHERE created_by_agent = ? AND created_at > datetime('now', '-60 seconds')"

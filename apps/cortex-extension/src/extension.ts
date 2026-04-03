@@ -221,7 +221,13 @@ function startCompletionMonitor(taskId: string, logFn: (msg: string) => void): (
             if (stableChecks >= 3 && !conversationDone) {
               conversationDone = true
               logFn(`Conversation completed for task ${taskId} (stable at ${currentSteps} steps)`)
-              // Notify hub that task is done
+              // Send task.complete to hub so pipeline can continue
+              client?.send({
+                type: 'task.complete',
+                taskId,
+                result: { completedBy: 'extension-auto-detect', steps: currentSteps },
+              })
+              logFn(`Sent task.complete for ${taskId}`)
               client?.updateStatus('idle')
               // Process next queued task if any
               drainTaskQueue(logFn)

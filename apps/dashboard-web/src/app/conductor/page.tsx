@@ -9,6 +9,7 @@ import {
   cancelConductorTask,
   deleteConductorTask,
   deletePipeline,
+  updateConductorTask,
   type ConductorTask,
   type ConductorAgent,
 } from '@/lib/api'
@@ -757,6 +758,11 @@ export default function ConductorPage() {
           onClose={() => setSelectedTask(null)}
           onCancel={() => handleCancel(selectedTask.id)}
           onDelete={() => handleDelete(selectedTask.id)}
+          onMarkDone={async () => {
+            await updateConductorTask(selectedTask.id, { status: 'completed' })
+            setSelectedTask(null)
+            mutate()
+          }}
           onNewTaskFromOutcome={handleNewTaskFromOutcome}
         />
       )}

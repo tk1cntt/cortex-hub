@@ -367,6 +367,8 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             subtask.description ?? '',
             `\n\nRole: ${role.label}`,
             `Parent task: ${title.trim()}`,
+            `\n\n---`,
+            `**IMPORTANT:** When you finish this task, you MUST call \`cortex_task_update\` with the task ID from the \`[Cortex Task ...]\` header and \`status: "completed"\`. Include a \`result\` object summarizing what was done (files changed, key decisions). Do NOT skip this step — the pipeline cannot continue without it.`,
           ].join(''),
           assignedTo: role.agent,
           priority,
