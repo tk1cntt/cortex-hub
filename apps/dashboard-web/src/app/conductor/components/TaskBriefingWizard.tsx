@@ -458,13 +458,61 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
     }
   }
 
+  // ── Swipe to dismiss logic ──
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [touchStart, setTouchStart] = useState<number | null>(null)
+  const [translateY, setTranslateY] = useState(0)
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (panelRef.current?.scrollTop === 0) {
+      setTouchStart(e.touches[0]?.clientY ?? null)
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null) return
+    const touchY = e.touches[0]?.clientY
+    if (touchY === undefined) return
+    const diff = touchY - touchStart
+    if (diff > 0) {
+      setTranslateY(diff)
+    } else {
+      setTranslateY(0)
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (translateY > 120) {
+      onClose()
+    } else {
+      setTranslateY(0)
+    }
+    setTouchStart(null)
+  }
+
   // ── Step labels ──
   const stepLabels = ['Brief', 'Lead Agent', 'Strategy', 'Pipeline']
   const priorityLabel = priority <= 3 ? 'Critical' : priority <= 5 ? 'High' : priority <= 7 ? 'Medium' : 'Low'
 
   return (
     <div className={styles.wizardOverlay} onClick={onClose}>
-      <div className={styles.wizardPanel} onClick={(e) => e.stopPropagation()}>
+      <div 
+        className={styles.wizardPanel} 
+        onClick={(e) => e.stopPropagation()}
+        ref={panelRef}
+        style={{
+          transform: translateY > 0 ? `translateY(${translateY}px)` : undefined,
+          transition: touchStart ? 'none' : 'transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)'
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Mobile drag handle */}
+        <div className={styles.wizardDragHandle}>
+          <div className={styles.wizardDragIndicator} />
+        </div>
+
         {/* Step indicator */}
         <div className={styles.stepIndicator}>
           <div className={styles.stepProgressTrack}>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { formatJson, getResultSummary, getTaskDuration, type ConductorTask, type StructuredTaskResult } from './shared'
 import { ClipboardList, Hand, CheckCircle, XCircle, Hourglass, ChevronDown, X, Trash2, ICON_INLINE } from '@/lib/icons'
 import { StatusBadge, PriorityBadge, ResultDisplay } from './StatusBadge'
@@ -68,6 +68,38 @@ export function TaskDetail({
   // Detect structured findings for DecisionMatrix
   const [decisionVersion, setDecisionVersion] = useState(0)
   const refreshDecisions = useCallback(() => setDecisionVersion((v) => v + 1), [])
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Swipe logic
+  const [touchStart, setTouchStart] = useState<number | null>(null)
+  const [translateY, setTranslateY] = useState(0)
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (panelRef.current?.scrollTop === 0) {
+      setTouchStart(e.touches[0]?.clientY ?? null)
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null) return
+    const touchY = e.touches[0]?.clientY
+    if (touchY === undefined) return
+    const diff = touchY - touchStart
+    if (diff > 0) {
+      setTranslateY(diff)
+    } else {
+      setTranslateY(0)
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (translateY > 120) {
+      onClose()
+    } else {
+      setTranslateY(0)
+    }
+    setTouchStart(null)
+  }
 
   let structuredResult: StructuredTaskResult | null = null
   let contextDecisions: Record<string, FindingDecision> = {}
@@ -88,7 +120,18 @@ export function TaskDetail({
 
   return (
     <div className={styles.detailOverlay} onClick={onClose}>
-      <div className={styles.detailPanel} onClick={(e) => e.stopPropagation()}>
+      <div 
+        className={styles.detailPanel} 
+        onClick={(e) => e.stopPropagation()}
+        ref={panelRef}
+        style={{
+          transform: translateY > 0 ? `translateY(${translateY}px)` : undefined,
+          transition: touchStart ? 'none' : 'transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)'
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {/* Mobile drag handle */}
         <div className={styles.detailDragHandle} />
 
