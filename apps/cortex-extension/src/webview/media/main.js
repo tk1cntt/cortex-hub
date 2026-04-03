@@ -443,5 +443,8 @@ dom.capSelect.addEventListener('change', () => {
   dom.capSelect.value = '';
 });
 
+// ── Ensure edit mode is off on load ──────────────────────────────────────
+exitEditMode();
+
 // ── Tell extension we're ready ────────────────────────────────────────────
 vscode.postMessage({ type: 'webviewReady' });
