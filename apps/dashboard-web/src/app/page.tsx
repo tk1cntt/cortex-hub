@@ -8,6 +8,7 @@ import {
   getDashboardOverview,
   getActivityFeed,
   getSystemMetrics,
+  getConductorAgents,
   type SystemMetrics,
 } from '@/lib/api'
 import {
@@ -15,7 +16,7 @@ import {
   GAUGE_ICONS,
   INTEL_ICONS,
 } from '@/lib/icons'
-import { Server } from 'lucide-react'
+import { Server, Bot } from 'lucide-react'
 import { Skeleton, SkeletonText, SkeletonCircle } from '@/components/ui/Skeleton'
 import { NumberTransition } from '@/components/ui/NumberTransition'
 import { MetricCard } from '@/components/ui/MetricCard'
@@ -155,20 +156,25 @@ export default function DashboardPage() {
   const { data: systemData } = useSWR('system-metrics', getSystemMetrics, {
     refreshInterval: 5000,
   })
+  const { data: agentsData } = useSWR('dashboard-agents', getConductorAgents, {
+    refreshInterval: 10000,
+  })
+  const onlineAgents = agentsData?.agents?.length ?? 0
 
   const svcMap = healthData?.services as Record<string, string> | undefined
 
   return (
     <DashboardLayout title="Dashboard" subtitle="System overview and project health">
 
-      {/* ── Hero Stats Bar ── */}
+      {/* ── Hero Stats Bar (4 per row) ── */}
       <div className={styles.heroBar}>
         <MetricCard index={0} Icon={STAT_ICONS.projects} value={overview ? <NumberTransition value={overview.projects.length} /> : <SkeletonText width={40} />} label="Projects" trendValue={12} sparklineData={[4, 5, 4, 6, 8, 10, Number(overview?.projects.length || 10)]} color="#4a90d9" />
-        <MetricCard index={1} Icon={STAT_ICONS.agents} value={overview ? <NumberTransition value={overview.totalAgents} format={formatNumber} /> : <SkeletonText width={40} />} label="Agents" trendValue={5} sparklineData={[2, 3, 3, 5, 6, 7, Number(overview?.totalAgents || 7)]} color="#9b59b6" />
-        <MetricCard index={2} Icon={STAT_ICONS.queries} value={overview ? <NumberTransition value={overview.today.queries} format={formatNumber} /> : <SkeletonText width={40} />} label="Queries Today" trendValue={-2} sparklineData={[120, 150, 110, 140, 90, 80, Number(overview?.today.queries || 90)]} color="#f5a623" />
-        <MetricCard index={3} Icon={STAT_ICONS.tokensSaved} value={overview ? <NumberTransition value={overview.tokenSavings?.totalTokensSaved ?? 0} format={formatNumber} /> : <SkeletonText width={40} />} label="Tokens Saved" trendValue={8} sparklineData={[1000, 1200, 1100, 1500, 1800, 2100, Number(overview?.tokenSavings?.totalTokensSaved || 2200)]} color="#22c55e" />
-        <MetricCard index={4} Icon={STAT_ICONS.quality} value={overview?.quality.lastGrade ?? <SkeletonText width={20} />} label="Quality" trendValue={0} sparklineData={[90, 92, 91, 95, 94, 98, Number(overview?.quality.averageScore || 95)]} color="#27ae60" />
-        <MetricCard index={5} Icon={STAT_ICONS.uptime} value={overview ? `${Math.floor(overview.uptime / 3600)}h` : <SkeletonText width={30} />} label="Uptime" trendValue={100} sparklineData={[100, 100, 100, 100, 100, 100, 100]} color="#22c55e" />
+        <MetricCard index={1} Icon={STAT_ICONS.agents} value={overview ? <NumberTransition value={overview.totalAgents} format={formatNumber} /> : <SkeletonText width={40} />} label="Active Sessions" trendValue={5} sparklineData={[2, 3, 3, 5, 6, 7, Number(overview?.totalAgents || 7)]} color="#9b59b6" />
+        <MetricCard index={2} Icon={Bot} value={<NumberTransition value={onlineAgents} />} label="Agents Online" trendValue={0} sparklineData={[1, 2, 2, 3, 3, 3, onlineAgents]} color="#10b981" />
+        <MetricCard index={3} Icon={STAT_ICONS.queries} value={overview ? <NumberTransition value={overview.today.queries} format={formatNumber} /> : <SkeletonText width={40} />} label="Queries Today" trendValue={-2} sparklineData={[120, 150, 110, 140, 90, 80, Number(overview?.today.queries || 90)]} color="#f5a623" />
+        <MetricCard index={4} Icon={STAT_ICONS.tokensSaved} value={overview ? <NumberTransition value={overview.tokenSavings?.totalTokensSaved ?? 0} format={formatNumber} /> : <SkeletonText width={40} />} label="Tokens Saved" trendValue={8} sparklineData={[1000, 1200, 1100, 1500, 1800, 2100, Number(overview?.tokenSavings?.totalTokensSaved || 2200)]} color="#22c55e" />
+        <MetricCard index={5} Icon={STAT_ICONS.quality} value={overview?.quality.lastGrade ?? <SkeletonText width={20} />} label="Quality" trendValue={0} sparklineData={[90, 92, 91, 95, 94, 98, Number(overview?.quality.averageScore || 95)]} color="#27ae60" />
+        <MetricCard index={6} Icon={STAT_ICONS.uptime} value={overview ? `${Math.floor(overview.uptime / 3600)}h` : <SkeletonText width={30} />} label="Uptime" trendValue={100} sparklineData={[100, 100, 100, 100, 100, 100, 100]} color="#22c55e" />
       </div>
 
       {/* ── Services Health Strip ── */}
