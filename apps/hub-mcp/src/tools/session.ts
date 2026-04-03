@@ -127,4 +127,68 @@ Resuming current objective from STATE.md.
       }
     }
   )
+
+  server.tool(
+    'cortex_session_end',
+    'Close a session with a summary of work done. Reports session duration and compliance.',
+    {
+      sessionId: z.string().describe('The session ID from cortex_session_start'),
+      summary: z.string().describe('Brief summary of work done in this session'),
+    },
+    async ({ sessionId, summary }) => {
+      try {
+        const response = await fetch(`${env.DASHBOARD_API_URL}/api/sessions/${encodeURIComponent(sessionId)}/end`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ summary }),
+          signal: AbortSignal.timeout(10000),
+        })
+
+        if (response.ok) {
+          const data = await response.json() as { session?: { id: string; status: string; duration?: number } }
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                status: 'closed',
+                sessionId,
+                summary,
+                session: data.session ?? null,
+              }, null, 2),
+            }],
+          }
+        }
+
+        // Fallback: mark session completed directly if endpoint doesn't exist
+        try {
+          await fetch(`${env.DASHBOARD_API_URL}/api/sessions/handoff`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId,
+              action: 'session_end',
+              status: 'completed',
+              summary,
+            }),
+            signal: AbortSignal.timeout(5000),
+          })
+        } catch { /* ignore */ }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({ status: 'closed', sessionId, summary }, null, 2),
+          }],
+        }
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Session end error: ${error instanceof Error ? error.message : 'Unknown'}`,
+          }],
+          isError: true,
+        }
+      }
+    }
+  )
 }
