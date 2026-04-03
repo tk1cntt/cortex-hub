@@ -46,14 +46,14 @@ function timeAgo(dateStr: string): string {
 
 // ── Stat Pill ──
 
-function StatPill({ Icon, value, label, trendValue, sparklineData, color }: { Icon: LucideIcon; value: React.ReactNode; label: string; trendValue?: number; sparklineData?: number[]; color?: string }) {
+function StatPill({ Icon, value, label, trendValue, sparklineData, color, index = 0 }: { Icon: LucideIcon; value: React.ReactNode; label: string; trendValue?: number; sparklineData?: number[]; color?: string; index?: number }) {
   return (
-    <div className={styles.statPill}>
+    <div className={styles.statPill} style={{ '--stagger-index': index } as React.CSSProperties}>
       <span className={styles.statPillIcon}>
         <Icon size={ICON_DEFAULTS.size} strokeWidth={ICON_DEFAULTS.strokeWidth} />
       </span>
       <div className={styles.statPillContent}>
-        <span className={styles.statPillValue}>{value}</span>
+        <span className={`${styles.statPillValue} live-value`}>{value}</span>
         <span className={styles.statPillLabel}>{label}</span>
       </div>
       {(trendValue !== undefined || sparklineData) && (
@@ -191,12 +191,12 @@ export default function DashboardPage() {
 
       {/* ── Hero Stats Bar ── */}
       <div className={styles.heroBar}>
-        <StatPill Icon={STAT_ICONS.projects} value={overview ? <NumberTransition value={overview.projects.length} /> : <SkeletonText width={40} />} label="Projects" trendValue={12} sparklineData={[4, 5, 4, 6, 8, 10, Number(overview?.projects.length || 10)]} color="#4a90d9" />
-        <StatPill Icon={STAT_ICONS.agents} value={overview ? <NumberTransition value={overview.totalAgents} format={formatNumber} /> : <SkeletonText width={40} />} label="Agents" trendValue={5} sparklineData={[2, 3, 3, 5, 6, 7, Number(overview?.totalAgents || 7)]} color="#9b59b6" />
-        <StatPill Icon={STAT_ICONS.queries} value={overview ? <NumberTransition value={overview.today.queries} format={formatNumber} /> : <SkeletonText width={40} />} label="Queries Today" trendValue={-2} sparklineData={[120, 150, 110, 140, 90, 80, Number(overview?.today.queries || 90)]} color="#f5a623" />
-        <StatPill Icon={STAT_ICONS.tokensSaved} value={overview ? <NumberTransition value={overview.tokenSavings?.totalTokensSaved ?? 0} format={formatNumber} /> : <SkeletonText width={40} />} label="Tokens Saved" trendValue={8} sparklineData={[1000, 1200, 1100, 1500, 1800, 2100, Number(overview?.tokenSavings?.totalTokensSaved || 2200)]} color="#22c55e" />
-        <StatPill Icon={STAT_ICONS.quality} value={overview?.quality.lastGrade ?? <SkeletonText width={20} />} label="Quality" trendValue={0} sparklineData={[90, 92, 91, 95, 94, 98, Number(overview?.quality.averageScore || 95)]} color="#27ae60" />
-        <StatPill Icon={STAT_ICONS.uptime} value={overview ? `${Math.floor(overview.uptime / 3600)}h` : <SkeletonText width={30} />} label="Uptime" trendValue={100} sparklineData={[100, 100, 100, 100, 100, 100, 100]} color="#22c55e" />
+        <StatPill index={0} Icon={STAT_ICONS.projects} value={overview ? <NumberTransition value={overview.projects.length} /> : <SkeletonText width={40} />} label="Projects" trendValue={12} sparklineData={[4, 5, 4, 6, 8, 10, Number(overview?.projects.length || 10)]} color="#4a90d9" />
+        <StatPill index={1} Icon={STAT_ICONS.agents} value={overview ? <NumberTransition value={overview.totalAgents} format={formatNumber} /> : <SkeletonText width={40} />} label="Agents" trendValue={5} sparklineData={[2, 3, 3, 5, 6, 7, Number(overview?.totalAgents || 7)]} color="#9b59b6" />
+        <StatPill index={2} Icon={STAT_ICONS.queries} value={overview ? <NumberTransition value={overview.today.queries} format={formatNumber} /> : <SkeletonText width={40} />} label="Queries Today" trendValue={-2} sparklineData={[120, 150, 110, 140, 90, 80, Number(overview?.today.queries || 90)]} color="#f5a623" />
+        <StatPill index={3} Icon={STAT_ICONS.tokensSaved} value={overview ? <NumberTransition value={overview.tokenSavings?.totalTokensSaved ?? 0} format={formatNumber} /> : <SkeletonText width={40} />} label="Tokens Saved" trendValue={8} sparklineData={[1000, 1200, 1100, 1500, 1800, 2100, Number(overview?.tokenSavings?.totalTokensSaved || 2200)]} color="#22c55e" />
+        <StatPill index={4} Icon={STAT_ICONS.quality} value={overview?.quality.lastGrade ?? <SkeletonText width={20} />} label="Quality" trendValue={0} sparklineData={[90, 92, 91, 95, 94, 98, Number(overview?.quality.averageScore || 95)]} color="#27ae60" />
+        <StatPill index={5} Icon={STAT_ICONS.uptime} value={overview ? `${Math.floor(overview.uptime / 3600)}h` : <SkeletonText width={30} />} label="Uptime" trendValue={100} sparklineData={[100, 100, 100, 100, 100, 100, 100]} color="#22c55e" />
       </div>
 
       {/* ── Services Health Strip ── */}
