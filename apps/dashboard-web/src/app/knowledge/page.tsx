@@ -111,18 +111,20 @@ function DocumentCard({
   onDelete,
   showProject,
   projectName,
+  index = 0,
 }: {
   doc: KnowledgeDocument
   onDelete: (id: string) => void
   showProject?: boolean
   projectName?: string
+  index?: number
 }) {
   const [confirming, setConfirming] = useState(false)
   let tags: string[] = []
   try { tags = JSON.parse(doc.tags) as string[] } catch { /* ignore */ }
 
   return (
-    <div className={styles.docCard}>
+    <div className={styles.docCard} style={{ '--stagger-index': index } as React.CSSProperties}>
       <div className={styles.docHeader}>
         <h4 className={styles.docTitle}>{doc.title}</h4>
         <div className={styles.docMeta}>
@@ -217,8 +219,8 @@ function ProjectSection({
 
       {expanded && (
         <div className={styles.projectDocs}>
-          {docs.map((doc) => (
-            <DocumentCard key={doc.id} doc={doc} onDelete={onDelete} />
+          {docs.map((doc, i) => (
+            <DocumentCard key={doc.id} doc={doc} onDelete={onDelete} index={i} />
           ))}
         </div>
       )}
@@ -321,20 +323,20 @@ export default function KnowledgePage() {
       {/* Stats Row */}
       {stats && (
         <div className={styles.statsGrid}>
-          <div className={styles.statCard}>
-            <span className={styles.statValue}>{stats.totalDocs}</span>
+          <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 0 } as React.CSSProperties}>
+            <span className={`${styles.statValue} live-value`}>{stats.totalDocs}</span>
             <span className={styles.statLabel}>Documents</span>
           </div>
-          <div className={styles.statCard}>
-            <span className={styles.statValue}>{stats.totalChunks}</span>
+          <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 1 } as React.CSSProperties}>
+            <span className={`${styles.statValue} live-value`}>{stats.totalChunks}</span>
             <span className={styles.statLabel}>Chunks</span>
           </div>
-          <div className={styles.statCard}>
-            <span className={styles.statValue}>{stats.totalHits}</span>
+          <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 2 } as React.CSSProperties}>
+            <span className={`${styles.statValue} live-value`}>{stats.totalHits}</span>
             <span className={styles.statLabel}>Search Hits</span>
           </div>
-          <div className={styles.statCard}>
-            <span className={styles.statValue}>{grouped.length}</span>
+          <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 3 } as React.CSSProperties}>
+            <span className={`${styles.statValue} live-value`}>{grouped.length}</span>
             <span className={styles.statLabel}>Projects</span>
           </div>
         </div>
@@ -447,13 +449,14 @@ export default function KnowledgePage() {
       ) : (
         /* Flat View */
         <div className={styles.docList}>
-          {allDocs.map((doc: KnowledgeDocument) => (
+          {allDocs.map((doc: KnowledgeDocument, i: number) => (
             <DocumentCard
               key={doc.id}
               doc={doc}
               onDelete={handleDelete}
               showProject
               projectName={doc.project_id ? (projectMap.get(doc.project_id) ?? doc.project_id) : 'Global'}
+              index={i}
             />
           ))}
         </div>

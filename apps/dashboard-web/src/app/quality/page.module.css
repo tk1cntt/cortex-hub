@@ -8,6 +8,9 @@
 
 .heroCard {
   padding: var(--space-5);
+  opacity: 0;
+  animation: fadeInUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--stagger-index, 0) * 80ms);
 }
 
 .cardTitle {
@@ -240,6 +243,9 @@
 
 .chartCard {
   padding: var(--space-5);
+  opacity: 0;
+  animation: fadeInUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--stagger-index, 0) * 80ms + 200ms);
 }
 
 .chartCard:first-child {

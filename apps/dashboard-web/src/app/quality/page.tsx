@@ -231,7 +231,7 @@ export default function QualityPage() {
       {/* ── Hero Section ── */}
       <div className={styles.heroGrid}>
         {/* Current Grade */}
-        <div className={`card ${styles.heroCard}`}>
+        <div className={`card ${styles.heroCard}`} style={{ '--stagger-index': 0 } as React.CSSProperties}>
           <div className={styles.heroGrade}>
             {latest ? (
               <>
@@ -263,7 +263,7 @@ export default function QualityPage() {
         </div>
 
         {/* 4-Dimension Breakdown */}
-        <div className={`card ${styles.heroCard}`}>
+        <div className={`card ${styles.heroCard}`} style={{ '--stagger-index': 1 } as React.CSSProperties}>
           <h3 className={styles.cardTitle}>4-Dimension Breakdown</h3>
           {latest ? (
             <div className={styles.dimensionCards}>
@@ -285,29 +285,29 @@ export default function QualityPage() {
         </div>
 
         {/* Stats */}
-        <div className={`card ${styles.heroCard}`}>
+        <div className={`card ${styles.heroCard}`} style={{ '--stagger-index': 2 } as React.CSSProperties}>
           <h3 className={styles.cardTitle}>Statistics</h3>
           <div className={styles.miniStats}>
             <div className={styles.miniStat}>
-              <span className={styles.miniStatValue}>
+              <span className={`${styles.miniStatValue} live-value`}>
                 {summary ? <NumberTransition value={summary.total_reports ?? 0} /> : <SkeletonText width={40} />}
               </span>
               <span className={styles.miniStatLabel}>Total Reports</span>
             </div>
             <div className={styles.miniStat}>
-              <span className={styles.miniStatValue} style={{ color: '#22c55e' }}>
+              <span className={`${styles.miniStatValue} live-value`} style={{ color: '#22c55e' }}>
                 {summary ? <NumberTransition value={summary.passed_count ?? 0} /> : <SkeletonText width={40} />}
               </span>
               <span className={styles.miniStatLabel}>Passed</span>
             </div>
             <div className={styles.miniStat}>
-              <span className={styles.miniStatValue} style={{ color: '#ef4444' }}>
+              <span className={`${styles.miniStatValue} live-value`} style={{ color: '#ef4444' }}>
                 {summary ? <NumberTransition value={summary.failed_count ?? 0} /> : <SkeletonText width={40} />}
               </span>
               <span className={styles.miniStatLabel}>Failed</span>
             </div>
             <div className={styles.miniStat}>
-              <span className={styles.miniStatValue}>
+              <span className={`${styles.miniStatValue} live-value`}>
                 {summary ? <NumberTransition value={summary.avg_score != null ? Math.round(summary.avg_score) : 0} /> : <SkeletonText width={40} />}
               </span>
               <span className={styles.miniStatLabel}>Avg Score</span>

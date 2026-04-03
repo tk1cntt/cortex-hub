@@ -47,12 +47,14 @@ function TimeAgo({ date }: { date: string }) {
 function SessionCard({
   session,
   onSelect,
+  index = 0,
 }: {
   session: SessionHandoff
   onSelect: () => void
+  index?: number
 }) {
   return (
-    <div className={`card ${styles.sessionCard}`} onClick={onSelect}>
+    <div className={`card ${styles.sessionCard}`} onClick={onSelect} style={{ '--stagger-index': index } as React.CSSProperties}>
       <div className={styles.sessionHeader}>
         <div className={styles.sessionIdRow}>
           <code className={styles.sessionId}>{session.id.slice(0, 8)}</code>
@@ -256,31 +258,31 @@ export default function SessionsPage() {
   return (
     <DashboardLayout title="Sessions" subtitle="Agent task handoffs and execution tracking">
       <div className={styles.statsGrid}>
-        <div className={`card ${styles.statCard}`}>
+        <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 0 } as React.CSSProperties}>
           <span className={styles.statIcon}>📋</span>
           <div>
-            <div className={styles.statValue}><NumberTransition value={allSessions.length} /></div>
+            <div className={`${styles.statValue} live-value`}><NumberTransition value={allSessions.length} /></div>
             <div className={styles.statLabel}>Total Sessions</div>
           </div>
         </div>
-        <div className={`card ${styles.statCard}`}>
+        <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 1 } as React.CSSProperties}>
           <span className={styles.statIcon}>⏳</span>
           <div>
-            <div className={styles.statValue}><NumberTransition value={pendingCount} /></div>
+            <div className={`${styles.statValue} live-value`}><NumberTransition value={pendingCount} /></div>
             <div className={styles.statLabel}>Pending</div>
           </div>
         </div>
-        <div className={`card ${styles.statCard}`}>
+        <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 2 } as React.CSSProperties}>
           <span className={styles.statIcon}>🔄</span>
           <div>
-            <div className={styles.statValue}><NumberTransition value={claimedCount} /></div>
+            <div className={`${styles.statValue} live-value`}><NumberTransition value={claimedCount} /></div>
             <div className={styles.statLabel}>In Progress</div>
           </div>
         </div>
-        <div className={`card ${styles.statCard}`}>
+        <div className={`card ${styles.statCard}`} style={{ '--stagger-index': 3 } as React.CSSProperties}>
           <span className={styles.statIcon}>✅</span>
           <div>
-            <div className={styles.statValue}><NumberTransition value={completedCount} /></div>
+            <div className={`${styles.statValue} live-value`}><NumberTransition value={completedCount} /></div>
             <div className={styles.statLabel}>Completed</div>
           </div>
         </div>
@@ -333,11 +335,12 @@ export default function SessionsPage() {
           </div>
         ) : (
           <div className={styles.sessionsGrid}>
-            {filteredSessions.map((session) => (
+            {filteredSessions.map((session, i) => (
               <SessionCard
                 key={session.id}
                 session={session}
                 onSelect={() => setSelectedSession(session)}
+                index={i}
               />
             ))}
           </div>
