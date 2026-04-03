@@ -29,10 +29,22 @@ export function PriorityBadge({ priority }: { priority: number }) {
   )
 }
 
+/** Fix flattened markdown: insert newlines before headings, table rows, list items */
+function fixFlatMarkdown(text: string): string {
+  return text
+    .replace(/\s*(#{1,6}\s)/g, '\n\n$1')           // headings: ### Title
+    .replace(/\s*(\|[-:]+[-|:]+\|)/g, '\n$1\n')     // table separator: |---|---|
+    .replace(/\s*(\|(?:[^|\n]+\|)+)\s*/g, '\n$1')   // table rows: | cell | cell |
+    .replace(/\s*(\d+\.\s)/g, '\n$1')                // numbered list: 1. item
+    .replace(/\s*([*-]\s)/g, '\n$1')                 // bullet list: - item
+    .replace(/\*\*Estimated effort/g, '\n\n**Estimated effort')
+    .trim()
+}
+
 export function ResultDisplay({ result }: { result: string | null }) {
   const parsed = parseResult(result)
   if (parsed.type === 'empty') return null
-  if (parsed.type === 'string') return <MarkdownRenderer content={parsed.text} />
+  if (parsed.type === 'string') return <MarkdownRenderer content={fixFlatMarkdown(parsed.text)} />
   if (parsed.type === 'subtasks') {
     return (
       <div className={styles.resultSubtasks}>
