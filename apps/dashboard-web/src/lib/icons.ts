@@ -70,6 +70,8 @@ import {
   Dna,
   Lock,
   Waves,
+  ChevronDown,
+  X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -200,4 +202,6 @@ export {
   Dna,
   Lock,
   Waves,
+  ChevronDown,
+  X,
 }

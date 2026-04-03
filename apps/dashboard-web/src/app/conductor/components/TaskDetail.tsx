@@ -2,12 +2,50 @@
 
 import { useState, useCallback } from 'react'
 import { formatJson, getResultSummary, getTaskDuration, type ConductorTask, type StructuredTaskResult } from './shared'
-import { ClipboardList, Hand, CheckCircle, XCircle, Hourglass, ICON_INLINE } from '@/lib/icons'
+import { ClipboardList, Hand, CheckCircle, XCircle, Hourglass, ChevronDown, X, Trash2, ICON_INLINE } from '@/lib/icons'
 import { StatusBadge, PriorityBadge, ResultDisplay } from './StatusBadge'
 import { DecisionMatrix } from './DecisionMatrix'
 import { LiveOutput } from './LiveOutput'
+import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer'
 import type { FindingDecision } from '@/lib/api'
 import styles from '../page.module.css'
+
+/** Collapsible section wrapper */
+function Section({
+  title,
+  icon,
+  children,
+  defaultOpen = true,
+}: {
+  title: string
+  icon?: React.ReactNode
+  children: React.ReactNode
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className={styles.detailSection}>
+      <button
+        className={styles.detailSectionHeader}
+        onClick={() => setOpen((v) => !v)}
+        type="button"
+      >
+        <h3 className={styles.detailSectionTitle}>
+          {icon}
+          {title}
+        </h3>
+        <ChevronDown
+          size={14}
+          strokeWidth={2}
+          className={`${styles.detailSectionChevron} ${open ? styles.detailSectionChevronOpen : ''}`}
+        />
+      </button>
+      {open && (
+        <div className={styles.detailSectionContent}>{children}</div>
+      )}
+    </div>
+  )
+}
 
 export function TaskDetail({
   task,
@@ -25,6 +63,7 @@ export function TaskDetail({
   onNewTaskFromOutcome?: (task: ConductorTask) => void
 }) {
   const isRunning = task.status === 'in_progress' || task.status === 'accepted' || task.status === 'analyzing'
+  const isActionable = task.status === 'pending' || task.status === 'assigned' || task.status === 'accepted' || task.status === 'in_progress' || task.status === 'analyzing' || task.status === 'review'
 
   // Detect structured findings for DecisionMatrix
   const [decisionVersion, setDecisionVersion] = useState(0)
@@ -50,43 +89,63 @@ export function TaskDetail({
   return (
     <div className={styles.detailOverlay} onClick={onClose}>
       <div className={styles.detailPanel} onClick={(e) => e.stopPropagation()}>
+        {/* Mobile drag handle */}
+        <div className={styles.detailDragHandle} />
+
+        {/* Header with status pill + close */}
         <div className={styles.detailHeader}>
-          <h2 className={styles.detailTitle}>Task Details</h2>
-          <button className={styles.detailClose} onClick={onClose}>
-            x
+          <div className={styles.detailHeaderStatus}>
+            <StatusBadge status={task.status} />
+            <PriorityBadge priority={task.priority} />
+          </div>
+          <button className={styles.detailClose} onClick={onClose} aria-label="Close">
+            <X size={14} strokeWidth={2} />
           </button>
         </div>
 
         <div className={styles.detailBody}>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>ID</span>
-            <code className={styles.detailValue}>{task.id}</code>
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Status</span>
-            <StatusBadge status={task.status} />
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Priority</span>
-            <PriorityBadge priority={task.priority} />
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Created By</span>
-            <code className={styles.detailValue}>{task.created_by_agent ?? 'unknown'}</code>
-          </div>
-          <div className={styles.detailRow}>
-            <span className={styles.detailLabel}>Assigned To</span>
-            <code className={styles.detailValue}>{task.assigned_to_agent ?? 'any agent'}</code>
-          </div>
-          {task.completed_by && (
+          {/* Task title as prominent heading */}
+          <h2 className={styles.detailTitle} style={{ marginBottom: 'var(--space-4)', fontSize: '1.0625rem' }}>
+            {task.title}
+          </h2>
+
+          {/* Compact meta grid */}
+          <div className={styles.detailMetaGrid}>
             <div className={styles.detailRow}>
-              <span className={styles.detailLabel}>Completed By</span>
-              <code className={styles.detailValue}>{task.completed_by}</code>
+              <span className={styles.detailLabel}>ID</span>
+              <code className={styles.detailValue}>{task.id.slice(0, 16)}…</code>
             </div>
+            <div className={styles.detailRow}>
+              <span className={styles.detailLabel}>Created By</span>
+              <code className={styles.detailValue}>{task.created_by_agent ?? 'unknown'}</code>
+            </div>
+            <div className={styles.detailRow}>
+              <span className={styles.detailLabel}>Assigned To</span>
+              <code className={styles.detailValue}>{task.assigned_to_agent ?? 'any agent'}</code>
+            </div>
+            {task.completed_by && (
+              <div className={styles.detailRow}>
+                <span className={styles.detailLabel}>Completed By</span>
+                <code className={styles.detailValue}>{task.completed_by}</code>
+              </div>
+            )}
+            {task.parent_task_id && (
+              <div className={styles.detailRow}>
+                <span className={styles.detailLabel}>Parent</span>
+                <code className={styles.detailValue}>{task.parent_task_id.slice(0, 16)}…</code>
+              </div>
+            )}
+          </div>
+
+          {/* Description with Markdown rendering */}
+          {task.description && (
+            <Section title="Description" defaultOpen={true}>
+              <MarkdownRenderer content={task.description} />
+            </Section>
           )}
+
           {/* Timeline */}
-          <div className={styles.detailSection}>
-            <h3 className={styles.detailSectionTitle}>Timeline</h3>
+          <Section title="Timeline" defaultOpen={false}>
             <div className={styles.taskTimeline}>
               <div className={styles.timelineStep}>
                 <span className={`${styles.timelineDot} ${styles.timelineDotActive}`} />
@@ -118,12 +177,11 @@ export function TaskDetail({
                 </div>
               </div>
             </div>
-          </div>
+          </Section>
 
           {/* Delegation Flow */}
           {(task.created_by_agent || task.assigned_to_agent || task.completed_by) && (
-            <div className={styles.detailSection}>
-              <h3 className={styles.detailSectionTitle}>Delegation Flow</h3>
+            <Section title="Delegation Flow" defaultOpen={false}>
               <div className={styles.delegationFlow}>
                 {task.created_by_agent && (
                   <div className={styles.delegationStep}>
@@ -150,36 +208,12 @@ export function TaskDetail({
                   </>
                 )}
               </div>
-            </div>
+            </Section>
           )}
 
-          {/* Parent Task Link */}
-          {task.parent_task_id && (
-            <div className={styles.detailRow}>
-              <span className={styles.detailLabel}>Parent Task</span>
-              <code className={styles.detailValue}>{task.parent_task_id}</code>
-            </div>
-          )}
-
-          {/* Title & Description */}
-          <div className={styles.detailSection}>
-            <h3 className={styles.detailSectionTitle}>Title</h3>
-            <p className={styles.detailText}>{task.title}</p>
-          </div>
-
-          {task.description && (
-            <div className={styles.detailSection}>
-              <h3 className={styles.detailSectionTitle}>Description</h3>
-              <p className={styles.detailText}>{task.description}</p>
-            </div>
-          )}
-
-          {/* Result: DecisionMatrix for structured findings, or standard display */}
+          {/* Result: DecisionMatrix for structured findings, or MarkdownRenderer */}
           {task.result && (
-            <div className={styles.detailSection}>
-              <h3 className={styles.detailSectionTitle}>
-                {structuredResult ? 'Decision Matrix' : 'Result'}
-              </h3>
+            <Section title={structuredResult ? 'Decision Matrix' : 'Result'} defaultOpen={true}>
               {structuredResult ? (
                 <DecisionMatrix
                   key={decisionVersion}
@@ -193,9 +227,7 @@ export function TaskDetail({
                   {(() => {
                     const summary = getResultSummary(task.result)
                     return summary ? (
-                      <div className={styles.taskResultPreview} style={{ marginBottom: 'var(--space-3)', whiteSpace: 'normal' }}>
-                        {summary}
-                      </div>
+                      <MarkdownRenderer content={summary} />
                     ) : null
                   })()}
                   <ResultDisplay result={task.result} />
@@ -209,55 +241,50 @@ export function TaskDetail({
                   New Task from Outcome
                 </button>
               )}
-            </div>
+            </Section>
           )}
 
           {/* Context */}
           {task.context && task.context !== '{}' && (
-            <div className={styles.detailSection}>
-              <h3 className={styles.detailSectionTitle}>Context</h3>
+            <Section title="Context" defaultOpen={false}>
               <pre className={styles.detailCode}>{formatJson(task.context)}</pre>
-            </div>
+            </Section>
           )}
 
           {/* Live Output */}
-          <div className={styles.detailSection}>
-            <h3 className={styles.detailSectionTitle}>
-              {isRunning ? '● Live Output' : 'Output Log'}
-            </h3>
+          <Section title={isRunning ? '● Live Output' : 'Output Log'} defaultOpen={isRunning}>
             <LiveOutput taskId={task.id} isActive={isRunning} />
-          </div>
+          </Section>
+        </div>
 
-          {/* Actions */}
-          <div className={styles.detailActions}>
-            {(task.status === 'pending' || task.status === 'assigned' || task.status === 'accepted' || task.status === 'in_progress' || task.status === 'analyzing' || task.status === 'review') && (
-              <>
-                {onMarkDone && (
-                  <button
-                    className="btn btn-sm"
-                    style={{ background: 'var(--status-healthy, #10b981)', color: 'white', border: 'none' }}
-                    onClick={onMarkDone}
-                  >
-                    ✓ Mark Done
-                  </button>
-                )}
+        {/* Sticky ghost action buttons */}
+        <div className={styles.detailActions}>
+          {isActionable && (
+            <>
+              {onMarkDone && (
                 <button
-                  className="btn btn-sm"
-                  style={{ background: 'var(--status-warning)', color: 'white', border: 'none' }}
-                  onClick={onCancel}
+                  className={`${styles.detailActionBtn} ${styles.detailActionBtnSuccess}`}
+                  onClick={onMarkDone}
                 >
-                  ⛔ Force Cancel
+                  <CheckCircle size={14} strokeWidth={1.5} />
+                  Done
                 </button>
-              </>
-            )}
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => { onDelete(); onClose() }}
-              style={{ borderColor: 'var(--status-error)', color: 'var(--status-error)' }}
-            >
-              Delete Task
-            </button>
-          </div>
+              )}
+              <button
+                className={`${styles.detailActionBtn} ${styles.detailActionBtnWarning}`}
+                onClick={onCancel}
+              >
+                Cancel
+              </button>
+            </>
+          )}
+          <button
+            className={`${styles.detailActionBtn} ${styles.detailActionBtnDanger}`}
+            onClick={() => { onDelete(); onClose() }}
+          >
+            <Trash2 size={14} strokeWidth={1.5} />
+            Delete
+          </button>
         </div>
       </div>
     </div>
