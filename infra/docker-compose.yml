@@ -114,6 +114,7 @@ services:
       - cliproxy-auth:/app/cliproxy-auth
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      TZ: Asia/Ho_Chi_Minh
       PORT: 4000
       NODE_ENV: production
       DATABASE_PATH: /app/data/cortex.db
@@ -159,6 +160,7 @@ services:
     ports:
       - "8318:8317"
     environment:
+      TZ: Asia/Ho_Chi_Minh
       PORT: 8317
       NODE_ENV: production
       DASHBOARD_API_URL: http://cortex-api:4000

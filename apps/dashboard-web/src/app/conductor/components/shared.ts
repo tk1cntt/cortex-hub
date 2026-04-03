@@ -237,6 +237,8 @@ export function buildTaskTree(tasks: ConductorTask[]): TaskTreeNode[] {
     for (const node of nodes) sortChildren(node.children)
   }
   sortChildren(roots)
+  // Root pipelines: newest first
+  roots.sort((a, b) => b.task.created_at.localeCompare(a.task.created_at))
   return roots
 }
 

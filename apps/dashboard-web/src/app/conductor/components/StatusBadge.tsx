@@ -1,6 +1,7 @@
 'use client'
 
 import { parseResult } from './shared'
+import { MarkdownRenderer } from '@/components/ui/MarkdownRenderer'
 import styles from '../page.module.css'
 
 export function StatusBadge({ status }: { status: string }) {
@@ -31,7 +32,7 @@ export function PriorityBadge({ priority }: { priority: number }) {
 export function ResultDisplay({ result }: { result: string | null }) {
   const parsed = parseResult(result)
   if (parsed.type === 'empty') return null
-  if (parsed.type === 'string') return <p className={styles.detailText}>{parsed.text}</p>
+  if (parsed.type === 'string') return <MarkdownRenderer content={parsed.text} />
   if (parsed.type === 'subtasks') {
     return (
       <div className={styles.resultSubtasks}>
