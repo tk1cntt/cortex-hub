@@ -50,8 +50,6 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
   const [criteria, setCriteria] = useState<AcceptanceCriterion[]>([])
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [priority, setPriority] = useState(resume?.task.priority ?? 5)
-  const [tags, setTags] = useState<string[]>([])
-  const [tagInput, setTagInput] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // ── Step 2: Assign Lead ──
@@ -98,7 +96,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
     startPoll()
 
     return () => { pollAbortRef.current?.abort() }
-  }, []) // eslint-disable-line
+  }, [])
 
   // ── Image paste handler ──
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -148,14 +146,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
     setCriteria(prev => prev.filter(c => c.id !== id))
   }
 
-  // ── Tags ──
-  const addTag = (tag: string) => {
-    const t = tag.trim().toLowerCase()
-    if (t && !tags.includes(t)) setTags(prev => [...prev, t])
-    setTagInput('')
-  }
-
-  // ── Poll for strategy with progress tracking ──
+  // ── Criteria management ──
   const pollForStrategy = useCallback(async (taskId: string): Promise<{ type: 'strategy'; strategy: TaskStrategy } | { type: 'completed' } | { type: 'error'; message: string } | null> => {
     const POLL_INTERVAL = 2000
     const TIMEOUT = 5 * 60 * 1000
@@ -256,7 +247,6 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
         criteria.filter(c => c.text.trim()).length > 0
           ? '\n\n**Acceptance Criteria:**\n' + criteria.filter(c => c.text.trim()).map(c => `- [ ] ${c.text}`).join('\n')
           : '',
-        tags.length > 0 ? `\n\n**Tags:** ${tags.join(', ')}` : '',
       ].join('')
 
       const agentInstructions = [
@@ -296,7 +286,6 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             workflow: 'orchestrated',
             phase: 'analyzing',
             acceptanceCriteria: criteria.filter(c => c.text.trim()).map(c => c.text),
-            tags,
           },
         })
         setCreatedTask(res.task)
@@ -395,7 +384,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             `2. **Implement** the changes described above`,
             `3. **Quality gates** — run: \`pnpm build && pnpm typecheck && pnpm lint\``,
             `4. **Report quality** — call \`cortex_quality_report\` with build/typecheck/lint results`,
-            `5. **Commit & push** — git add [changed files], git commit with descriptive message, git push`,
+            `5. **Commit & push** — \`git add <files> && git commit -m "feat: <description>" && git push\``,
             `6. **Reindex** — call \`cortex_code_reindex\` with repo and branch`,
             `7. **Complete task** — call \`cortex_task_update\` with taskId from the \`[Cortex Task ...]\` header, \`status: "completed"\`, and a \`result\` object containing: \`{ buildStatus, filesChanged, commitHash, keyDecisions }\``,
             ``,
@@ -436,7 +425,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             `2. **Implement** the changes described above`,
             `3. **Quality gates** — run: \`pnpm build && pnpm typecheck && pnpm lint\``,
             `4. **Report quality** — call \`cortex_quality_report\` with build/typecheck/lint results`,
-            `5. **Commit & push** — git add [changed files], git commit with descriptive message, git push`,
+            `5. **Commit & push** — \`git add <files> && git commit -m "feat: <description>" && git push\``,
             `6. **Reindex** — call \`cortex_code_reindex\` with repo and branch`,
             `7. **Complete task** — call \`cortex_task_update\` with taskId from the \`[Cortex Task ...]\` header, \`status: "completed"\`, and a \`result\` object containing: \`{ buildStatus, filesChanged, commitHash, keyDecisions }\``,
             ``,
@@ -478,6 +467,12 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
       <div className={styles.wizardPanel} onClick={(e) => e.stopPropagation()}>
         {/* Step indicator */}
         <div className={styles.stepIndicator}>
+          <div className={styles.stepProgressTrack}>
+            <div
+              className={styles.stepProgressBar}
+              style={{ width: `${((step - 1) / (stepLabels.length - 1)) * 100}%` }}
+            />
+          </div>
           {stepLabels.map((label, i) => (
             <div
               key={label}
@@ -485,7 +480,6 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             >
               <span className={styles.stepNum}>{step > i + 1 ? '✓' : i + 1}</span>
               <span className={styles.stepLabel}>{label}</span>
-              {i < stepLabels.length - 1 && <span className={styles.stepLine} />}
             </div>
           ))}
         </div>
@@ -572,6 +566,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
                   className={styles.priorityTrack}
                   min={1}
                   max={10}
+                  step={1}
                   value={priority}
                   onChange={(e) => setPriority(Number(e.target.value))}
                 />
@@ -581,33 +576,6 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
                 </div>
               </div>
             </div>
-
-            <details className={styles.fieldGroup} style={{ cursor: 'pointer' }}>
-              <summary className={styles.fieldLabel} style={{ listStyle: 'none', cursor: 'pointer' }}>
-                Tags <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span>
-              </summary>
-              <div className={styles.tagsList} style={{ marginTop: 'var(--space-2)' }}>
-                {tags.map((tag) => (
-                  <span key={tag} className={styles.tag}>
-                    {tag}
-                    <button className={styles.tagRemove} onClick={() => setTags(prev => prev.filter(t => t !== tag))}>×</button>
-                  </span>
-                ))}
-                <input
-                  className={styles.tagInput}
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ',') {
-                      e.preventDefault()
-                      addTag(tagInput)
-                    }
-                  }}
-                  onBlur={() => { if (tagInput) addTag(tagInput) }}
-                  placeholder="Add tag..."
-                />
-              </div>
-            </details>
 
             <div className={styles.wizardActions}>
               <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
