@@ -389,7 +389,17 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             `\n\nRole: ${role.label}`,
             `Parent task: ${title.trim()}`,
             `\n\n---`,
-            `**IMPORTANT:** When you finish this task, you MUST call \`cortex_task_update\` with the task ID from the \`[Cortex Task ...]\` header and \`status: "completed"\`. Include a \`result\` object summarizing what was done (files changed, key decisions). Do NOT skip this step — the pipeline cannot continue without it.`,
+            `## Cortex Workflow (MANDATORY)`,
+            `Before marking this task complete, you MUST follow these steps IN ORDER:`,
+            `1. **Use cortex tools first** — \`cortex_code_search\` / \`cortex_code_impact\` before editing files`,
+            `2. **Implement** the changes described above`,
+            `3. **Quality gates** — run: \`pnpm build && pnpm typecheck && pnpm lint\``,
+            `4. **Report quality** — call \`cortex_quality_report\` with build/typecheck/lint results`,
+            `5. **Commit & push** — git add [changed files], git commit with descriptive message, git push`,
+            `6. **Reindex** — call \`cortex_code_reindex\` with repo and branch`,
+            `7. **Complete task** — call \`cortex_task_update\` with taskId from the \`[Cortex Task ...]\` header, \`status: "completed"\`, and a \`result\` object containing: \`{ buildStatus, filesChanged, commitHash, keyDecisions }\``,
+            ``,
+            `**Do NOT skip any step. Do NOT mark complete without passing quality gates. The pipeline cannot continue without proper completion.**`,
           ].join(''),
           assignedTo: role.agent,
           priority,
@@ -420,7 +430,17 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
             `Parent task: ${title.trim()}`,
             `\n\nThis is a QA/Review task. Wait for ALL implementation tasks to complete before starting. Review the combined output of all tasks.`,
             `\n\n---`,
-            `**IMPORTANT:** When you finish this task, you MUST call \`cortex_task_update\` with the task ID from the \`[Cortex Task ...]\` header and \`status: "completed"\`. Include a \`result\` object summarizing what was done (files changed, key decisions). Do NOT skip this step — the pipeline cannot continue without it.`,
+            `## Cortex Workflow (MANDATORY)`,
+            `Before marking this task complete, you MUST follow these steps IN ORDER:`,
+            `1. **Use cortex tools first** — \`cortex_code_search\` / \`cortex_code_impact\` before editing files`,
+            `2. **Implement** the changes described above`,
+            `3. **Quality gates** — run: \`pnpm build && pnpm typecheck && pnpm lint\``,
+            `4. **Report quality** — call \`cortex_quality_report\` with build/typecheck/lint results`,
+            `5. **Commit & push** — git add [changed files], git commit with descriptive message, git push`,
+            `6. **Reindex** — call \`cortex_code_reindex\` with repo and branch`,
+            `7. **Complete task** — call \`cortex_task_update\` with taskId from the \`[Cortex Task ...]\` header, \`status: "completed"\`, and a \`result\` object containing: \`{ buildStatus, filesChanged, commitHash, keyDecisions }\``,
+            ``,
+            `**Do NOT skip any step. Do NOT mark complete without passing quality gates. The pipeline cannot continue without proper completion.**`,
           ].join(''),
           assignedTo: role.agent,
           priority: Math.max(1, priority - 1),
@@ -562,10 +582,11 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
               </div>
             </div>
 
-            {/* Tags */}
-            <div className={styles.fieldGroup}>
-              <label className={styles.fieldLabel}>Tags</label>
-              <div className={styles.tagsList}>
+            <details className={styles.fieldGroup} style={{ cursor: 'pointer' }}>
+              <summary className={styles.fieldLabel} style={{ listStyle: 'none', cursor: 'pointer' }}>
+                Tags <span style={{ fontSize: '0.6875rem', fontWeight: 400, color: 'var(--text-tertiary)' }}>(optional)</span>
+              </summary>
+              <div className={styles.tagsList} style={{ marginTop: 'var(--space-2)' }}>
                 {tags.map((tag) => (
                   <span key={tag} className={styles.tag}>
                     {tag}
@@ -586,7 +607,7 @@ export function TaskBriefingWizard({ onClose, onCreated, agents, prefill, resume
                   placeholder="Add tag..."
                 />
               </div>
-            </div>
+            </details>
 
             <div className={styles.wizardActions}>
               <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
