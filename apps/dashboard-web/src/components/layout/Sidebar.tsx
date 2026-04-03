@@ -6,6 +6,7 @@ import Link from 'next/link'
 import useSWR from 'swr'
 import { checkHealth } from '@/lib/api'
 import { NAV_ICONS, ICON_DEFAULTS } from '@/lib/icons'
+import { StatusDot } from '@/components/ui/StatusDot'
 import styles from './Sidebar.module.css'
 
 const navItems = [
@@ -106,7 +107,7 @@ export default function Sidebar() {
         {/* Footer */}
         <div className={styles.footer}>
           <div className={styles.statusRow}>
-            <span className={`status-dot ${isOnline ? 'healthy' : 'unhealthy'}`} />
+            <StatusDot variant={isOnline ? 'healthy' : 'error'} />
             <span className={styles.statusText}>
               {isOnline ? 'All systems online' : 'Connecting...'}
             </span>

@@ -12,6 +12,7 @@ import {
   setBudget,
   getToolStats,
 } from '@/lib/api'
+import { Tooltip } from '@/components/ui/Tooltip'
 import styles from './page.module.css'
 
 // ── Helpers ──
@@ -316,23 +317,30 @@ export default function UsagePage() {
           {/* 14-Day Bar Chart */}
           <div className={styles.trendChart}>
             {dailyTrend14.map((point) => (
-              <div key={point.day} className={styles.trendColumn}>
-                <span className={styles.trendCount}>{point.requests > 0 ? point.requests : ''}</span>
-                <div className={styles.trendBarWrapper}>
-                  <div
-                    className={styles.trendBar}
-                    style={{ height: `${Math.max((point.requests / maxDaily14) * 100, 2)}%` }}
-                  />
+              <Tooltip
+                key={point.day}
+                position="top"
+                content={
+                  <>
+                    <strong>{point.day}</strong>
+                    <br />
+                    {point.requests} requests ({formatNumber(point.tokens)} tokens)
+                  </>
+                }
+              >
+                <div className={styles.trendColumn}>
+                  <span className={styles.trendCount}>{point.requests > 0 ? point.requests : ''}</span>
+                  <div className={styles.trendBarWrapper}>
+                    <div
+                      className={styles.trendBar}
+                      style={{ height: `${Math.max((point.requests / maxDaily14) * 100, 2)}%` }}
+                    />
+                  </div>
+                  <span className={styles.trendDay}>
+                    {new Date(point.day + 'T12:00:00').toLocaleDateString('en', { weekday: 'narrow' })}
+                  </span>
                 </div>
-                <span className={styles.trendDay}>
-                  {new Date(point.day + 'T12:00:00').toLocaleDateString('en', { weekday: 'narrow' })}
-                </span>
-                <div className={styles.heatmapTooltip}>
-                  <strong>{point.day}</strong>
-                  <br />
-                  {point.requests} requests ({formatNumber(point.tokens)} tokens)
-                </div>
-              </div>
+              </Tooltip>
             ))}
           </div>
 
@@ -355,13 +363,19 @@ export default function UsagePage() {
                     {col.map((cell) => {
                       const level = getHeatmapLevel(cell.requests, maxHeatmapDaily)
                       return (
-                        <div key={cell.day} className={`${styles.heatmapCell} ${styles['heatmapLevel' + level]}`}>
-                          <div className={styles.heatmapTooltip}>
-                            <strong>{new Date(cell.day + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</strong>
-                            <br />
-                            {cell.requests} requests ({formatNumber(cell.tokens)} tokens)
-                          </div>
-                        </div>
+                        <Tooltip
+                          key={cell.day}
+                          position="top"
+                          content={
+                            <>
+                              <strong>{new Date(cell.day + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</strong>
+                              <br />
+                              {cell.requests} requests ({formatNumber(cell.tokens)} tokens)
+                            </>
+                          }
+                        >
+                          <div className={`${styles.heatmapCell} ${styles['heatmapLevel' + level]}`} />
+                        </Tooltip>
                       )
                     })}
                   </div>

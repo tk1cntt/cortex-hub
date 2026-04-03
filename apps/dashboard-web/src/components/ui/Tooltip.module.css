@@ -1,0 +1,40 @@
+/* ── Tooltip ── */
+
+.wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 20;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.top {
+  bottom: 100%;
+  margin-bottom: 8px;
+}
+
+.bottom {
+  top: 100%;
+  margin-top: 8px;
+}
+
+.wrapper:hover .tooltip {
+  opacity: 1;
+  visibility: visible;
+}

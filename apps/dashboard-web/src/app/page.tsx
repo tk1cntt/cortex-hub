@@ -17,13 +17,14 @@ import {
   ACTIVITY_ICONS,
   INTEL_ICONS,
   ICON_DEFAULTS,
-  type LucideIcon,
 } from '@/lib/icons'
 import { Server, Mailbox } from 'lucide-react'
 import { SkeletonText, SkeletonCircle } from '@/components/ui/Skeleton'
 import { NumberTransition } from '@/components/ui/NumberTransition'
-import { Sparkline } from '@/components/ui/Sparkline'
-import { TrendBadge } from '@/components/ui/TrendBadge'
+import { MetricCard } from '@/components/ui/MetricCard'
+import { GaugeChart } from '@/components/ui/GaugeChart'
+import { TimelineEvent } from '@/components/ui/TimelineEvent'
+import { StatusDot } from '@/components/ui/StatusDot'
 import styles from './page.module.css'
 
 // ── Utilities ──
@@ -44,87 +45,20 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-// ── Stat Pill ──
-
-function StatPill({ Icon, value, label, trendValue, sparklineData, color, index = 0 }: { Icon: LucideIcon; value: React.ReactNode; label: string; trendValue?: number; sparklineData?: number[]; color?: string; index?: number }) {
-  return (
-    <div className={styles.statPill} style={{ '--stagger-index': index } as React.CSSProperties}>
-      <span className={styles.statPillIcon}>
-        <Icon size={ICON_DEFAULTS.size} strokeWidth={ICON_DEFAULTS.strokeWidth} />
-      </span>
-      <div className={styles.statPillContent}>
-        <span className={`${styles.statPillValue} live-value`}>{value}</span>
-        <span className={styles.statPillLabel}>{label}</span>
-      </div>
-      {(trendValue !== undefined || sparklineData) && (
-        <div className={styles.statPillTrend}>
-          {sparklineData && <Sparkline data={sparklineData} color={color || '#4a90d9'} width={60} height={20} />}
-          {trendValue !== undefined && <TrendBadge value={trendValue} />}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Activity Row ──
+// ── Activity Row (uses shared TimelineEvent) ──
 
 function ActivityRow({ event }: { event: ActivityEvent }) {
   const IconComp = ACTIVITY_ICONS[event.type as keyof typeof ACTIVITY_ICONS] ?? ACTIVITY_ICONS.default
   const statusClass = event.status === 'ok' || event.status === 'completed' ? 'healthy' : event.status === 'error' ? 'error' : 'warning'
   return (
-    <div className={styles.activityRow}>
-      <span className={styles.activityIcon}><IconComp size={16} strokeWidth={ICON_DEFAULTS.strokeWidth} /></span>
-      <div className={styles.activityInfo}>
-        <span className={styles.activityDetail}>{event.detail}</span>
-        <span className={styles.activityMeta}>
-          {event.agent_id}
-          {event.latency_ms ? ` · ${event.latency_ms}ms` : ''}
-        </span>
-      </div>
-      <div className={styles.activityRight}>
-        <span className={`badge badge-${statusClass}`}>{event.status}</span>
-        <span className={styles.activityTime}>{timeAgo(event.created_at)}</span>
-      </div>
-    </div>
-  )
-}
-
-// ── Gauge Chart ──
-
-function GaugeChart({ value, label, subtitle, color, Icon, id }: {
-  value: number; label: string; subtitle: React.ReactNode; color: string; Icon: LucideIcon; id: string
-}) {
-  const radius = 42
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference - (value / 100) * circumference
-  const statusColor = value > 90 ? '#e74c3c' : value > 70 ? '#f5a623' : color
-
-  return (
-    <div className={styles.gaugeCard}>
-      <div className={styles.gaugeContainer}>
-        <svg viewBox="0 0 100 100" className={styles.gaugeSvg}>
-          <defs>
-            <linearGradient id={`grad-${id}`} x1="0%" y1="100%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor={statusColor} />
-              <stop offset="100%" stopColor={`${statusColor}70`} />
-            </linearGradient>
-          </defs>
-          <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--border)" strokeWidth="6" opacity="0.3" />
-          <circle
-            cx="50" cy="50" r={radius} fill="none" stroke={`url(#grad-${id})`} strokeWidth="6"
-            strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset}
-            transform="rotate(-90 50 50)" className={styles.gaugeRing}
-            style={{ filter: `drop-shadow(0 0 6px ${statusColor}40)` }}
-          />
-        </svg>
-        <div className={styles.gaugeCenter}>
-          <span className={styles.gaugeIcon}><Icon size={22} strokeWidth={ICON_DEFAULTS.strokeWidth} /></span>
-          <span className={styles.gaugeValue}>{value}%</span>
-        </div>
-      </div>
-      <div className={styles.gaugeLabel}>{label}</div>
-      <div className={styles.gaugeSub}>{subtitle}</div>
-    </div>
+    <TimelineEvent
+      icon={<IconComp size={16} strokeWidth={ICON_DEFAULTS.strokeWidth} />}
+      detail={event.detail}
+      meta={`${event.agent_id}${event.latency_ms ? ` · ${event.latency_ms}ms` : ''}`}
+      status={event.status}
+      statusVariant={statusClass}
+      time={timeAgo(event.created_at)}
+    />
   )
 }
 
@@ -136,7 +70,7 @@ function ContainerRow({ container }: { container: SystemMetrics['containers'][0]
   return (
     <div className={styles.containerRow}>
       <div className={styles.containerInfo}>
-        <span className={`status-dot ${statusClass}`} />
+        <StatusDot variant={statusClass} />
         <span className={styles.containerName}>{container.name.replace('cortex-', '')}</span>
       </div>
       <span className={styles.containerCpu}>{isRunning ? container.cpu : '—'}</span>
@@ -160,7 +94,7 @@ function ServiceMini({ name, status }: { name: string; status: string }) {
   const cls = status === 'ok' ? 'healthy' : status === 'error' ? 'error' : 'warning'
   return (
     <div className={styles.serviceMini}>
-      <span className={`status-dot ${cls}`} />
+      <StatusDot variant={cls} />
       <span className={styles.serviceMiniName}>{name}</span>
     </div>
   )
@@ -191,12 +125,12 @@ export default function DashboardPage() {
 
       {/* ── Hero Stats Bar ── */}
       <div className={styles.heroBar}>
-        <StatPill index={0} Icon={STAT_ICONS.projects} value={overview ? <NumberTransition value={overview.projects.length} /> : <SkeletonText width={40} />} label="Projects" trendValue={12} sparklineData={[4, 5, 4, 6, 8, 10, Number(overview?.projects.length || 10)]} color="#4a90d9" />
-        <StatPill index={1} Icon={STAT_ICONS.agents} value={overview ? <NumberTransition value={overview.totalAgents} format={formatNumber} /> : <SkeletonText width={40} />} label="Agents" trendValue={5} sparklineData={[2, 3, 3, 5, 6, 7, Number(overview?.totalAgents || 7)]} color="#9b59b6" />
-        <StatPill index={2} Icon={STAT_ICONS.queries} value={overview ? <NumberTransition value={overview.today.queries} format={formatNumber} /> : <SkeletonText width={40} />} label="Queries Today" trendValue={-2} sparklineData={[120, 150, 110, 140, 90, 80, Number(overview?.today.queries || 90)]} color="#f5a623" />
-        <StatPill index={3} Icon={STAT_ICONS.tokensSaved} value={overview ? <NumberTransition value={overview.tokenSavings?.totalTokensSaved ?? 0} format={formatNumber} /> : <SkeletonText width={40} />} label="Tokens Saved" trendValue={8} sparklineData={[1000, 1200, 1100, 1500, 1800, 2100, Number(overview?.tokenSavings?.totalTokensSaved || 2200)]} color="#22c55e" />
-        <StatPill index={4} Icon={STAT_ICONS.quality} value={overview?.quality.lastGrade ?? <SkeletonText width={20} />} label="Quality" trendValue={0} sparklineData={[90, 92, 91, 95, 94, 98, Number(overview?.quality.averageScore || 95)]} color="#27ae60" />
-        <StatPill index={5} Icon={STAT_ICONS.uptime} value={overview ? `${Math.floor(overview.uptime / 3600)}h` : <SkeletonText width={30} />} label="Uptime" trendValue={100} sparklineData={[100, 100, 100, 100, 100, 100, 100]} color="#22c55e" />
+        <MetricCard index={0} Icon={STAT_ICONS.projects} value={overview ? <NumberTransition value={overview.projects.length} /> : <SkeletonText width={40} />} label="Projects" trendValue={12} sparklineData={[4, 5, 4, 6, 8, 10, Number(overview?.projects.length || 10)]} color="#4a90d9" />
+        <MetricCard index={1} Icon={STAT_ICONS.agents} value={overview ? <NumberTransition value={overview.totalAgents} format={formatNumber} /> : <SkeletonText width={40} />} label="Agents" trendValue={5} sparklineData={[2, 3, 3, 5, 6, 7, Number(overview?.totalAgents || 7)]} color="#9b59b6" />
+        <MetricCard index={2} Icon={STAT_ICONS.queries} value={overview ? <NumberTransition value={overview.today.queries} format={formatNumber} /> : <SkeletonText width={40} />} label="Queries Today" trendValue={-2} sparklineData={[120, 150, 110, 140, 90, 80, Number(overview?.today.queries || 90)]} color="#f5a623" />
+        <MetricCard index={3} Icon={STAT_ICONS.tokensSaved} value={overview ? <NumberTransition value={overview.tokenSavings?.totalTokensSaved ?? 0} format={formatNumber} /> : <SkeletonText width={40} />} label="Tokens Saved" trendValue={8} sparklineData={[1000, 1200, 1100, 1500, 1800, 2100, Number(overview?.tokenSavings?.totalTokensSaved || 2200)]} color="#22c55e" />
+        <MetricCard index={4} Icon={STAT_ICONS.quality} value={overview?.quality.lastGrade ?? <SkeletonText width={20} />} label="Quality" trendValue={0} sparklineData={[90, 92, 91, 95, 94, 98, Number(overview?.quality.averageScore || 95)]} color="#27ae60" />
+        <MetricCard index={5} Icon={STAT_ICONS.uptime} value={overview ? `${Math.floor(overview.uptime / 3600)}h` : <SkeletonText width={30} />} label="Uptime" trendValue={100} sparklineData={[100, 100, 100, 100, 100, 100, 100]} color="#22c55e" />
       </div>
 
       {/* ── Services Health Strip ── */}
