@@ -204,7 +204,7 @@ export async function buildKnowledgeFromDocs(
   const embedConfig: EmbedderConfig = {
     provider: 'gemini' as const,
     apiKey: resolveGeminiApiKey(),
-    model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-exp-03-07',
+    model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-2-preview',
   }
   const embedder = new Embedder(embedConfig)
 

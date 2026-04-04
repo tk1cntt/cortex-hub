@@ -166,12 +166,13 @@ function buildEmbeddingChain(): { config: EmbedderConfig; chain: ModelSlot[] } {
     }
   }
 
-  // Default fallback config (Gemini)
+  // Default fallback config (Gemini from env)
   const geminiKey = process.env.GEMINI_API_KEY ?? ''
+  const defaultModel = process.env.MEM9_EMBEDDING_MODEL || 'gemini-embedding-2-preview'
   const defaultConfig: EmbedderConfig = {
     provider: 'gemini',
     apiKey: geminiKey,
-    model: 'gemini-embedding-001',
+    model: defaultModel,
   }
 
   return { config: defaultConfig, chain: chainSlots }
