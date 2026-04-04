@@ -352,17 +352,3 @@ INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);
 -- Insert default organization
 INSERT OR IGNORE INTO organizations (id, name, slug, description)
 VALUES ('org-default', 'Personal', 'personal', 'Default personal organization');
-
--- ============================================================
--- Migrations (for existing databases)
--- ============================================================
--- v1.1: Add commit tracking and mem9 status to index_jobs
-ALTER TABLE index_jobs ADD COLUMN commit_hash TEXT;
-ALTER TABLE index_jobs ADD COLUMN commit_message TEXT;
-ALTER TABLE index_jobs ADD COLUMN triggered_by TEXT;
-ALTER TABLE index_jobs ADD COLUMN mem9_status TEXT;
-ALTER TABLE index_jobs ADD COLUMN mem9_chunks INTEGER DEFAULT 0;
-ALTER TABLE index_jobs ADD COLUMN mem9_progress INTEGER DEFAULT 0;
-ALTER TABLE index_jobs ADD COLUMN mem9_total_chunks INTEGER DEFAULT 0;
-ALTER TABLE index_jobs ADD COLUMN docs_knowledge_status TEXT;
-ALTER TABLE index_jobs ADD COLUMN docs_knowledge_count INTEGER DEFAULT 0;

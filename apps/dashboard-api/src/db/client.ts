@@ -64,6 +64,25 @@ for (const sql of knowledgeEvolutionCols) {
   try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
 }
 
+// v1.1: index_jobs — commit tracking, mem9, docs knowledge
+const indexJobsExtraCols = [
+  'ALTER TABLE index_jobs ADD COLUMN commit_hash TEXT',
+  'ALTER TABLE index_jobs ADD COLUMN commit_message TEXT',
+  'ALTER TABLE index_jobs ADD COLUMN triggered_by TEXT',
+  'ALTER TABLE index_jobs ADD COLUMN mem9_status TEXT',
+  'ALTER TABLE index_jobs ADD COLUMN mem9_chunks INTEGER DEFAULT 0',
+  'ALTER TABLE index_jobs ADD COLUMN mem9_progress INTEGER DEFAULT 0',
+  'ALTER TABLE index_jobs ADD COLUMN mem9_total_chunks INTEGER DEFAULT 0',
+  'ALTER TABLE index_jobs ADD COLUMN docs_knowledge_status TEXT',
+  'ALTER TABLE index_jobs ADD COLUMN docs_knowledge_count INTEGER DEFAULT 0',
+]
+for (const sql of indexJobsExtraCols) {
+  try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
+}
+
+// Update index_jobs table definition in schema.sql to include new columns
+// (tracked in schema.sql DDL directly — no migration needed for fresh installs)
+
 if (existsSync(schemaPath)) {
   const schema = readFileSync(schemaPath, 'utf8')
   db.exec(schema)
