@@ -178,6 +178,49 @@ INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('quality_g
 INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('task_assignment', 1);
 INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('session_handoff', 1);
 
+-- ── Knowledge Documents (Vector-searchable knowledge base) ──
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    source_agent_id TEXT,
+    project_id TEXT,
+    tags TEXT DEFAULT '[]',
+    content_preview TEXT,
+    chunk_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'active'
+        CHECK(status IN ('active', 'archived', 'deprecated')),
+    hit_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    selection_count INTEGER DEFAULT 0,
+    applied_count INTEGER DEFAULT 0,
+    completion_count INTEGER DEFAULT 0,
+    fallback_count INTEGER DEFAULT 0,
+    origin TEXT DEFAULT 'manual',
+    generation INTEGER DEFAULT 0,
+    source_task_id TEXT,
+    created_by_agent TEXT,
+    category TEXT DEFAULT 'general'
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_status ON knowledge_documents(status);
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_project ON knowledge_documents(project_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_documents_updated ON knowledge_documents(updated_at DESC);
+
+-- ── Knowledge Chunks (Individual embeddable text segments) ──
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    char_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(document_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document ON knowledge_chunks(document_id);
+
 -- ── Knowledge Lineage (Version DAG — inspired by OpenSpace) ──
 CREATE TABLE IF NOT EXISTS knowledge_lineage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -208,6 +251,37 @@ CREATE TABLE IF NOT EXISTS knowledge_usage_log (
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_usage_doc ON knowledge_usage_log(document_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_usage_task ON knowledge_usage_log(task_id);
+
+-- ── Provider Accounts (LLM providers: OAuth/API keys) ──
+CREATE TABLE IF NOT EXISTS provider_accounts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,                -- 'openai_compat', 'gemini', 'anthropic', etc.
+    auth_type TEXT DEFAULT 'api_key'
+        CHECK(auth_type IN ('api_key', 'oauth')),
+    api_base TEXT NOT NULL,
+    api_key TEXT,
+    status TEXT DEFAULT 'enabled'
+        CHECK(status IN ('enabled', 'disabled', 'error')),
+    capabilities TEXT DEFAULT '["chat"]',  -- JSON array: ["chat","embedding","code"]
+    models TEXT DEFAULT '[]',              -- JSON array of model IDs
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_provider_accounts_status ON provider_accounts(status);
+CREATE INDEX IF NOT EXISTS idx_provider_accounts_type ON provider_accounts(type);
+
+-- ── Model Routing (Fallback chains per purpose) ──
+CREATE TABLE IF NOT EXISTS model_routing (
+    purpose TEXT PRIMARY KEY,          -- 'embedding', 'chat', 'code'
+    chain TEXT NOT NULL,               -- JSON array of {accountId, model}
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Insert default model routing (empty — configured via setup wizard)
+INSERT OR IGNORE INTO model_routing (purpose, chain) VALUES ('embedding', '[]');
+INSERT OR IGNORE INTO model_routing (purpose, chain) VALUES ('chat', '[]');
 
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);
