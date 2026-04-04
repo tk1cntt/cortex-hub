@@ -38,6 +38,29 @@ const logger = createLogger('dashboard-api')
 app.use('*', cors())
 app.use('*', honoLogger())
 
+// Global error handler — logs full error details before responding
+app.onError((error, c) => {
+  // Log full error details for debugging
+  logger.error(`Error: ${error.message || 'Unknown error'}`, {
+    stack: error.stack,
+    name: error.name,
+    cause: error.cause,
+    path: c.req.path,
+    method: c.req.method,
+    query: c.req.query(),
+  })
+
+  // Return detailed error in development, sanitized in production
+  const isDev = process.env.NODE_ENV !== 'production'
+  return c.json({
+    error: error.message || 'Internal Server Error',
+    ...(isDev && {
+      stack: error.stack,
+      name: error.name,
+    }),
+  }, error instanceof Error && 'status' in error ? (error as any).status : 500)
+})
+
 app.get('/health', async (c) => {
   const startTime = Date.now()
 
