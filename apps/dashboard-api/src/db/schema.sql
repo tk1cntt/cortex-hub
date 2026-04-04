@@ -1,3 +1,23 @@
+-- Cortex Hub v1 — SQLite WAL mode
+-- Active schema — all tables used by dashboard-api
+
+-- ============================================================
+-- Admin Users (GitHub OAuth)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS admin_user (
+    id           TEXT PRIMARY KEY,
+    github_id    TEXT UNIQUE NOT NULL,
+    username     TEXT NOT NULL,
+    display_name TEXT,
+    avatar_url   TEXT,
+    email        TEXT,
+    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- ============================================================
+-- Setup Status
+-- ============================================================
 CREATE TABLE IF NOT EXISTS setup_status (
     id INTEGER PRIMARY KEY DEFAULT 1,
     completed BOOLEAN DEFAULT 0,
@@ -251,6 +271,40 @@ CREATE TABLE IF NOT EXISTS knowledge_usage_log (
 
 CREATE INDEX IF NOT EXISTS idx_knowledge_usage_doc ON knowledge_usage_log(document_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_usage_task ON knowledge_usage_log(task_id);
+
+-- ── Quality Reports (Quality gate results) ──
+CREATE TABLE IF NOT EXISTS quality_reports (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    agent_id TEXT NOT NULL,
+    session_id TEXT,
+    gate_name TEXT NOT NULL,              -- 'pre_commit', 'full', 'plan_quality'
+    score_build INTEGER DEFAULT 0,        -- 0-25
+    score_regression INTEGER DEFAULT 0,   -- 0-25
+    score_standards INTEGER DEFAULT 0,    -- 0-25
+    score_traceability INTEGER DEFAULT 0, -- 0-25
+    score_total INTEGER DEFAULT 0,        -- 0-100
+    grade TEXT CHECK(grade IN ('A','B','C','D','F')),
+    passed INTEGER DEFAULT 0,
+    details TEXT,                         -- JSON
+    api_key_name TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_quality_reports_agent ON quality_reports(agent_id);
+CREATE INDEX IF NOT EXISTS idx_quality_reports_project ON quality_reports(project_id);
+CREATE INDEX IF NOT EXISTS idx_quality_reports_created ON quality_reports(created_at DESC);
+
+-- ── Budget Settings (Token usage limits) ──
+CREATE TABLE IF NOT EXISTS budget_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    daily_limit INTEGER DEFAULT 0,
+    monthly_limit INTEGER DEFAULT 0,
+    alert_threshold REAL DEFAULT 0.8,
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+INSERT OR IGNORE INTO budget_settings (id) VALUES (1);
 
 -- ── Provider Accounts (LLM providers: OAuth/API keys) ──
 CREATE TABLE IF NOT EXISTS provider_accounts (
