@@ -5,6 +5,7 @@ import { createLogger } from '@cortex/shared-utils'
 import { Embedder } from '@cortex/shared-mem9'
 import type { EmbedderConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
+import { handleApiError } from '../utils/error-handler.js'
 
 const logger = createLogger('intel')
 
@@ -350,19 +351,7 @@ intelRouter.post('/search', async (c) => {
     })
   } catch (error) {
     logger.error(`Code search failed: ${String(error)}`)
-    return c.json(
-      {
-        success: false,
-        error: String(error),
-        hint: 'Make sure GitNexus service is running and the repository has been indexed.',
-        suggestions: [
-          'Try calling cortex_health to check GitNexus status',
-          'Ensure the project has been indexed via Code Indexing in the dashboard',
-          'Try a broader search query',
-        ],
-      },
-      500,
-    )
+    return handleApiError(c, error)
   }
 })
 
@@ -390,14 +379,7 @@ intelRouter.post('/impact', async (c) => {
     })
   } catch (error) {
     logger.error(`Impact analysis failed: ${String(error)}`)
-    return c.json(
-      {
-        success: false,
-        error: String(error),
-        hint: 'Ensure the target symbol exists in an indexed repository.',
-      },
-      500,
-    )
+    return handleApiError(c, error)
   }
 })
 
@@ -466,14 +448,7 @@ intelRouter.post('/context', async (c) => {
     })
   } catch (error) {
     logger.error(`Context lookup failed: ${String(error)}`)
-    return c.json(
-      {
-        success: false,
-        error: String(error),
-        hint: 'Ensure the symbol exists in an indexed repository.',
-      },
-      500,
-    )
+    return handleApiError(c, error)
   }
 })
 
@@ -543,10 +518,7 @@ intelRouter.get('/repos', async (c) => {
     return c.json({ success: true, data: repos })
   } catch (error) {
     logger.error(`List repos failed: ${String(error)}`)
-    return c.json(
-      { success: false, error: String(error) },
-      500,
-    )
+    return handleApiError(c, error)
   }
 })
 
@@ -567,10 +539,7 @@ intelRouter.post('/detect-changes', async (c) => {
     return c.json({ success: true, data: results })
   } catch (error) {
     logger.error(`Detect changes failed: ${String(error)}`)
-    return c.json(
-      { success: false, error: String(error) },
-      500,
-    )
+    return handleApiError(c, error)
   }
 })
 
@@ -591,10 +560,7 @@ intelRouter.post('/cypher', async (c) => {
     return c.json({ success: true, data: results })
   } catch (error) {
     logger.error(`Cypher query failed: ${String(error)}`)
-    return c.json(
-      { success: false, error: String(error) },
-      500,
-    )
+    return handleApiError(c, error)
   }
 })
 
@@ -655,7 +621,7 @@ intelRouter.post('/register', async (c) => {
     })
   } catch (error) {
     logger.error(`Register failed: ${String(error)}`)
-    return c.json({ success: false, error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -728,7 +694,7 @@ intelRouter.post('/sync-repos', async (c) => {
     })
   } catch (error) {
     logger.error(`Sync repos failed: ${String(error)}`)
-    return c.json({ success: false, error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -816,7 +782,7 @@ intelRouter.post('/code-search', async (c) => {
     })
   } catch (error) {
     logger.error(`Code search (Qdrant) failed: ${String(error)}`)
-    return c.json({ success: false, error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -900,7 +866,7 @@ intelRouter.post('/file-content', async (c) => {
     })
   } catch (error) {
     logger.error(`File content read failed: ${String(error)}`)
-    return c.json({ success: false, error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -948,9 +914,6 @@ intelRouter.get('/health', async (c) => {
     const data = await res.json()
     return c.json({ status: 'healthy', ...data })
   } catch (error) {
-    return c.json(
-      { status: 'unreachable', error: String(error) },
-      503,
-    )
+    return handleApiError(c, error)
   }
 })

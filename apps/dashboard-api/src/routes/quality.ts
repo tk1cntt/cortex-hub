@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
+import { handleApiError } from '../utils/error-handler.js'
 import {
   calculateFromVerificationResults,
   scoreToGrade,
@@ -145,7 +146,7 @@ qualityRouter.post('/report', async (c) => {
       },
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -188,7 +189,7 @@ qualityRouter.get('/reports', (c) => {
       totalPages: Math.ceil(total / limit),
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -209,7 +210,7 @@ qualityRouter.get('/reports/latest', (c) => {
     ).get()
     return c.json({ report: report || null })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -245,7 +246,7 @@ qualityRouter.get('/trends', (c) => {
     const trends = db.prepare(sql).all(...params)
     return c.json({ trends, days })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -276,7 +277,7 @@ qualityRouter.get('/summary', (c) => {
 
     return c.json({ summary, latest })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -290,7 +291,7 @@ qualityRouter.post('/plan-quality', async (c) => {
     const result = assessPlanQuality(body)
     return c.json({ result })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -312,7 +313,7 @@ qualityRouter.get('/logs', (c) => {
       totalPages: Math.ceil(total / limit),
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -446,7 +447,7 @@ sessionsRouter.post('/start', async (c) => {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -501,7 +502,7 @@ sessionsRouter.get('/all', (c) => {
 
     return c.json({ sessions: sessionsWithSavings })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -534,7 +535,7 @@ sessionsRouter.post('/:id/end', async (c) => {
       },
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -573,7 +574,7 @@ sessionsRouter.patch('/:id/complete', async (c) => {
 
     return c.json({ success: true, id, status: status ?? 'completed' })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -583,6 +584,6 @@ sessionsRouter.delete('/:id', (c) => {
     db.prepare('DELETE FROM session_handoffs WHERE id = ?').run(id)
     return c.json({ success: true })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })

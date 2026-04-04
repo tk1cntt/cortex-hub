@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
+import { handleApiError } from '../utils/error-handler.js'
 
 export const statsRouter = new Hono()
 
@@ -53,7 +54,7 @@ statsRouter.get('/overview', async (c) => {
       today: { queries: todayQueries, tokens: todayTokens },
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -309,7 +310,7 @@ statsRouter.get('/overview-v2', async (c) => {
       tokenSavings,
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -336,7 +337,7 @@ statsRouter.get('/activity', (c) => {
 
     return c.json({ activity })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -371,7 +372,7 @@ statsRouter.get('/budget', (c) => {
       monthlyAlert: budget.monthly_limit > 0 && monthlyUsed >= budget.monthly_limit * budget.alert_threshold,
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -396,7 +397,7 @@ statsRouter.post('/budget', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -448,7 +449,7 @@ statsRouter.post('/query-log', async (c) => {
 
     return c.json({ success: true })
   } catch (err) {
-    return c.json({ error: String(err) }, 500)
+    return handleApiError(c, err)
   }
 })
 
@@ -489,7 +490,7 @@ statsRouter.get('/projects/:id/analytics', (c) => {
       trend,
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -602,7 +603,7 @@ statsRouter.get('/tool-analytics', (c) => {
       trend,
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -686,7 +687,7 @@ statsRouter.get('/session-compliance/:sessionId', (c) => {
       hints,
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -766,7 +767,7 @@ statsRouter.get('/hints/:agentId', (c) => {
 
     return c.json({ agentId, hints, toolsUsedCount: used.size })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 

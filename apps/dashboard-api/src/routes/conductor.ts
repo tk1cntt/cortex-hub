@@ -7,6 +7,7 @@ import {
   notifyAgents,
   setAgentStatus,
 } from '../ws/conductor.js'
+import { handleApiError } from '../utils/error-handler.js'
 
 export const conductorRouter = new Hono()
 
@@ -263,7 +264,7 @@ conductorRouter.get('/agents', (c) => {
       online: connected.length,
     })
   } catch (error) {
-    return c.json({ agents: [], online: 0, error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -281,7 +282,7 @@ conductorRouter.get('/agents/capabilities', (c) => {
     }))
     return c.json({ agents })
   } catch (error) {
-    return c.json({ agents: [], error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -452,7 +453,7 @@ conductorRouter.post('/auto-assign', async (c) => {
       subtaskIds,
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -490,7 +491,7 @@ conductorRouter.get('/', (c) => {
     const tasks = db.prepare(query).all(...params) as TaskRow[]
     return c.json({ tasks })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -520,7 +521,7 @@ conductorRouter.get('/:id', (c) => {
       logs: logs.reverse(),
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -631,7 +632,7 @@ conductorRouter.post('/', async (c) => {
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow
     return c.json({ task }, 201)
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -676,7 +677,7 @@ conductorRouter.post('/pickup', async (c) => {
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(matchedTask.id) as TaskRow
     return c.json({ task })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -878,7 +879,7 @@ conductorRouter.put('/:id', async (c) => {
 
     return c.json({ task: updatedTask })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -923,7 +924,7 @@ conductorRouter.put('/:id/strategy', async (c) => {
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow
     return c.json({ task })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -952,7 +953,7 @@ conductorRouter.post('/:id/strategy/approve', async (c) => {
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id) as TaskRow
     return c.json({ task })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -977,7 +978,7 @@ conductorRouter.post('/:id/cancel', (c) => {
 
     return c.json({ success: true, id })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -997,7 +998,7 @@ conductorRouter.get('/:id/comments', (c) => {
 
     return c.json({ comments })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -1036,7 +1037,7 @@ conductorRouter.post('/:id/comments', async (c) => {
 
     return c.json({ comment: created }, 201)
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -1068,7 +1069,7 @@ conductorRouter.put('/:id/matrix/:findingId', async (c) => {
 
     return c.json({ success: true, findingId, status, decisions })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -1115,7 +1116,7 @@ conductorRouter.post('/:id/finalize', async (c) => {
 
     return c.json({ task: updatedTask })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -1129,6 +1130,6 @@ conductorRouter.delete('/:id', (c) => {
     db.prepare('DELETE FROM conductor_tasks WHERE id = ?').run(id)
     return c.json({ success: true, id })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })

@@ -6,6 +6,7 @@ import { db } from '../db/client.js'
 import { startIndexing, cancelJob, buildAuthUrl } from '../services/indexer.js'
 import { embedProject } from '../services/mem9-embedder.js'
 import { buildKnowledgeFromDocs } from '../services/docs-knowledge-builder.js'
+import { handleApiError } from '../utils/error-handler.js'
 
 const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
 
@@ -76,7 +77,7 @@ indexingRouter.post('/:id/index', async (c) => {
 
     return c.json({ jobId, status: 'pending', branch }, 201)
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -105,7 +106,7 @@ indexingRouter.get('/:id/index/status', (c) => {
       createdAt: job.created_at,
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -131,7 +132,7 @@ indexingRouter.get('/:id/index/history', (c) => {
 
     return c.json({ jobs, total, page, limit, totalPages: Math.ceil(total / limit) })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -157,7 +158,7 @@ indexingRouter.post('/:id/index/cancel', (c) => {
 
     return c.json({ success: true, jobId: activeJob.id })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -200,7 +201,7 @@ indexingRouter.post('/:id/git/test', async (c) => {
       return c.json({ success: false, error: sanitized.slice(0, 500) })
     }
   } catch (error) {
-    return c.json({ success: false, error: String(error).slice(0, 300) })
+    return handleApiError(c, error)
   }
 })
 
@@ -249,7 +250,7 @@ indexingRouter.get('/:id/branches', async (c) => {
 
     return c.json({ branches })
   } catch (error) {
-    return c.json({ branches: [], error: `Failed to list branches: ${String(error).slice(0, 200)}` })
+    return handleApiError(c, error)
   }
 })
 
@@ -306,7 +307,7 @@ indexingRouter.get('/:id/branches/diff', async (c) => {
 
     return c.json({ branch, base, diff, summary })
   } catch (error) {
-    return c.json({ diff: [], error: `Diff failed: ${String(error).slice(0, 200)}` })
+    return handleApiError(c, error)
   }
 })
 
@@ -348,7 +349,7 @@ indexingRouter.get('/:id/index/branches', (c) => {
 
     return c.json({ branches: jobs })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -401,7 +402,7 @@ indexingRouter.post('/:id/index/mem9', async (c) => {
 
     return c.json({ success: true, jobId, branch, status: 'embedding' }, 201)
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -451,7 +452,7 @@ indexingRouter.get('/:id/index/mem9/status', (c) => {
       },
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -484,6 +485,6 @@ indexingRouter.post('/:id/knowledge/build-from-docs', async (c) => {
       errors: result.errors,
     })
   } catch (error) {
-    return c.json({ success: false, error: String(error).slice(0, 300) }, 500)
+    return handleApiError(c, error)
   }
 })

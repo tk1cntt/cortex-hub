@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { db } from '../db/client.js'
 import { randomUUID } from 'crypto'
 import { getMem9 } from './mem9-proxy.js'
+import { handleApiError } from '../utils/error-handler.js'
 
 export const orgsRouter = new Hono()
 
@@ -17,7 +18,7 @@ orgsRouter.get('/', (c) => {
       .all()
     return c.json({ organizations: orgs })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -29,7 +30,7 @@ orgsRouter.get('/:id', (c) => {
     if (!org) return c.json({ error: 'Organization not found' }, 404)
     return c.json(org)
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -55,7 +56,7 @@ orgsRouter.post('/', async (c) => {
     if (String(error).includes('UNIQUE constraint')) {
       return c.json({ error: 'Organization with this name already exists' }, 409)
     }
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -82,7 +83,7 @@ orgsRouter.put('/:id', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -105,7 +106,7 @@ orgsRouter.delete('/:id', (c) => {
     db.prepare('DELETE FROM organizations WHERE id = ?').run(id)
     return c.json({ success: true })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -118,7 +119,7 @@ orgsRouter.get('/:id/projects', (c) => {
       .all(id)
     return c.json({ projects })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -166,7 +167,7 @@ orgsRouter.post('/:id/projects', async (c) => {
     if (String(error).includes('UNIQUE constraint')) {
       return c.json({ error: 'Project with this name already exists in this organization' }, 409)
     }
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -228,7 +229,7 @@ projectsRouter.get('/:id', (c) => {
 
     return c.json({ ...(project as Record<string, unknown>), stats, activity })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -277,7 +278,7 @@ projectsRouter.put('/:id', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -288,7 +289,7 @@ projectsRouter.delete('/:id', (c) => {
     db.prepare('DELETE FROM projects WHERE id = ?').run(id)
     return c.json({ success: true })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -305,7 +306,7 @@ projectsRouter.get('/', (c) => {
       .all()
     return c.json({ projects })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -329,7 +330,7 @@ projectsRouter.get('/lookup', (c) => {
     if (!project) return c.json({ error: 'Project not found' }, 404)
     return c.json(project)
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -353,7 +354,7 @@ projectsRouter.get('/:id/state', async (c) => {
       tokensUsed: result.tokensUsed || 0,
     })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 

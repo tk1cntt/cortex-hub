@@ -13,6 +13,7 @@ import { Hono } from 'hono'
 import { Mem9, Embedder } from '@cortex/shared-mem9'
 import type { Mem9Config, EmbedderConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
+import { handleApiError } from '../utils/error-handler.js'
 
 export const mem9ProxyRouter = new Hono()
 
@@ -110,7 +111,7 @@ mem9ProxyRouter.post('/store', async (c) => {
     })
   } catch (error) {
     console.error('[mem9-proxy] store error:', error)
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -139,7 +140,7 @@ mem9ProxyRouter.post('/search', async (c) => {
     })
   } catch (error) {
     console.error('[mem9-proxy] search error:', error)
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -162,7 +163,7 @@ mem9ProxyRouter.post('/embed', async (c) => {
     return c.json({ vector, dimensions: vector.length })
   } catch (error) {
     console.error('[mem9-proxy] embed error:', error)
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -180,9 +181,6 @@ mem9ProxyRouter.get('/health', async (c) => {
       vectorStore: status.vectorStore ? 'ok' : 'error',
     })
   } catch (error) {
-    return c.json({
-      status: 'error',
-      error: String(error),
-    }, 500)
+    return handleApiError(c, error)
   }
 })

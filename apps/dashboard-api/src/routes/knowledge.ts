@@ -11,6 +11,7 @@ import { Embedder, VectorStore } from '@cortex/shared-mem9'
 import type { EmbedderConfig, VectorStoreConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
+import { handleApiError } from '../utils/error-handler.js'
 
 const logger = createLogger('knowledge')
 
@@ -226,7 +227,7 @@ knowledgeRouter.post('/', async (c) => {
     return c.json(doc, 201)
   } catch (error) {
     logger.error(`Create knowledge failed: ${String(error)}`)
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -427,7 +428,7 @@ knowledgeRouter.post('/search', async (c) => {
     return c.json({ query, results: enriched })
   } catch (error) {
     logger.error(`Knowledge search failed: ${String(error)}`)
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -566,7 +567,7 @@ knowledgeRouter.post('/track-feedback', async (c) => {
     return c.json({ updated, action })
   } catch (error) {
     logger.error(`Track feedback failed: ${String(error)}`)
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -578,7 +579,7 @@ knowledgeRouter.post('/health-check', async (c) => {
     return c.json(result)
   } catch (error) {
     logger.error(`Health check failed: ${String(error)}`)
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 

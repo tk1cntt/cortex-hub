@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
 import { randomBytes, createHash } from 'crypto'
+import { handleApiError } from '../utils/error-handler.js'
 
 export const keysRouter = new Hono()
 
@@ -55,7 +56,7 @@ keysRouter.post('/', async (c) => {
       permissions
     }, 201)
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -69,7 +70,7 @@ keysRouter.delete('/:id', (c) => {
     }
     return c.json({ success: true })
   } catch (error) {
-    return c.json({ error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
@@ -102,6 +103,6 @@ keysRouter.post('/verify', async (c) => {
     }, 200)
 
   } catch (error) {
-    return c.json({ valid: false, error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })

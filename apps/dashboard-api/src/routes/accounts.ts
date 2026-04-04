@@ -1,30 +1,9 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'crypto'
 import { db } from '../db/client.js'
-import { createLogger } from '@cortex/shared-utils'
-import type { Context } from 'hono'
-
-const logger = createLogger('accounts')
+import { handleApiError } from '../utils/error-handler.js'
 
 export const accountsRouter = new Hono()
-
-/** Helper: handle route errors with detailed logging */
-function handleError(c: Context, error: unknown, context: string) {
-  const message = error instanceof Error ? error.message : String(error)
-  const stack = error instanceof Error ? error.stack : undefined
-  
-  logger.error(`Error in ${context}: ${message}`, {
-    stack,
-    path: c.req.path,
-    method: c.req.method,
-  })
-
-  const isDev = process.env.NODE_ENV !== 'production'
-  return c.json({
-    error: message,
-    ...(isDev && { stack }),
-  }, 500)
-}
 
 /** Row shape from provider_accounts table */
 interface ProviderAccountRow {
@@ -160,7 +139,7 @@ accountsRouter.get('/', (c) => {
       },
     })
   } catch (error) {
-    return handleError(c, error, 'list accounts')
+    return handleApiError(c, error)
   }
 })
 
@@ -196,7 +175,7 @@ accountsRouter.post('/', async (c) => {
 
     return c.json({ success: true, id }, 201)
   } catch (error) {
-    return handleError(c, error, 'create account')
+    return handleApiError(c, error)
   }
 })
 
@@ -233,7 +212,7 @@ accountsRouter.put('/:id', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return handleError(c, error, 'update account')
+    return handleApiError(c, error)
   }
 })
 
@@ -245,7 +224,7 @@ accountsRouter.delete('/:id', (c) => {
     if (result.changes === 0) return c.json({ error: 'Account not found' }, 404)
     return c.json({ success: true })
   } catch (error) {
-    return handleError(c, error, 'delete account')
+    return handleApiError(c, error)
   }
 })
 
@@ -265,7 +244,7 @@ accountsRouter.post('/:id/test', async (c) => {
     }
   } catch (error) {
     db.prepare("UPDATE provider_accounts SET status = 'error', updated_at = datetime('now') WHERE id = ?").run(id)
-    return handleError(c, error, 'test account')
+    return handleApiError(c, error)
   }
 })
 
@@ -343,7 +322,7 @@ accountsRouter.post('/test-key', async (c) => {
       })
     }
   } catch (error) {
-    return handleError(c, error, 'test key')
+    return handleApiError(c, error)
   }
 })
 
@@ -376,7 +355,7 @@ accountsRouter.post('/oauth/start', async (c) => {
     const data = (await res.json()) as { url?: string; status?: string }
     return c.json({ success: true, authUrl: data.url, status: data.status })
   } catch (error) {
-    return handleError(c, error, 'oauth start')
+    return handleApiError(c, error)
   }
 })
 
@@ -404,8 +383,8 @@ accountsRouter.get('/oauth/status/:provider', async (c) => {
     if (!res.ok) return c.json({ connected: false })
     const data = (await res.json()) as { status?: string }
     return c.json({ connected: data.status === 'ok' })
-  } catch {
-    return handleError(c, undefined, 'oauth status')
+  } catch (error) {
+    return handleApiError(c, error)
   }
 })
 
@@ -424,7 +403,7 @@ accountsRouter.get('/routing/chains', (c) => {
 
     return c.json({ routing })
   } catch (error) {
-    return handleError(c, error, 'get routing chains')
+    return handleApiError(c, error)
   }
 })
 
@@ -446,7 +425,7 @@ accountsRouter.put('/routing/chains', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return handleError(c, error, 'update routing chains')
+    return handleApiError(c, error)
   }
 })
 
@@ -472,7 +451,7 @@ accountsRouter.get('/routing/active', (c) => {
 
     return c.json({ config, totalAccounts: accounts.length })
   } catch (error) {
-    return handleError(c, error, 'get routing active')
+    return handleApiError(c, error)
   }
 })
 

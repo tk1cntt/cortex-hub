@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
+import { handleApiError } from '../utils/error-handler.js'
 
 export const setupRouter = new Hono()
 
@@ -66,7 +67,7 @@ setupRouter.post('/complete', async (c) => {
       },
     })
   } catch (error) {
-    return c.json({ success: false, error: String(error) }, 500)
+    return handleApiError(c, error)
   }
 })
 
