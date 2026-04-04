@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS index_jobs (
     mem9_chunks INTEGER DEFAULT 0,        -- number of chunks embedded
     mem9_progress INTEGER DEFAULT 0,      -- 0-100 for embedding progress
     mem9_total_chunks INTEGER DEFAULT 0,  -- total chunks to embed
+    docs_knowledge_status TEXT,           -- pending | building | done | error
+    docs_knowledge_count INTEGER DEFAULT 0, -- number of docs knowledge entries
     started_at TEXT,
     completed_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
@@ -362,3 +364,5 @@ ALTER TABLE index_jobs ADD COLUMN mem9_status TEXT;
 ALTER TABLE index_jobs ADD COLUMN mem9_chunks INTEGER DEFAULT 0;
 ALTER TABLE index_jobs ADD COLUMN mem9_progress INTEGER DEFAULT 0;
 ALTER TABLE index_jobs ADD COLUMN mem9_total_chunks INTEGER DEFAULT 0;
+ALTER TABLE index_jobs ADD COLUMN docs_knowledge_status TEXT;
+ALTER TABLE index_jobs ADD COLUMN docs_knowledge_count INTEGER DEFAULT 0;
