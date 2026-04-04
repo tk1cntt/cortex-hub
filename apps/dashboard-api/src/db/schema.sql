@@ -102,6 +102,13 @@ CREATE TABLE IF NOT EXISTS index_jobs (
     symbols_found INTEGER DEFAULT 0,
     log TEXT,                             -- stdout/stderr from gitnexus
     error TEXT,
+    commit_hash TEXT,                     -- short git commit hash
+    commit_message TEXT,                  -- commit message (first 200 chars)
+    triggered_by TEXT,                    -- 'manual', 'webhook', 'setup'
+    mem9_status TEXT,                     -- pending | embedding | done | error
+    mem9_chunks INTEGER DEFAULT 0,        -- number of chunks embedded
+    mem9_progress INTEGER DEFAULT 0,      -- 0-100 for embedding progress
+    mem9_total_chunks INTEGER DEFAULT 0,  -- total chunks to embed
     started_at TEXT,
     completed_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
@@ -343,3 +350,15 @@ INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);
 -- Insert default organization
 INSERT OR IGNORE INTO organizations (id, name, slug, description)
 VALUES ('org-default', 'Personal', 'personal', 'Default personal organization');
+
+-- ============================================================
+-- Migrations (for existing databases)
+-- ============================================================
+-- v1.1: Add commit tracking and mem9 status to index_jobs
+ALTER TABLE index_jobs ADD COLUMN commit_hash TEXT;
+ALTER TABLE index_jobs ADD COLUMN commit_message TEXT;
+ALTER TABLE index_jobs ADD COLUMN triggered_by TEXT;
+ALTER TABLE index_jobs ADD COLUMN mem9_status TEXT;
+ALTER TABLE index_jobs ADD COLUMN mem9_chunks INTEGER DEFAULT 0;
+ALTER TABLE index_jobs ADD COLUMN mem9_progress INTEGER DEFAULT 0;
+ALTER TABLE index_jobs ADD COLUMN mem9_total_chunks INTEGER DEFAULT 0;
