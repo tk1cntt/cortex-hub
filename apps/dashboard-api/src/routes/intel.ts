@@ -460,8 +460,8 @@ export async function getGitNexusRepos() {
 
   // Enrich with project DB data for project ID mapping
   const projects = db.prepare(
-    'SELECT id, slug, name, git_repo_url, indexed_symbols FROM projects'
-  ).all() as Array<{ id: string; slug: string; name: string; git_repo_url: string | null; indexed_symbols: number | null }>
+    'SELECT id, slug, name, git_repo_url, indexed_symbols, indexed_at FROM projects'
+  ).all() as Array<{ id: string; slug: string; name: string; git_repo_url: string | null; indexed_symbols: number | null; indexed_at: string | null }>
 
   // Build a lookup for matching by slug or repo URL basename
   const projectBySlug = new Map<string, typeof projects[0]>()
@@ -479,7 +479,7 @@ export async function getGitNexusRepos() {
   }
 
   // Parse GitNexus raw response — may be array, object with repos, or raw text
-  let repos: Array<{ name: string; projectId: string; slug: string; symbols: number | string; gitUrl: string }> = []
+  let repos: Array<{ name: string; projectId: string; slug: string; symbols: number | string; gitUrl: string; indexStatus: string; indexedAt: string | null }> = []
 
   const rawData = gitNexusResult as Record<string, unknown>
   if (rawData?.raw && typeof rawData.raw === 'string') {
@@ -525,6 +525,8 @@ export async function getGitNexusRepos() {
         slug: match?.slug ?? r.name,
         symbols: match?.indexed_symbols ?? r.symbols ?? '?',
         gitUrl: match?.git_repo_url ?? r.path ?? '',
+        indexStatus: 'indexed' as const,
+        indexedAt: r.indexedAt ?? match?.indexed_at ?? null,
       }
     })
   } else if (Array.isArray(rawData)) {
@@ -537,9 +539,29 @@ export async function getGitNexusRepos() {
         slug: match?.slug ?? name,
         symbols: match?.indexed_symbols ?? '?',
         gitUrl: match?.git_repo_url ?? '',
+        indexStatus: 'indexed' as const,
+        indexedAt: match?.indexed_at ?? null,
       }
     })
   }
+
+  // Merge: add projects from DB that are NOT in GitNexus index yet
+  const indexedSlugs = new Set(repos.map(r => r.slug.toLowerCase()))
+  for (const p of projects) {
+    const slugLower = (p.slug ?? '').toLowerCase()
+    if (!indexedSlugs.has(slugLower)) {
+      repos.push({
+        name: p.slug || p.name || p.id,
+        projectId: p.id,
+        slug: p.slug || p.name || p.id,
+        symbols: p.indexed_symbols ?? 0,
+        gitUrl: p.git_repo_url ?? '',
+        indexStatus: p.indexed_at ? 'stale' as const : 'not_indexed' as const,
+        indexedAt: p.indexed_at ?? null,
+      })
+    }
+  }
+
   return repos
 }
 
