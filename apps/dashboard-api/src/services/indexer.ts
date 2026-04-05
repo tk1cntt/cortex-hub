@@ -412,7 +412,7 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     let gitnexusSuccess = false
     try {
       const analyzeResult = await runCommand('gitnexus', [
-        'analyze', '.', '--force'
+        'analyze', '.', '--force', '--embeddings'
       ], repoDir, jobId)
 
       const symbolMatch = analyzeResult.stdout.match(/(\d+)\s*symbols?/i)
@@ -436,7 +436,7 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
 
         const dockerResult = await dockerExec(
           GITNEXUS_CONTAINER,
-          `cd ${repoDir} && gitnexus analyze --force 2>&1`,
+          `cd ${repoDir} && gitnexus analyze --force --embeddings 2>&1`,
           180000,
         )
 
