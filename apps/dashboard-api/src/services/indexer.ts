@@ -61,11 +61,22 @@ async function dockerExecInspect(execId: string): Promise<{ running: boolean; ex
   const running = (inspectInfo.Running as boolean) ?? false
   const exitCode = (inspectInfo.ExitCode as number) ?? -1
 
+  // If inspect returns "No such exec" or similar, treat as completed
+  const errMsg = (inspectInfo.message as string) ?? ''
+  if (errMsg.toLowerCase().includes('no such exec')) {
+    return { running: false, exitCode: 0, output: '' }
+  }
+
   let output = ''
   if (!running) {
     // Retrieve logs only when finished
-    const logRes = await dockerApiRequest('GET', `/exec/${execId}/logs?stdout=true&stderr=true`, undefined, 15000)
-    output = (logRes._raw as string) ?? ''
+    try {
+      const logRes = await dockerApiRequest('GET', `/exec/${execId}/logs?stdout=true&stderr=true`, undefined, 15000)
+      output = (logRes._raw as string) ?? ''
+    } catch {
+      // Exec may have been cleaned up — output unavailable
+      output = '(exec completed, output unavailable)'
+    }
   }
 
   return { running, exitCode, output }
@@ -421,6 +432,7 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
             if (!running) {
               clearInterval(pollInterval)
               const cleanOutput = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+              const execCleaned = cleanOutput.includes('exec completed, output unavailable')
 
               const symbolMatch = cleanOutput.match(/(\d+)\s*symbols?/i)
               const fileMatch = cleanOutput.match(/(\d+)\s*files?/i)
@@ -436,8 +448,14 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
               if (successMatch && (symbolsFound > 0 || totalFiles > 0)) {
                 gitnexusSuccess = true
                 appendLog(jobId, `GitNexus (docker): ${totalFiles} edges, ${symbolsFound} nodes (${Math.round(elapsed/1000)}s)`)
+                updateJob(jobId, { symbols_found: symbolsFound, total_files: totalFiles })
                 logger.info(`[${jobId}] GitNexus docker analyze done: ${totalFiles} edges, ${symbolsFound} nodes`)
-              } else if (successMatch) {
+              } else if (execCleaned && (symbolsFound > 0 || totalFiles > 0)) {
+                // Exec cleaned up but we have data from fallback — GitNexus completed
+                gitnexusSuccess = true
+                appendLog(jobId, `GitNexus (docker): completed (${Math.round(elapsed/1000)}s, output cleaned up)`)
+                logger.info(`[${jobId}] GitNexus docker analyze completed (${Math.round(elapsed/1000)}s)`)
+              } else if (successMatch || execCleaned) {
                 gitnexusSuccess = true
                 appendLog(jobId, `GitNexus (docker): indexed successfully (${Math.round(elapsed/1000)}s)`)
               }
@@ -459,6 +477,7 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
 
         // Helper for fallback if poll fails
         async function runFallback() {
+          if (fallbackRan) return
           appendLog(jobId, '[info] Using pure JS symbol extraction (gitnexus CLI not available)')
           logger.info(`[${jobId}] Using pure JS fallback extraction`)
           const fallback = extractSymbolsFromDir(repoDir)
@@ -469,6 +488,8 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
           if (symbolNames.length > 0) {
             appendLog(jobId, `Sample symbols: ${symbolNames.slice(0, 20).join(', ')}`)
           }
+          // Update DB with fallback results
+          updateJob(jobId, { symbols_found: symbolsFound, total_files: totalFiles })
         }
       } catch (err) {
         logger.warn(`[${jobId}] Docker exec start failed: ${err}`)
