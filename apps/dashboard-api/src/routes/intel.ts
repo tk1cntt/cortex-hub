@@ -518,9 +518,25 @@ export async function getGitNexusRepos() {
 
     // Enrich with project DB metadata
     repos = parsed.map(r => {
-      const match = projectBySlug.get(r.name.toLowerCase()) ?? projectById.get(r.name)
+      // Try matching by slug/name first
+      let match = projectBySlug.get(r.name.toLowerCase()) ?? projectById.get(r.name)
+
+      // If name looks like a projectId (proj-xxx), match directly
+      if (!match && r.name.startsWith('proj-')) {
+        match = projectById.get(r.name)
+      }
+
+      // Fallback: extract projectId from path (e.g., /app/data/repos/proj-f495047b)
+      if (!match && r.path) {
+        const pathParts = r.path.split('/')
+        const folderName = pathParts[pathParts.length - 1]
+        if (folderName?.startsWith('proj-')) {
+          match = projectById.get(folderName)
+        }
+      }
+
       return {
-        name: r.name,
+        name: match?.slug ?? r.name,
         projectId: match?.id ?? '',
         slug: match?.slug ?? r.name,
         symbols: match?.indexed_symbols ?? r.symbols ?? '?',
