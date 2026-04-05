@@ -19,11 +19,23 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
       title: z.string().describe('Document title (concise, descriptive)'),
       content: z.string().describe('Full document content to store'),
       tags: z.array(z.string()).optional().describe('Tags for categorization (e.g., ["typescript", "patterns", "deployment"])'),
-      projectId: z.string().optional().describe('Project ID to scope this knowledge to'),
+      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
+      projectId: z.string().optional().describe('Project ID. Overrides project.'),
       agentId: z.string().optional().describe('Contributing agent identifier'),
     },
-    async ({ title, content, tags, projectId, agentId }) => {
+    async ({ title, content, tags, project, projectId, agentId }) => {
       try {
+        // Resolve project name/slug → projectId
+        let resolvedProjectId = projectId
+        if (!resolvedProjectId && project) {
+          try {
+            const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
+            if (lookupRes.ok) {
+              const data = (await lookupRes.json()) as { id?: string }
+              if (data.id) resolvedProjectId = data.id
+            }
+          } catch { /* best effort */ }
+        }
         const res = await apiCall(env, '/api/knowledge', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -80,10 +92,22 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
     {
       query: z.string().describe('Text query to search for (auto-embedded)'),
       tags: z.array(z.string()).optional().describe('Filter by tags'),
-      projectId: z.string().optional().describe('Filter by project ID'),
+      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
+      projectId: z.string().optional().describe('Project ID. Overrides project.'),
       limit: z.number().optional().describe('Maximum results (default: 5)'),
     },
-    async ({ query, tags, projectId, limit }) => {
+    async ({ query, tags, project, projectId, limit }) => {
+      // Resolve project name/slug → projectId
+      let resolvedProjectId = projectId
+      if (!resolvedProjectId && project) {
+        try {
+          const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
+          if (lookupRes.ok) {
+            const data = (await lookupRes.json()) as { id?: string }
+            if (data.id) resolvedProjectId = data.id
+          }
+        } catch { /* best effort */ }
+      }
       try {
         const res = await apiCall(env, '/api/knowledge/search', {
           method: 'POST',
@@ -91,7 +115,7 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
           body: JSON.stringify({
             query,
             tags,
-            projectId,
+            projectId: resolvedProjectId,
             limit: limit ?? 5,
           }),
         })

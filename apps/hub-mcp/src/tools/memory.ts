@@ -20,26 +20,39 @@ export function registerMemoryTools(server: McpServer, env: Env) {
     {
       content: z.string().describe('The memory content to store'),
       agentId: z.string().optional().describe('Agent identifier (default: "default")'),
-      projectId: z.string().optional().describe('Project ID to scope this memory to'),
+      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
+      projectId: z.string().optional().describe('Project ID. Overrides project.'),
       branch: z.string().optional().describe('Git branch to scope this memory to (requires projectId)'),
       metadata: z
         .record(z.string(), z.unknown())
         .optional()
         .describe('Optional metadata tags'),
     },
-    async ({ content, agentId, projectId, branch, metadata }) => {
+    async ({ content, agentId, project, projectId, branch, metadata }) => {
       try {
+        // Resolve project name/slug → projectId
+        let resolvedProjectId = projectId
+        if (!resolvedProjectId && project) {
+          try {
+            const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
+            if (lookupRes.ok) {
+              const data = (await lookupRes.json()) as { id?: string }
+              if (data.id) resolvedProjectId = data.id
+            }
+          } catch { /* best effort */ }
+        }
+
         // Build scoped user_id for branch isolation
         let userId = agentId ?? 'default'
-        if (projectId && branch) {
-          userId = `project-${projectId}:branch-${branch}`
-        } else if (projectId) {
-          userId = `project-${projectId}`
+        if (resolvedProjectId && branch) {
+          userId = `project-${resolvedProjectId}:branch-${branch}`
+        } else if (resolvedProjectId) {
+          userId = `project-${resolvedProjectId}`
         }
 
         const meta = {
           ...(metadata ?? {}),
-          ...(projectId ? { project_id: projectId } : {}),
+          ...(resolvedProjectId ? { project_id: resolvedProjectId } : {}),
           ...(branch ? { branch } : {}),
         }
 
@@ -101,23 +114,36 @@ export function registerMemoryTools(server: McpServer, env: Env) {
     {
       query: z.string().describe('Search query for memory recall'),
       agentId: z.string().optional().describe('Filter by agent (default: all agents)'),
-      projectId: z.string().optional().describe('Project ID to search within'),
+      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
+      projectId: z.string().optional().describe('Project ID. Overrides project.'),
       branch: z.string().optional().describe('Git branch to search (with fallback to project-level)'),
       limit: z.number().optional().describe('Max results (default: 5)'),
     },
-    async ({ query, agentId, projectId, branch, limit }) => {
+    async ({ query, agentId, project, projectId, branch, limit }) => {
       try {
+        // Resolve project name/slug → projectId
+        let resolvedProjectId = projectId
+        if (!resolvedProjectId && project) {
+          try {
+            const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
+            if (lookupRes.ok) {
+              const data = (await lookupRes.json()) as { id?: string }
+              if (data.id) resolvedProjectId = data.id
+            }
+          } catch { /* best effort */ }
+        }
+
         const maxResults = limit ?? 5
 
         const allMemories: unknown[] = []
 
         // Branch hierarchy search: branch → project → agent (fallback chain)
         const searchScopes: string[] = []
-        if (projectId && branch) {
-          searchScopes.push(`project-${projectId}:branch-${branch}`)
-          searchScopes.push(`project-${projectId}`) // fallback
-        } else if (projectId) {
-          searchScopes.push(`project-${projectId}`)
+        if (resolvedProjectId && branch) {
+          searchScopes.push(`project-${resolvedProjectId}:branch-${branch}`)
+          searchScopes.push(`project-${resolvedProjectId}`) // fallback
+        } else if (resolvedProjectId) {
+          searchScopes.push(`project-${resolvedProjectId}`)
         } else {
           searchScopes.push(agentId ?? 'default')
         }

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Env } from '../types.js'
+import { apiCall } from '../api-call.js'
 
 /**
  * Register Cortex Conductor task management tools.
@@ -208,15 +209,27 @@ export function registerTaskTools(server: McpServer, env: Env) {
     'cortex_task_list',
     'List tasks with optional filters for project, status, and assignee. Use to get an overview of task state.',
     {
-      projectId: z.string().optional().describe('Filter by project ID'),
+      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
+      projectId: z.string().optional().describe('Project ID. Overrides project.'),
       status: z.string().optional().describe('Filter by status (e.g. assigned, in_progress, completed)'),
       assignedTo: z.string().optional().describe('Filter by assigned agent ID'),
       limit: z.number().optional().describe('Maximum number of tasks to return (default: 20)'),
     },
-    async ({ projectId, status, assignedTo, limit }) => {
+    async ({ project, projectId, status, assignedTo, limit }) => {
       try {
+        // Resolve project name/slug → projectId
+        let resolvedProjectId = projectId
+        if (!resolvedProjectId && project) {
+          try {
+            const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
+            if (lookupRes.ok) {
+              const data = (await lookupRes.json()) as { id?: string }
+              if (data.id) resolvedProjectId = data.id
+            }
+          } catch { /* best effort */ }
+        }
         const params = new URLSearchParams()
-        if (projectId) params.set('projectId', projectId)
+        if (resolvedProjectId) params.set('projectId', resolvedProjectId)
         if (status) params.set('status', status)
         if (assignedTo) params.set('assignedTo', assignedTo)
         if (limit) params.set('limit', String(limit))
