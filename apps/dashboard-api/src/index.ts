@@ -78,7 +78,7 @@ app.get('/health', async (c) => {
     checkService('cliproxy', `${process.env['LLM_PROXY_URL'] || 'http://llm-proxy:8317'}/v1/models`),
     checkService('gitnexus', `${process.env['GITNEXUS_URL'] || 'http://gitnexus:4848'}/health`),
     checkService('mem9', `http://localhost:${process.env.PORT || 4000}/api/mem9/health`),
-    checkService('mcp', `${process.env['MCP_HEALTH_URL'] || 'https://cortex-mcp.jackle.dev/health'}`),
+    checkService('mcp', `${process.env['MCP_HEALTH_URL'] || 'http://cortex-mcp:8317/health'}`),
   ])
 
   const services = { qdrant, cliproxy, gitnexus, mem9, mcp }
@@ -118,6 +118,18 @@ app.route('/api/webhooks', webhooksRouter)
 app.route('/api/tasks', tasksRouter)
 app.route('/api/conductor', conductorRouter)
 app.route('/api/settings', settingsRouter)
+
+// -- MCP Health Proxy (for dashboard web same-origin access) --
+app.get('/mcp/health', async (c) => {
+  const mcpUrl = process.env['MCP_HEALTH_URL'] || 'http://cortex-mcp:8317/health'
+  try {
+    const res = await fetch(mcpUrl, { signal: AbortSignal.timeout(5000) })
+    const data = await res.json()
+    return c.json(data, res.status as 200)
+  } catch (err) {
+    return c.json({ status: 'error', service: 'hub-mcp', error: String(err) }, 503 as 503)
+  }
+})
 
 // Serve Dashboard Web static files (Next.js static export)
 // Clean URLs: /keys → /keys.html, / → /index.html
