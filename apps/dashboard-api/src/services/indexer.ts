@@ -1,6 +1,7 @@
 import { spawn, exec, ChildProcess } from 'child_process'
 import { existsSync, mkdirSync, rmSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, extname } from 'path'
+import { request as httpRequest } from 'node:http'
 import { createConnection } from 'node:net'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
@@ -11,77 +12,78 @@ const GITNEXUS_CONTAINER = 'cortex-gitnexus'
 const DOCKER_SOCK = '/var/run/docker.sock'
 
 /**
+ * Make an HTTP request to Docker API via Unix socket.
+ */
+function dockerApiRequest(method: string, path: string, body?: unknown): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Docker API request timeout')), 30000)
+
+    const options = {
+      socketPath: DOCKER_SOCK,
+      path,
+      method,
+      headers: { 'Content-Type': 'application/json' },
+    }
+
+    const req = httpRequest(options, (res) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => {
+        clearTimeout(timer)
+        try {
+          resolve(JSON.parse(data))
+        } catch {
+          resolve({ _raw: data.trim() })
+        }
+      })
+    })
+
+    req.on('error', (err) => { clearTimeout(timer); reject(err) })
+
+    if (body) req.write(JSON.stringify(body))
+    req.end()
+  })
+}
+
+/**
  * Execute a command inside a container via Docker socket HTTP API.
  * Works without the docker CLI binary — talks directly to the Unix socket.
  */
 async function dockerExec(container: string, cmd: string, timeoutMs = 180000): Promise<{ stdout: string; exitCode: number }> {
+  // Step 1: Create exec instance
+  const execInfo = await dockerApiRequest('POST', `/containers/${container}/exec`, {
+    AttachStdout: true,
+    AttachStderr: true,
+    Cmd: ['bash', '-c', cmd],
+  })
+
+  const execId = (execInfo as Record<string, string>).Id
+  if (!execId) throw new Error('No exec ID returned from Docker API')
+
+  // Step 2: Start exec instance and capture output
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('docker exec timed out')), timeoutMs)
+    const timer = setTimeout(() => reject(new Error(`docker exec timed out (${timeoutMs}ms)`)), timeoutMs)
 
     const sock = createConnection(DOCKER_SOCK)
     sock.on('connect', () => {
-      // Step 1: Create exec instance
-      const createBody = JSON.stringify({
-        AttachStdout: true,
-        AttachStderr: true,
-        Cmd: ['bash', '-c', cmd],
-      })
-      const createReq =
-        `POST /containers/${container}/exec HTTP/1.1\r\n` +
+      const startBody = JSON.stringify({ Detach: false, Tty: false })
+      const startReq =
+        `POST /exec/${execId}/start HTTP/1.1\r\n` +
         `Host: localhost\r\nContent-Type: application/json\r\n` +
-        `Content-Length: ${Buffer.byteLength(createBody)}\r\n` +
+        `Content-Length: ${Buffer.byteLength(startBody)}\r\n` +
         `Connection: close\r\n\r\n` +
-        createBody
-
-      sock.write(createReq)
+        startBody
+      sock.write(startReq)
     })
 
-    let buffer = ''
-    sock.on('data', (chunk: Buffer) => { buffer += chunk.toString() })
-
+    let outChunks: Buffer[] = []
+    sock.on('data', (chunk: Buffer) => { outChunks.push(chunk) })
     sock.on('end', () => {
       clearTimeout(timer)
       sock.destroy()
-
-      // Parse HTTP response
-      const headerEnd = buffer.indexOf('\r\n\r\n')
-      if (headerEnd === -1) { reject(new Error('Invalid Docker API response')); return }
-
-      const headers = buffer.slice(0, headerEnd)
-      const body = buffer.slice(headerEnd + 4)
-
-      if (headers.includes('404') || headers.includes('400')) {
-        reject(new Error(`Container '${container}' not found or invalid`))
-        return
-      }
-
-      try {
-        const execInfo = JSON.parse(body)
-        const execId = execInfo.Id
-        if (!execId) { reject(new Error('No exec ID returned')); return }
-
-        // Step 2: Start exec instance
-        const sock2 = createConnection(DOCKER_SOCK)
-        let outBuffer = ''
-        sock2.on('connect', () => {
-          const startBody = '{"Detach":false,"Tty":false}'
-          const startReq =
-            `POST /exec/${execId}/start HTTP/1.1\r\n` +
-            `Host: localhost\r\nContent-Type: application/json\r\n` +
-            `Content-Length: ${Buffer.byteLength(startBody)}\r\nConnection: close\r\n\r\n` +
-            startBody
-          sock2.write(startReq)
-        })
-
-        sock2.on('data', (chunk: Buffer) => { outBuffer += chunk.toString() })
-        sock2.on('end', () => {
-          sock2.destroy()
-          // Parse multiplexed stream (Docker protocol: 8-byte header [type(1), size(3)], then data)
-          const cleanOutput = demuxDockerStream(outBuffer)
-          resolve({ stdout: cleanOutput, exitCode: 0 })
-        })
-        sock2.on('error', (err) => { reject(err) })
-      } catch (e) { reject(e) }
+      const rawBuffer = Buffer.concat(outChunks)
+      const cleanOutput = demuxDockerStream(rawBuffer)
+      resolve({ stdout: cleanOutput, exitCode: 0 })
     })
     sock.on('error', (err) => { clearTimeout(timer); reject(err) })
   })
@@ -89,32 +91,44 @@ async function dockerExec(container: string, cmd: string, timeoutMs = 180000): P
 
 /**
  * Strip Docker multiplexing headers (8-byte chunks: [stream_type(1)][3 padding][size(4)])
+ * and ANSI escape codes from the output.
  */
-function demuxDockerStream(raw: string): string {
-  // Find the body after HTTP headers
-  const headerEnd = raw.indexOf('\r\n\r\n')
-  if (headerEnd === -1) return raw
-  const body = raw.slice(headerEnd + 4)
+function demuxDockerStream(raw: Buffer): string {
+  // Find HTTP body after headers
+  const headerMarker = Buffer.from('\r\n\r\n')
+  let bodyStart = raw.indexOf(headerMarker)
+  let body: Buffer
+  if (bodyStart === -1) {
+    body = raw
+  } else {
+    body = raw.slice(bodyStart + 4)
+  }
 
-  // Check if multiplexing is used (first byte should be 1 for stdout or 2 for stderr)
-  if (body.length < 8) return body
-  const firstByte = body.charCodeAt(0)
-  if (firstByte !== 1 && firstByte !== 2) return body // no multiplexing
+  // Check if multiplexing is used
+  if (body.length < 8) return body.toString('utf-8').replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+  if (body[0] !== 1 && body[0] !== 2) {
+    return body.toString('utf-8').replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+  }
 
   // Parse multiplexed stream
-  let result = ''
+  let result = Buffer.alloc(0)
   let pos = 0
   while (pos + 8 <= body.length) {
-    const type = body.charCodeAt(pos)
-    const size = (body.charCodeAt(pos + 4) << 24) | (body.charCodeAt(pos + 5) << 16) |
-                 (body.charCodeAt(pos + 6) << 8) | body.charCodeAt(pos + 7)
+    const type = body[pos] ?? 0
+    const b4 = body[pos + 4] ?? 0
+    const b5 = body[pos + 5] ?? 0
+    const b6 = body[pos + 6] ?? 0
+    const b7 = body[pos + 7] ?? 0
+    const size = (b4 << 24) | (b5 << 16) | (b6 << 8) | b7
     if (size <= 0 || pos + 8 + size > body.length) break
-    if (type === 1 || type === 2) { // stdout or stderr
-      result += body.slice(pos + 8, pos + 8 + size)
+    if (type === 1 || type === 2) {
+      result = Buffer.concat([result, body.slice(pos + 8, pos + 8 + size)])
     }
     pos += 8 + size
   }
-  return result || body
+
+  // Strip ANSI escape codes
+  return (result.length > 0 ? result : body).toString('utf-8').replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
 }
 import { embedProject } from './mem9-embedder.js'
 import { buildKnowledgeFromDocs } from './docs-knowledge-builder.js'
@@ -440,19 +454,47 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
           180000,
         )
 
+        appendLog(jobId, `Docker exec output (first 500 chars): ${dockerResult.stdout.slice(0, 500)}`)
+
+        // Parse GitNexus output — try multiple patterns
+        // Pattern 1: "X symbols, Y files" (old format)
         const symbolMatch = dockerResult.stdout.match(/(\d+)\s*symbols?/i)
         const fileMatch = dockerResult.stdout.match(/(\d+)\s*files?/i)
+
+        // Pattern 2: "X nodes | Y edges" (new GitNexus format)
+        const nodesMatch = dockerResult.stdout.match(/([\d,]+)\s*nodes/i)
+        const edgesMatch = dockerResult.stdout.match(/([\d,]+)\s*edges/i)
+
+        // Pattern 3: "indexed successfully (85.9s)" — check for success indicator
+        const successMatch = dockerResult.stdout.match(/indexed successfully/i)
+
         if (symbolMatch?.[1]) symbolsFound = parseInt(symbolMatch[1], 10)
         if (fileMatch?.[1]) totalFiles = parseInt(fileMatch[1], 10)
 
-        if (symbolsFound > 0 || totalFiles > 0) {
+        // Fallback to nodes/edges count
+        if (!symbolsFound && nodesMatch?.[1]) {
+          symbolsFound = parseInt(nodesMatch[1].replace(/,/g, ''), 10)
+        }
+        if (!totalFiles && edgesMatch?.[1]) {
+          totalFiles = parseInt(edgesMatch[1].replace(/,/g, ''), 10)
+        }
+
+        if (successMatch && (symbolsFound > 0 || totalFiles > 0)) {
           gitnexusSuccess = true
-          appendLog(jobId, `GitNexus (docker): ${totalFiles} files, ${symbolsFound} symbols`)
-          logger.info(`[${jobId}] GitNexus docker analyze: ${totalFiles} files, ${symbolsFound} symbols`)
+          appendLog(jobId, `GitNexus (docker): ${totalFiles} edges, ${symbolsFound} nodes`)
+          logger.info(`[${jobId}] GitNexus docker analyze: ${totalFiles} edges, ${symbolsFound} nodes`)
+        } else if (successMatch) {
+          // Success but couldn't parse symbols — trust GitNexus completed
+          gitnexusSuccess = true
+          appendLog(jobId, 'GitNexus (docker): indexed successfully (symbol count not in output)')
+          logger.info(`[${jobId}] GitNexus docker analyze completed (symbols unknown)`)
+        } else {
+          appendLog(jobId, `[warn] Docker exec returned no success marker. Output: ${dockerResult.stdout.slice(0, 300)}`)
         }
       } catch (err) {
-        logger.warn(`[${jobId}] Docker exec analyze failed: ${err}`)
-        appendLog(jobId, `[warn] Docker exec failed: ${String(err).slice(0, 200)}`)
+        const errMsg = err instanceof Error ? err.message : String(err)
+        logger.error(`[${jobId}] Docker exec analyze failed: ${errMsg}`)
+        appendLog(jobId, `[warn] Docker exec failed: ${errMsg.slice(0, 300)}`)
       }
     }
 
