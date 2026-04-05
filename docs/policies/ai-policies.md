@@ -23,7 +23,7 @@ These principles govern all agent behavior when connected to Cortex Hub:
 
 ## Policy Enforcement
 
-Policies are enforced as middleware in the Hub MCP Server. When a policy is violated, the tool call is blocked with a `403` response containing the reason and a suggested alternative.
+Policies are defined as guidelines for AI agents — not yet enforced by middleware. When a policy is violated, the tool call is blocked with a `403` response containing the reason and a suggested alternative.
 
 ### Policy 1: Code Reuse Gate
 

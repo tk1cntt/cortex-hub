@@ -92,9 +92,9 @@ function formatDate(d: Date) { /* ... */ }
 ## Pull Request Checklist
 
 - [ ] Branch is up-to-date with `develop`
-- [ ] All tests pass: `pnpm -r test`
-- [ ] Types check: `pnpm -r typecheck`
-- [ ] Lint clean: `pnpm -r lint`
+- [ ] All tests pass: `pnpm test`
+- [ ] Types check: `pnpm typecheck`
+- [ ] Lint clean: `pnpm lint`
 - [ ] Conventional commit message
 - [ ] Documentation updated (if applicable)
 - [ ] No `TODO` or `FIXME` left in code

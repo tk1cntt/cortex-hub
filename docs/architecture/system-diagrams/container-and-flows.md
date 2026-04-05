@@ -8,7 +8,7 @@ C4Container
     Person(agent, "AI Agent", "Antigravity, GoClaw, or any MCP client")
 
     System_Boundary(cortex, "Cortex Hub") {
-        Container(hub_mcp, "Hub MCP Server", "Hono Node.js / Docker", "MCP gateway — auth, routing, logging, policy enforcement")
+        Container(cortex-mcp, "Hub MCP Server", "Hono Node.js / Docker", "MCP gateway — auth, routing, logging, policy enforcement")
         Container(dash_web, "Dashboard Web", "Next.js 15 / Cloudflare Pages", "Admin UI — logs, API keys, repos, quality trends")
         Container(dash_api, "Dashboard API", "Hono / Node.js", "REST API for dashboard — CRUD, WebSocket logs")
         ContainerDb(sqlite, "App Database", "SQLite WAL", "API keys, quality reports, sessions, logs")
@@ -20,12 +20,12 @@ C4Container
     System_Ext(github, "GitHub API", "Repository hosting + OAuth")
     System_Ext(cf_tunnel, "Cloudflare Tunnel", "Secure exposure, zero open ports")
 
-    Rel(agent, hub_mcp, "MCP tool calls", "HTTPS + API Key")
+    Rel(agent, cortex-mcp, "MCP tool calls", "HTTPS + API Key")
     Rel(admin, dash_web, "Manages platform", "HTTPS + OAuth session")
     Rel(dash_web, dash_api, "API requests + WebSocket", "HTTPS / WSS")
-    Rel(hub_mcp, gitnexus, "code.* tools", "HTTP POST /tool/* via Dashboard API")
-    Rel(hub_mcp, dash_api, "memory.* + quality.* + session.* tools", "HTTP via CF Tunnel")
-    Rel(hub_mcp, qdrant, "knowledge.* tools", "HTTP via CF Tunnel")
+    Rel(cortex-mcp, gitnexus, "code.* tools", "HTTP POST /tool/* via Dashboard API")
+    Rel(cortex-mcp, dash_api, "memory.* + quality.* + session.* tools", "HTTP via CF Tunnel")
+    Rel(cortex-mcp, qdrant, "knowledge.* tools", "HTTP via CF Tunnel")
     Rel(dash_api, sqlite, "Reads/writes", "SQL")
     Rel(dash_api, qdrant, "mem9 vector storage", "HTTP")
     Rel(dash_api, github, "Repo import + OAuth", "HTTPS")
@@ -37,7 +37,7 @@ C4Container
 ```mermaid
 sequenceDiagram
     participant Agent as AI Agent
-    participant HubMCP as Hub MCP Server<br/>(CF Worker)
+    participant HubMCP as Hub MCP Server<br/>(Docker container)
     participant Tunnel as CF Tunnel
     participant Service as Backend Service<br/>(GitNexus/mem9/Qdrant)
 

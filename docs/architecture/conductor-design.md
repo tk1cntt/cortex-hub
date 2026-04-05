@@ -153,7 +153,7 @@ ALTER TABLE session_handoffs ADD COLUMN last_activity TEXT;
 ```sql
 CREATE TABLE IF NOT EXISTS conductor_tasks (
     id TEXT PRIMARY KEY,
-    api_key_owner TEXT NOT NULL,          -- scope: who owns this task
+    ,          -- scope: who owns this task
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     project_id TEXT,
