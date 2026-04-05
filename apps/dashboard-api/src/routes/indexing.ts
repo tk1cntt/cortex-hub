@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { execFileSync } from 'child_process'
 import { db } from '../db/client.js'
 import { startIndexing, cancelJob, buildAuthUrl } from '../services/indexer.js'
 import { embedProject } from '../services/mem9-embedder.js'
@@ -11,6 +12,43 @@ import { handleApiError } from '../utils/error-handler.js'
 const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
 
 export const indexingRouter = new Hono()
+
+/**
+ * Auto-detect the default branch of a git repo.
+ * Tries: HEAD ref → main → master → first branch found.
+ */
+function detectDefaultBranch(repoUrl: string, username?: string | null, token?: string | null): string {
+  const authUrl = buildAuthUrl(repoUrl, username, token)
+  try {
+    const output = execFileSync('git', ['ls-remote', '--symref', authUrl, 'HEAD'], {
+      timeout: 10000,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    // Output: "ref: refs/heads/main\tHEAD\n<sha>\tHEAD"
+    const headMatch = output.match(/ref: refs\/heads\/(\S+)/)
+    if (headMatch) return headMatch[1]!
+  } catch {
+    // Fallback: try common branches
+  }
+
+  // Fallback: list all branches, prefer main/master
+  try {
+    const output = execFileSync('git', ['ls-remote', '--heads', authUrl], {
+      timeout: 10000,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const branches = output.split('\n').filter(Boolean).map((l) => l.split('\t')[1]?.replace('refs/heads/', '') ?? '')
+    if (branches.includes('main')) return 'main'
+    if (branches.includes('master')) return 'master'
+    if (branches.length > 0) return branches[0]!
+  } catch {
+    // Best effort
+  }
+
+  return 'main' // Last resort
+}
 
 interface IndexJob {
   id: string
@@ -53,15 +91,20 @@ indexingRouter.post('/:id/index', async (c) => {
       return c.json({ error: 'An indexing job is already running', jobId: activeJob.id }, 409)
     }
 
-    // Parse branch from body
-    let branch = 'main'
+    // Parse branch from body — auto-detect if not specified
+    let branch: string | undefined
     let triggeredBy = 'manual'
     try {
       const body = await c.req.json()
-      if (body.branch) branch = body.branch
+      branch = body.branch
       if (body.triggeredBy) triggeredBy = body.triggeredBy
     } catch {
-      // No body is OK, use default branch
+      // No body is OK
+    }
+
+    // Auto-detect default branch when not specified
+    if (!branch) {
+      branch = detectDefaultBranch(project.git_repo_url, null, null)
     }
 
     // Create job record
