@@ -483,16 +483,48 @@ export async function getGitNexusRepos() {
 
   const rawData = gitNexusResult as Record<string, unknown>
   if (rawData?.raw && typeof rawData.raw === 'string') {
-    // Raw text: parse repo names from lines
-    const repoNames = rawData.raw.split('\n').map(l => l.trim()).filter(l => l.length > 0)
-    repos = repoNames.map(name => {
-      const match = projectBySlug.get(name.toLowerCase()) ?? projectById.get(name)
+    // Raw text from GitNexus — parse structured repo entries
+    // Format:
+    //   Indexed repositories:
+    //
+    //     cortex-hub — 1779 symbols, 3641 relationships, 140 flows
+    //       Path: /app/data/repos/cortex-hub
+    //       Indexed: 2026-04-04T15:24:05.890Z
+    const lines = rawData.raw.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+
+    const parsed: Array<{ name: string; symbols: string; path?: string; indexedAt?: string }> = []
+    let current: typeof parsed[0] | null = null
+
+    for (const line of lines) {
+      // Skip header lines
+      if (line.toLowerCase().includes('indexed repositories') || line === '') continue
+
+      // Repo line: "cortex-hub — 1779 symbols, 3641 relationships, 140 flows"
+      // Em dash is U+2014 (\u2014) — use explicit unicode match
+      const emDash = '\u2014'
+      const dashIdx = line.indexOf(emDash)
+      if (dashIdx > 0 && !line.startsWith('Path:') && !line.startsWith('Indexed:')) {
+        current = {
+          name: line.slice(0, dashIdx).trim(),
+          symbols: line.slice(dashIdx + emDash.length).trim().split(',')[0] || '',
+        }
+        parsed.push(current)
+      } else if (current) {
+        // Sub-lines
+        if (line.startsWith('Path:')) current.path = line.replace('Path:', '').trim()
+        if (line.startsWith('Indexed:')) current.indexedAt = line.replace('Indexed:', '').trim()
+      }
+    }
+
+    // Enrich with project DB metadata
+    repos = parsed.map(r => {
+      const match = projectBySlug.get(r.name.toLowerCase()) ?? projectById.get(r.name)
       return {
-        name,
+        name: r.name,
         projectId: match?.id ?? '',
-        slug: match?.slug ?? name,
-        symbols: match?.indexed_symbols ?? '?',
-        gitUrl: match?.git_repo_url ?? '',
+        slug: match?.slug ?? r.name,
+        symbols: match?.indexed_symbols ?? r.symbols ?? '?',
+        gitUrl: match?.git_repo_url ?? r.path ?? '',
       }
     })
   } else if (Array.isArray(rawData)) {
