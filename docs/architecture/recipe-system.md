@@ -44,6 +44,7 @@ Extended `knowledge_documents` with:
 New tables:
 - **`knowledge_lineage`** — Parent-child DAG (many-to-many, relationship: `derived` or `fixed`)
 - **`knowledge_usage_log`** — Usage events (suggested/applied/completed/fallback + token_count)
+- **`knowledge_chunks`** — Individual embeddable text segments (FK to knowledge_documents)
 
 ### Quality Metrics (OpenSpace core idea)
 
@@ -82,27 +83,139 @@ Anti-loop safeguards:
 
 ## Files
 
-### New Services
+### Services
 - `apps/dashboard-api/src/services/recipe-capture.ts` — Auto-capture from task/session
 - `apps/dashboard-api/src/services/knowledge-evolution.ts` — FIX evolution + health monitor
 
-### Modified
-- `apps/dashboard-api/src/db/schema.sql` — +2 tables, +9 columns
-- `apps/dashboard-api/src/db/client.ts` — Migration blocks
+### Routes
 - `apps/dashboard-api/src/routes/knowledge.ts` — Quality-ranked search, lineage, token-savings, track-feedback, health-check
-- `apps/dashboard-api/src/routes/conductor.ts` — Hook capture on task completion
-- `apps/dashboard-api/src/routes/quality.ts` — Hook capture on session_end
+
+### Modified
+- `apps/dashboard-api/src/db/schema.sql` — +2 tables (knowledge_lineage, knowledge_usage_log, knowledge_chunks), +9 columns on knowledge_documents
+- `apps/dashboard-api/src/db/client.ts` — Migration blocks
 - `apps/hub-mcp/src/tools/session.ts` — `relevant_knowledge` in response
 - `apps/hub-mcp/src/tools/quality.ts` — Auto-track feedback
 - `packages/shared-types/src/models.ts` — KnowledgeDocument, KnowledgeQuality, KnowledgeLineageEdge types
-- `apps/dashboard-web/src/app/knowledge/page.tsx` — Origin badges, quality metrics
-- `apps/dashboard-web/src/lib/api.ts` — Extended KnowledgeDocument interface
 
-### New API Endpoints
+### API Endpoints
+- `POST /api/knowledge` — Create knowledge document
+- `POST /api/knowledge/search` — Quality-ranked search
 - `POST /api/knowledge/track-feedback` — Auto-increment completion/fallback counters
 - `POST /api/knowledge/health-check` — Find and fix unhealthy knowledge docs
 - `GET /api/knowledge/lineage/:id` — Full DAG traversal (ancestors + descendants)
 - `GET /api/knowledge/token-savings` — Compare token usage with/without knowledge
+
+---
+
+## Verification Workflow
+
+### End-to-End Test Flow
+
+```
+1. SESSION START
+   Agent calls cortex_session_start
+   -> Response has relevant_knowledge[] (top 3 recipes)
+   VERIFY: relevant_knowledge field present in response
+
+        |
+        v
+
+2. KNOWLEDGE SEARCH
+   Agent calls cortex_knowledge_search
+   -> Results ranked by hybrid score (vector + quality)
+   -> Each result has quality{} + origin + category
+   -> selection_count++ automatic
+   VERIFY: quality object in response, scores re-ranked
+
+        |
+        v
+
+3. AGENT WORKS
+   Uses knowledge to solve task
+   ... code, debug, implement ...
+
+        |
+        v
+
+4. QUALITY REPORT
+   Agent calls cortex_quality_report
+   -> passed=true  -> completion_count++ for recent docs
+   -> passed=false -> fallback_count++ for recent docs
+   VERIFY: POST /api/knowledge/track-feedback called
+
+        |
+        v
+
+5a. TASK COMPLETE (conductor task -> completed)
+    recipe-capture.ts reads logs + result + context
+    LLM analyzes -> should_capture?
+    YES: store as captured/derived knowledge doc
+    VERIFY: new kdoc with origin='captured' in DB
+
+5b. SESSION END (agent calls session complete)
+    recipe-capture.ts reads summary
+    LLM analyzes -> should_capture?
+    YES: store as knowledge doc
+    VERIFY: new kdoc with tags=['auto-recipe']
+
+        |
+        v
+
+6. EVOLUTION (periodic or on-demand)
+   POST /api/knowledge/health-check
+   Finds docs with fallback_rate > 0.4, selection >= 5
+   LLM confirms + generates improved content
+   New doc (origin='fixed'), old archived
+   knowledge_lineage edge created
+   VERIFY: lineage DAG via GET /api/knowledge/lineage/:id
+
+        |
+        v
+
+7. DASHBOARD
+   Knowledge page shows origin badges (captured/derived/fixed)
+   Quality metrics: "75% effective", "v2"
+   GET /api/knowledge/token-savings
+   VERIFY: UI renders new fields
+```
+
+### Quick Smoke Test (curl)
+
+```bash
+# 1. Create a test knowledge doc with origin
+curl -X POST http://localhost:4000/api/knowledge \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Test Recipe","content":"## Steps\n1. Do X\n2. Do Y","tags":["test"],"origin":"captured","category":"workflow"}'
+
+# 2. Search and verify quality fields
+curl -X POST http://localhost:4000/api/knowledge/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"test recipe steps"}'
+
+# 3. Track feedback
+curl -X POST http://localhost:4000/api/knowledge/track-feedback \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"completed"}'
+
+# 4. Check token savings
+curl http://localhost:4000/api/knowledge/token-savings
+
+# 5. Run health check
+curl -X POST http://localhost:4000/api/knowledge/health-check
+
+# 6. Get lineage DAG (replace kdoc-xxx with actual ID)
+curl http://localhost:4000/api/knowledge/lineage/kdoc-xxx
+```
+
+### What to Monitor
+
+| Metric | Expected | Alert If |
+|--------|----------|----------|
+| Auto-captured recipes/day | 1-5 | 0 for 3+ days |
+| Avg effective_rate | > 0.5 | < 0.3 across all docs |
+| Fallback rate | < 0.3 | > 0.5 for any doc with 10+ selections |
+| Evolution fixes/week | 0-2 | > 5 (too many bad docs) |
+| Token savings | 20-40% | Negative (knowledge hurting) |
 
 ---
 
