@@ -77,7 +77,7 @@ function resolveHubUrl(settings: vscode.WorkspaceConfiguration): string {
     } catch { /* ignore */ }
   }
 
-  return 'wss://cortex-mcp.jackle.dev'
+  return ''
 }
 
 function homedir(): string {

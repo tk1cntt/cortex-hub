@@ -413,50 +413,12 @@ export default function SettingsPage() {
         <h2 className={styles.sectionTitle}>Cloudflare Tunnel</h2>
         <div className={`card ${styles.tunnelCard}`}>
           <div className={styles.tunnelGrid}>
-            <div className={styles.tunnelItem}>
-              <span className={styles.tunnelLabel}>Dashboard</span>
-              <a
-                href="https://hub.jackle.dev"
-                target="_blank"
-                rel="noreferrer"
-                className={styles.tunnelLink}
-              >
-                hub.jackle.dev
-              </a>
-            </div>
-            <div className={styles.tunnelItem}>
-              <span className={styles.tunnelLabel}>API</span>
-              <a
-                href="https://cortex-api.jackle.dev"
-                target="_blank"
-                rel="noreferrer"
-                className={styles.tunnelLink}
-              >
-                cortex-api.jackle.dev
-              </a>
-            </div>
-            <div className={styles.tunnelItem}>
-              <span className={styles.tunnelLabel}>MCP</span>
-              <a
-                href="https://cortex-mcp.jackle.dev"
-                target="_blank"
-                rel="noreferrer"
-                className={styles.tunnelLink}
-              >
-                cortex-mcp.jackle.dev
-              </a>
-            </div>
-            <div className={styles.tunnelItem}>
-              <span className={styles.tunnelLabel}>LLM Proxy</span>
-              <a
-                href="https://cortex-llm.jackle.dev"
-                target="_blank"
-                rel="noreferrer"
-                className={styles.tunnelLink}
-              >
-                cortex-llm.jackle.dev
-              </a>
-            </div>
+            {data?.services && Object.entries(data.services).map(([key, url]) => (
+              <div key={key} className={styles.tunnelItem}>
+                <span className={styles.tunnelLabel}>{SERVICE_LABELS[key] ?? key}</span>
+                <code className={styles.tunnelLink}>{url}</code>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -519,16 +481,19 @@ export default function SettingsPage() {
             Copy this snippet into your AI agent&apos;s MCP client configuration:
           </p>
           <pre className={styles.codeBlock}>
-{`{
+{(() => {
+  const mcpUrl = process.env.NEXT_PUBLIC_MCP_URL || (typeof window !== 'undefined' ? window.location.protocol + '//' + window.location.host + '/mcp' : '<your-mcp-url>/mcp')
+  return `{
   "mcpServers": {
     "cortex-hub": {
-      "url": "https://cortex-mcp.jackle.dev/mcp",
+      "url": "${mcpUrl}",
       "headers": {
         "Authorization": "Bearer <your-api-key>"
       }
     }
   }
-}`}
+}`
+})()}
           </pre>
         </div>
       </div>
@@ -594,7 +559,7 @@ export default function SettingsPage() {
             <a href="/docs" className={styles.aboutLink}>
               Documentation
             </a>
-            <a href="https://hub.jackle.dev" className={styles.aboutLink}>
+            <a href={process.env.NEXT_PUBLIC_DASHBOARD_URL || "/"} className={styles.aboutLink}>
               Dashboard
             </a>
           </div>

@@ -82,7 +82,7 @@ export async function revokeApiKey(id: string) {
 
 // ── MCP Health ──
 export async function checkMcpHealth() {
-  const res = await fetch(config.mcp.health, { signal: AbortSignal.timeout(5000) })
+  const res = await fetch(config.mcp.health || '/mcp/health', { signal: AbortSignal.timeout(5000) })
   return res.json()
 }
 

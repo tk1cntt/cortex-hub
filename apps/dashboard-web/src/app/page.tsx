@@ -415,16 +415,19 @@ export default function DashboardPage() {
             Add Cortex Hub to your AI agent&apos;s MCP config:
           </p>
           <pre className={styles.codeBlock}>
-{`{
+{(() => {
+  const mcpUrl = process.env.NEXT_PUBLIC_MCP_URL || (typeof window !== 'undefined' ? window.location.protocol + '//' + window.location.host + '/mcp' : '<your-mcp-url>/mcp')
+  return `{
   "mcpServers": {
     "cortex-hub": {
-      "url": "https://cortex-mcp.jackle.dev/mcp",
+      "url": "${mcpUrl}",
       "headers": {
         "Authorization": "Bearer <your-api-key>"
       }
     }
   }
-}`}
+}`
+})()}
           </pre>
           <a href="/keys" className="btn btn-primary btn-sm" style={{ marginTop: 'var(--space-4)', display: 'inline-flex' }}>
             Generate API Key →
