@@ -80,6 +80,47 @@ for (const sql of indexJobsExtraCols) {
   try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
 }
 
+// ── query_logs: add analytics columns ──
+const queryLogsExtraCols = [
+  'ALTER TABLE query_logs ADD COLUMN input_size INTEGER DEFAULT 0',
+  'ALTER TABLE query_logs ADD COLUMN output_size INTEGER DEFAULT 0',
+  'ALTER TABLE query_logs ADD COLUMN compute_tokens INTEGER DEFAULT 0',
+  'ALTER TABLE query_logs ADD COLUMN compute_model TEXT',
+]
+for (const sql of queryLogsExtraCols) {
+  try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
+}
+
+// ── agent_ack: table for tracking agent change awareness ──
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS agent_ack (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      last_seen_event_id TEXT,
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(agent_id, project_id)
+    )
+  `)
+} catch (e) { /* ignore if table exists */ }
+
+// ── change_events: table for tracking code changes ──
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS change_events (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      branch TEXT NOT NULL,
+      agent_id TEXT,
+      commit_sha TEXT,
+      commit_message TEXT,
+      files_changed TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `)
+} catch (e) { /* ignore if table exists */ }
+
 // Update index_jobs table definition in schema.sql to include new columns
 // (tracked in schema.sql DDL directly — no migration needed for fresh installs)
 
