@@ -1,7 +1,7 @@
 import { spawn, exec, ChildProcess } from 'child_process'
 import { existsSync, mkdirSync, rmSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, extname } from 'path'
-import { createConnection } from 'node:net'
+import { request as httpRequest } from 'node:http'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
 
@@ -11,110 +11,64 @@ const GITNEXUS_CONTAINER = 'cortex-gitnexus'
 const DOCKER_SOCK = '/var/run/docker.sock'
 
 /**
- * Execute a command inside a container via Docker socket HTTP API.
- * Works without the docker CLI binary — talks directly to the Unix socket.
+ * Make an HTTP request to Docker API via Unix socket.
  */
-async function dockerExec(container: string, cmd: string, timeoutMs = 180000): Promise<{ stdout: string; exitCode: number }> {
+function dockerApiRequest(method: string, path: string, body?: unknown, timeoutMs = 30000): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('docker exec timed out')), timeoutMs)
-
-    const sock = createConnection(DOCKER_SOCK)
-    sock.on('connect', () => {
-      // Step 1: Create exec instance
-      const createBody = JSON.stringify({
-        AttachStdout: true,
-        AttachStderr: true,
-        Cmd: ['bash', '-c', cmd],
+    const timer = setTimeout(() => reject(new Error('Docker API timeout')), timeoutMs)
+    const req = httpRequest({
+      socketPath: DOCKER_SOCK,
+      path,
+      method,
+      headers: { 'Content-Type': 'application/json' },
+    }, (res) => {
+      let data = ''
+      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
+      res.on('end', () => {
+        clearTimeout(timer)
+        try { resolve(JSON.parse(data)) } catch { resolve({ _raw: data.trim() }) }
       })
-      const createReq =
-        `POST /containers/${container}/exec HTTP/1.1\r\n` +
-        `Host: localhost\r\nContent-Type: application/json\r\n` +
-        `Content-Length: ${Buffer.byteLength(createBody)}\r\n` +
-        `Connection: close\r\n\r\n` +
-        createBody
-
-      sock.write(createReq)
     })
-
-    let buffer = ''
-    sock.on('data', (chunk: Buffer) => { buffer += chunk.toString() })
-
-    sock.on('end', () => {
-      clearTimeout(timer)
-      sock.destroy()
-
-      // Parse HTTP response
-      const headerEnd = buffer.indexOf('\r\n\r\n')
-      if (headerEnd === -1) { reject(new Error('Invalid Docker API response')); return }
-
-      const headers = buffer.slice(0, headerEnd)
-      const body = buffer.slice(headerEnd + 4)
-
-      if (headers.includes('404') || headers.includes('400')) {
-        reject(new Error(`Container '${container}' not found or invalid`))
-        return
-      }
-
-      try {
-        const execInfo = JSON.parse(body)
-        const execId = execInfo.Id
-        if (!execId) { reject(new Error('No exec ID returned')); return }
-
-        // Step 2: Start exec instance
-        const sock2 = createConnection(DOCKER_SOCK)
-        let outBuffer = ''
-        sock2.on('connect', () => {
-          const startBody = '{"Detach":false,"Tty":false}'
-          const startReq =
-            `POST /exec/${execId}/start HTTP/1.1\r\n` +
-            `Host: localhost\r\nContent-Type: application/json\r\n` +
-            `Content-Length: ${Buffer.byteLength(startBody)}\r\nConnection: close\r\n\r\n` +
-            startBody
-          sock2.write(startReq)
-        })
-
-        sock2.on('data', (chunk: Buffer) => { outBuffer += chunk.toString() })
-        sock2.on('end', () => {
-          sock2.destroy()
-          // Parse multiplexed stream (Docker protocol: 8-byte header [type(1), size(3)], then data)
-          const cleanOutput = demuxDockerStream(outBuffer)
-          resolve({ stdout: cleanOutput, exitCode: 0 })
-        })
-        sock2.on('error', (err) => { reject(err) })
-      } catch (e) { reject(e) }
-    })
-    sock.on('error', (err) => { clearTimeout(timer); reject(err) })
+    req.on('error', (err) => { clearTimeout(timer); reject(err) })
+    if (body) req.write(JSON.stringify(body))
+    req.end()
   })
 }
 
 /**
- * Strip Docker multiplexing headers (8-byte chunks: [stream_type(1)][3 padding][size(4)])
+ * Start a command inside a container (detached mode — returns immediately).
+ * Returns execId for polling status later.
  */
-function demuxDockerStream(raw: string): string {
-  // Find the body after HTTP headers
-  const headerEnd = raw.indexOf('\r\n\r\n')
-  if (headerEnd === -1) return raw
-  const body = raw.slice(headerEnd + 4)
+async function dockerExecStart(container: string, cmd: string): Promise<string> {
+  const execInfo = await dockerApiRequest('POST', `/containers/${container}/exec`, {
+    AttachStdout: true,
+    AttachStderr: true,
+    Cmd: ['bash', '-c', cmd],
+  })
+  const execId = (execInfo as Record<string, string>).Id
+  if (!execId) throw new Error('No exec ID returned')
 
-  // Check if multiplexing is used (first byte should be 1 for stdout or 2 for stderr)
-  if (body.length < 8) return body
-  const firstByte = body.charCodeAt(0)
-  if (firstByte !== 1 && firstByte !== 2) return body // no multiplexing
+  // Start detached — don't wait for output
+  await dockerApiRequest('POST', `/exec/${execId}/start`, { Detach: true, Tty: false })
+  return execId
+}
 
-  // Parse multiplexed stream
-  let result = ''
-  let pos = 0
-  while (pos + 8 <= body.length) {
-    const type = body.charCodeAt(pos)
-    const size = (body.charCodeAt(pos + 4) << 24) | (body.charCodeAt(pos + 5) << 16) |
-                 (body.charCodeAt(pos + 6) << 8) | body.charCodeAt(pos + 7)
-    if (size <= 0 || pos + 8 + size > body.length) break
-    if (type === 1 || type === 2) { // stdout or stderr
-      result += body.slice(pos + 8, pos + 8 + size)
-    }
-    pos += 8 + size
+/**
+ * Poll exec status and retrieve output when done.
+ */
+async function dockerExecInspect(execId: string): Promise<{ running: boolean; exitCode: number; output: string }> {
+  const inspectInfo = await dockerApiRequest('GET', `/exec/${execId}/json`)
+  const running = (inspectInfo.Running as boolean) ?? false
+  const exitCode = (inspectInfo.ExitCode as number) ?? -1
+
+  let output = ''
+  if (!running) {
+    // Retrieve logs only when finished
+    const logRes = await dockerApiRequest('GET', `/exec/${execId}/logs?stdout=true&stderr=true`, undefined, 15000)
+    output = (logRes._raw as string) ?? ''
   }
-  return result || body
+
+  return { running, exitCode, output }
 }
 import { embedProject } from './mem9-embedder.js'
 import { buildKnowledgeFromDocs } from './docs-knowledge-builder.js'
@@ -428,44 +382,115 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
       // gitnexus not installed locally — expected in cortex-api container
     }
 
-    // Strategy 2: Docker exec into gitnexus container via Docker socket HTTP API
+    // Strategy 2: Docker exec into gitnexus container (detached + poll).
     if (!gitnexusSuccess) {
       try {
-        appendLog(jobId, 'Calling GitNexus container via Docker socket...')
-        logger.info(`[${jobId}] Trying docker exec into gitnexus container`)
+        appendLog(jobId, 'Calling GitNexus container via Docker socket (detached)...')
+        logger.info(`[${jobId}] Starting docker exec (detached) into gitnexus container`)
 
-        const dockerResult = await dockerExec(
+        const execId = await dockerExecStart(
           GITNEXUS_CONTAINER,
           `cd ${repoDir} && gitnexus analyze --force --embeddings 2>&1`,
-          180000,
         )
 
-        const symbolMatch = dockerResult.stdout.match(/(\d+)\s*symbols?/i)
-        const fileMatch = dockerResult.stdout.match(/(\d+)\s*files?/i)
-        if (symbolMatch?.[1]) symbolsFound = parseInt(symbolMatch[1], 10)
-        if (fileMatch?.[1]) totalFiles = parseInt(fileMatch[1], 10)
+        appendLog(jobId, `GitNexus analyze started (execId: ${execId.slice(0, 12)}). Polling for completion...`)
 
-        if (symbolsFound > 0 || totalFiles > 0) {
-          gitnexusSuccess = true
-          appendLog(jobId, `GitNexus (docker): ${totalFiles} files, ${symbolsFound} symbols`)
-          logger.info(`[${jobId}] GitNexus docker analyze: ${totalFiles} files, ${symbolsFound} symbols`)
+        // Poll in background — don't block the main flow
+        const POLL_INTERVAL_MS = 10000
+        const MAX_POLL_TIME_MS = 600000 // 10 min max for large repos
+        const pollStartTime = Date.now()
+
+        let fallbackRan = false
+
+        const pollInterval = setInterval(async () => {
+          const elapsed = Date.now() - pollStartTime
+          if (elapsed > MAX_POLL_TIME_MS) {
+            clearInterval(pollInterval)
+            logger.warn(`[${jobId}] GitNexus analyze timed out after ${Math.round(elapsed/1000)}s`)
+            appendLog(jobId, `[warn] GitNexus analyze timed out (${Math.round(elapsed/1000)}s)`)
+            if (!gitnexusSuccess && !fallbackRan) {
+              fallbackRan = true
+              await runFallback()
+            }
+            return
+          }
+
+          try {
+            const { running, exitCode, output } = await dockerExecInspect(execId)
+
+            if (!running) {
+              clearInterval(pollInterval)
+              const cleanOutput = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+
+              const symbolMatch = cleanOutput.match(/(\d+)\s*symbols?/i)
+              const fileMatch = cleanOutput.match(/(\d+)\s*files?/i)
+              const nodesMatch = cleanOutput.match(/([\d,]+)\s*nodes/i)
+              const edgesMatch = cleanOutput.match(/([\d,]+)\s*edges/i)
+              const successMatch = cleanOutput.match(/indexed successfully/i)
+
+              if (symbolMatch?.[1]) symbolsFound = parseInt(symbolMatch[1], 10)
+              if (fileMatch?.[1]) totalFiles = parseInt(fileMatch[1], 10)
+              if (!symbolsFound && nodesMatch?.[1]) symbolsFound = parseInt(nodesMatch[1].replace(/,/g, ''), 10)
+              if (!totalFiles && edgesMatch?.[1]) totalFiles = parseInt(edgesMatch[1].replace(/,/g, ''), 10)
+
+              if (successMatch && (symbolsFound > 0 || totalFiles > 0)) {
+                gitnexusSuccess = true
+                appendLog(jobId, `GitNexus (docker): ${totalFiles} edges, ${symbolsFound} nodes (${Math.round(elapsed/1000)}s)`)
+                logger.info(`[${jobId}] GitNexus docker analyze done: ${totalFiles} edges, ${symbolsFound} nodes`)
+              } else if (successMatch) {
+                gitnexusSuccess = true
+                appendLog(jobId, `GitNexus (docker): indexed successfully (${Math.round(elapsed/1000)}s)`)
+              }
+
+              // Continue to step 3 if still not successful
+              if (!gitnexusSuccess && !fallbackRan) {
+                fallbackRan = true
+                await runFallback()
+              }
+            } else {
+              // Still running — log progress
+              appendLog(jobId, `GitNexus still running... (${Math.round(elapsed/1000)}s)`)
+              logger.info(`[${jobId}] GitNexus still running... ${Math.round(elapsed/1000)}s`)
+            }
+          } catch (pollErr) {
+            logger.warn(`[${jobId}] Poll error: ${pollErr}`)
+          }
+        }, POLL_INTERVAL_MS)
+
+        // Helper for fallback if poll fails
+        async function runFallback() {
+          appendLog(jobId, '[info] Using pure JS symbol extraction (gitnexus CLI not available)')
+          logger.info(`[${jobId}] Using pure JS fallback extraction`)
+          const fallback = extractSymbolsFromDir(repoDir)
+          totalFiles = fallback.totalFiles
+          symbolsFound = fallback.symbolsFound
+          symbolNames = fallback.symbolNames
+          appendLog(jobId, `Extracted: ${totalFiles} files, ${symbolsFound} symbols`)
+          if (symbolNames.length > 0) {
+            appendLog(jobId, `Sample symbols: ${symbolNames.slice(0, 20).join(', ')}`)
+          }
         }
       } catch (err) {
-        logger.warn(`[${jobId}] Docker exec analyze failed: ${err}`)
-        appendLog(jobId, `[warn] Docker exec failed: ${String(err).slice(0, 200)}`)
+        logger.warn(`[${jobId}] Docker exec start failed: ${err}`)
+        appendLog(jobId, `[warn] Docker exec failed: ${String(err).slice(0, 300)}`)
+        // Will fall through to pure JS below
       }
     }
 
     // Strategy 3: Pure JS fallback (regex-based, no native deps)
+    // Wait a few seconds to give Strategy 2 poll time to detect completion first.
     if (!gitnexusSuccess) {
-      appendLog(jobId, `[info] Using pure JS symbol extraction (gitnexus CLI not available)`)
-      logger.info(`[${jobId}] Using pure JS fallback extraction`)
+      await new Promise<void>(r => setTimeout(r, 5000))
+      if (!gitnexusSuccess) {
+        appendLog(jobId, `[info] Using pure JS symbol extraction (gitnexus CLI not available)`)
+        logger.info(`[${jobId}] Using pure JS fallback extraction`)
 
-      const fallback = extractSymbolsFromDir(repoDir)
-      totalFiles = fallback.totalFiles
-      symbolsFound = fallback.symbolsFound
-      symbolNames = fallback.symbolNames
-      appendLog(jobId, `Extracted: ${totalFiles} files, ${symbolsFound} symbols`)
+        const fallback = extractSymbolsFromDir(repoDir)
+        totalFiles = fallback.totalFiles
+        symbolsFound = fallback.symbolsFound
+        symbolNames = fallback.symbolNames
+        appendLog(jobId, `Extracted: ${totalFiles} files, ${symbolsFound} symbols`)
+      }
     }
 
     if (symbolNames.length > 0) {
