@@ -50,4 +50,4 @@ else
     echo -e "${RED}>>> Installation Warning: Hub MCP (8317) is not responding yet. Check docker logs.${NC}"
 fi
 
-echo -e "${GREEN}>>> Done! Access the dashboard at hub.jackle.dev (requires CF Tunnel setup).${NC}"
+echo -e "${GREEN}>>> Done! Access the dashboard at https://hub.${CORTEX_BASE_DOMAIN:-your-domain.com} (requires CF Tunnel setup).${NC}"

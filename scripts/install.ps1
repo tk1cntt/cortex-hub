@@ -23,7 +23,7 @@ $ErrorActionPreference = "Stop"
 $HOOKS_VERSION = 7
 $HOOKS_MINOR = 0
 $LATEST_VERSION = "$HOOKS_VERSION.$HOOKS_MINOR"
-$MCP_URL_DEFAULT = "https://cortex-mcp.jackle.dev/mcp"
+$MCP_URL_DEFAULT = if ($env:CORTEX_MCP_URL) { $env:CORTEX_MCP_URL } else { "" }
 
 # ── Helpers ──
 function Write-Info  { param([string]$msg) Write-Host "[cortex] $msg" -ForegroundColor Blue }
