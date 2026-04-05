@@ -1,12 +1,123 @@
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, exec, ChildProcess } from 'child_process'
 import { existsSync, mkdirSync, rmSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, extname } from 'path'
+import { createConnection } from 'node:net'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
-import { embedProject } from './mem9-embedder.js'
-import { buildKnowledgeFromDocs } from './docs-knowledge-builder.js'
 
 const logger = createLogger('indexer')
+
+const GITNEXUS_CONTAINER = 'cortex-gitnexus'
+const DOCKER_SOCK = '/var/run/docker.sock'
+
+/**
+ * Execute a command inside a container via Docker socket HTTP API.
+ * Works without the docker CLI binary — talks directly to the Unix socket.
+ */
+async function dockerExec(container: string, cmd: string, timeoutMs = 180000): Promise<{ stdout: string; exitCode: number }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('docker exec timed out')), timeoutMs)
+
+    const sock = createConnection(DOCKER_SOCK)
+    sock.on('connect', () => {
+      // Step 1: Create exec instance
+      const createBody = JSON.stringify({
+        AttachStdout: true,
+        AttachStderr: true,
+        Cmd: ['bash', '-c', cmd],
+      })
+      const createReq =
+        `POST /containers/${container}/exec HTTP/1.1\r\n` +
+        `Host: localhost\r\nContent-Type: application/json\r\n` +
+        `Content-Length: ${Buffer.byteLength(createBody)}\r\n` +
+        `Connection: close\r\n\r\n` +
+        createBody
+
+      sock.write(createReq)
+    })
+
+    let buffer = ''
+    sock.on('data', (chunk: Buffer) => { buffer += chunk.toString() })
+
+    sock.on('end', () => {
+      clearTimeout(timer)
+      sock.destroy()
+
+      // Parse HTTP response
+      const headerEnd = buffer.indexOf('\r\n\r\n')
+      if (headerEnd === -1) { reject(new Error('Invalid Docker API response')); return }
+
+      const headers = buffer.slice(0, headerEnd)
+      const body = buffer.slice(headerEnd + 4)
+
+      if (headers.includes('404') || headers.includes('400')) {
+        reject(new Error(`Container '${container}' not found or invalid`))
+        return
+      }
+
+      try {
+        const execInfo = JSON.parse(body)
+        const execId = execInfo.Id
+        if (!execId) { reject(new Error('No exec ID returned')); return }
+
+        // Step 2: Start exec instance
+        const sock2 = createConnection(DOCKER_SOCK)
+        let outBuffer = ''
+        sock2.on('connect', () => {
+          const startBody = '{"Detach":false,"Tty":false}'
+          const startReq =
+            `POST /exec/${execId}/start HTTP/1.1\r\n` +
+            `Host: localhost\r\nContent-Type: application/json\r\n` +
+            `Content-Length: ${Buffer.byteLength(startBody)}\r\nConnection: close\r\n\r\n` +
+            startBody
+          sock2.write(startReq)
+        })
+
+        sock2.on('data', (chunk: Buffer) => { outBuffer += chunk.toString() })
+        sock2.on('end', () => {
+          sock2.destroy()
+          // Parse multiplexed stream (Docker protocol: 8-byte header [type(1), size(3)], then data)
+          const cleanOutput = demuxDockerStream(outBuffer)
+          resolve({ stdout: cleanOutput, exitCode: 0 })
+        })
+        sock2.on('error', (err) => { reject(err) })
+      } catch (e) { reject(e) }
+    })
+    sock.on('error', (err) => { clearTimeout(timer); reject(err) })
+  })
+}
+
+/**
+ * Strip Docker multiplexing headers (8-byte chunks: [stream_type(1)][3 padding][size(4)])
+ */
+function demuxDockerStream(raw: string): string {
+  // Find the body after HTTP headers
+  const headerEnd = raw.indexOf('\r\n\r\n')
+  if (headerEnd === -1) return raw
+  const body = raw.slice(headerEnd + 4)
+
+  // Check if multiplexing is used (first byte should be 1 for stdout or 2 for stderr)
+  if (body.length < 8) return body
+  const firstByte = body.charCodeAt(0)
+  if (firstByte !== 1 && firstByte !== 2) return body // no multiplexing
+
+  // Parse multiplexed stream
+  let result = ''
+  let pos = 0
+  while (pos + 8 <= body.length) {
+    const type = body.charCodeAt(pos)
+    const size = (body.charCodeAt(pos + 4) << 24) | (body.charCodeAt(pos + 5) << 16) |
+                 (body.charCodeAt(pos + 6) << 8) | body.charCodeAt(pos + 7)
+    if (size <= 0 || pos + 8 + size > body.length) break
+    if (type === 1 || type === 2) { // stdout or stderr
+      result += body.slice(pos + 8, pos + 8 + size)
+    }
+    pos += 8 + size
+  }
+  return result || body
+}
+import { embedProject } from './mem9-embedder.js'
+import { buildKnowledgeFromDocs } from './docs-knowledge-builder.js'
 
 // Track running processes for cancellation
 const runningJobs = new Map<string, ChildProcess>()
@@ -289,8 +400,7 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     }
 
     // ── Step 2: GitNexus Analyze ──
-    // Try CLI first (only works if gitnexus is installed in this container),
-    // then try HTTP API to the gitnexus container, then pure JS fallback.
+    // Try in order: local CLI → docker exec into gitnexus container → pure JS fallback.
     updateJob(jobId, { status: 'analyzing', progress: 30 })
     logger.info(`[${jobId}] Running gitnexus analyze`)
 
@@ -318,7 +428,35 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
       // gitnexus not installed locally — expected in cortex-api container
     }
 
-    // Strategy 2: Pure JS fallback (regex-based, no native deps)
+    // Strategy 2: Docker exec into gitnexus container via Docker socket HTTP API
+    if (!gitnexusSuccess) {
+      try {
+        appendLog(jobId, 'Calling GitNexus container via Docker socket...')
+        logger.info(`[${jobId}] Trying docker exec into gitnexus container`)
+
+        const dockerResult = await dockerExec(
+          GITNEXUS_CONTAINER,
+          `cd ${repoDir} && gitnexus analyze --force --embeddings 2>&1`,
+          180000,
+        )
+
+        const symbolMatch = dockerResult.stdout.match(/(\d+)\s*symbols?/i)
+        const fileMatch = dockerResult.stdout.match(/(\d+)\s*files?/i)
+        if (symbolMatch?.[1]) symbolsFound = parseInt(symbolMatch[1], 10)
+        if (fileMatch?.[1]) totalFiles = parseInt(fileMatch[1], 10)
+
+        if (symbolsFound > 0 || totalFiles > 0) {
+          gitnexusSuccess = true
+          appendLog(jobId, `GitNexus (docker): ${totalFiles} files, ${symbolsFound} symbols`)
+          logger.info(`[${jobId}] GitNexus docker analyze: ${totalFiles} files, ${symbolsFound} symbols`)
+        }
+      } catch (err) {
+        logger.warn(`[${jobId}] Docker exec analyze failed: ${err}`)
+        appendLog(jobId, `[warn] Docker exec failed: ${String(err).slice(0, 200)}`)
+      }
+    }
+
+    // Strategy 3: Pure JS fallback (regex-based, no native deps)
     if (!gitnexusSuccess) {
       appendLog(jobId, `[info] Using pure JS symbol extraction (gitnexus CLI not available)`)
       logger.info(`[${jobId}] Using pure JS fallback extraction`)
@@ -352,44 +490,56 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
 
     logger.info(`[${jobId}] Indexing complete!`)
 
-    // ── Step 5: Auto-trigger mem9 embedding (fire-and-forget) ──
-    try {
-      updateJob(jobId, { mem9_status: 'embedding' })
-      appendLog(jobId, '🧠 Auto-starting mem9 embedding...')
+    // ── Step 5: Auto-trigger mem9 embedding (controlled by MEM9_EMBEDDING_ENABLED) ──
+    // Default: enabled in production, disabled in dev/test.
+    // Override explicitly with MEM9_EMBEDDING_ENABLED=true/false.
+    const mem9Enabled = process.env.MEM9_EMBEDDING_ENABLED === undefined
+      ? process.env.NODE_ENV === 'production'
+      : process.env.MEM9_EMBEDDING_ENABLED === 'true'
 
-      embedProject(projectId, branch, jobId, (progress, chunks, totalChunks) => {
-        db.prepare('UPDATE index_jobs SET mem9_chunks = ?, mem9_progress = ?, mem9_total_chunks = ? WHERE id = ?')
-          .run(chunks, progress, totalChunks, jobId)
-      }).then((result) => {
-        updateJob(jobId, { mem9_status: result.status, mem9_chunks: result.chunks })
-        appendLog(jobId, `✅ mem9 done: ${result.chunks} chunks embedded`)
-        if (result.errors.length > 0) {
-          appendLog(jobId, `⚠️ mem9 errors: ${result.errors.slice(0, 3).join('; ')}`)
-        }
-        logger.info(`[${jobId}] mem9 complete: ${result.chunks} chunks`)
+    if (!mem9Enabled) {
+      logger.info(`[${jobId}] Skipping mem9 embedding (MEM9_EMBEDDING_ENABLED=${process.env.MEM9_EMBEDDING_ENABLED || 'undefined'}, NODE_ENV=${process.env.NODE_ENV || 'undefined'}). Embedding costs money — enable when needed.`)
+      appendLog(jobId, '⏭️ Skipped mem9 embedding. Enable via MEM9_EMBEDDING_ENABLED=true or run manually: POST /api/indexing/:id/index/mem9')
+      updateJob(jobId, { mem9_status: 'skipped' })
+    } else {
+      try {
+        updateJob(jobId, { mem9_status: 'embedding' })
+        appendLog(jobId, '🧠 Auto-starting mem9 embedding...')
 
-        // ── Step 6: Auto-build knowledge from docs (fire-and-forget) ──
-        updateJob(jobId, { docs_knowledge_status: 'building' })
-        appendLog(jobId, '📚 Auto-building knowledge from documentation...')
-        buildKnowledgeFromDocs(projectId, jobId, repoDir).then((docsResult) => {
-          updateJob(jobId, {
-            docs_knowledge_status: 'done',
-            docs_knowledge_count: docsResult.docsProcessed,
+        embedProject(projectId, branch, jobId, (progress, chunks, totalChunks) => {
+          db.prepare('UPDATE index_jobs SET mem9_chunks = ?, mem9_progress = ?, mem9_total_chunks = ? WHERE id = ?')
+            .run(chunks, progress, totalChunks, jobId)
+        }).then((result) => {
+          updateJob(jobId, { mem9_status: result.status, mem9_chunks: result.chunks })
+          appendLog(jobId, `✅ mem9 done: ${result.chunks} chunks embedded`)
+          if (result.errors.length > 0) {
+            appendLog(jobId, `⚠️ mem9 errors: ${result.errors.slice(0, 3).join('; ')}`)
+          }
+          logger.info(`[${jobId}] mem9 complete: ${result.chunks} chunks`)
+
+          // ── Step 6: Auto-build knowledge from docs (fire-and-forget) ──
+          updateJob(jobId, { docs_knowledge_status: 'building' })
+          appendLog(jobId, '📚 Auto-building knowledge from documentation...')
+          buildKnowledgeFromDocs(projectId, jobId, repoDir).then((docsResult) => {
+            updateJob(jobId, {
+              docs_knowledge_status: 'done',
+              docs_knowledge_count: docsResult.docsProcessed,
+            })
+            appendLog(jobId, `📚 Docs knowledge: ${docsResult.docsProcessed}/${docsResult.docsFound} docs → ${docsResult.chunksCreated} chunks`)
+            logger.info(`[${jobId}] Docs knowledge complete: ${docsResult.docsProcessed} docs processed`)
+          }).catch((err) => {
+            updateJob(jobId, { docs_knowledge_status: 'error' })
+            appendLog(jobId, `⚠️ Docs knowledge failed (non-fatal): ${err}`)
+            logger.warn(`[${jobId}] Docs knowledge failed: ${err}`)
           })
-          appendLog(jobId, `📚 Docs knowledge: ${docsResult.docsProcessed}/${docsResult.docsFound} docs → ${docsResult.chunksCreated} chunks`)
-          logger.info(`[${jobId}] Docs knowledge complete: ${docsResult.docsProcessed} docs processed`)
         }).catch((err) => {
-          updateJob(jobId, { docs_knowledge_status: 'error' })
-          appendLog(jobId, `⚠️ Docs knowledge failed (non-fatal): ${err}`)
-          logger.warn(`[${jobId}] Docs knowledge failed: ${err}`)
+          updateJob(jobId, { mem9_status: 'error' })
+          appendLog(jobId, `❌ mem9 failed: ${err}`)
+          logger.warn(`[${jobId}] mem9 failed (non-fatal): ${err}`)
         })
-      }).catch((err) => {
-        updateJob(jobId, { mem9_status: 'error' })
-        appendLog(jobId, `❌ mem9 failed: ${err}`)
-        logger.warn(`[${jobId}] mem9 failed (non-fatal): ${err}`)
-      })
-    } catch (err) {
-      logger.warn(`[${jobId}] mem9 auto-trigger failed: ${err}`)
+      } catch (err) {
+        logger.warn(`[${jobId}] mem9 auto-trigger failed: ${err}`)
+      }
     }
 
   } catch (err) {

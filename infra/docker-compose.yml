@@ -10,6 +10,7 @@ services:
   # ─────────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:v1.13.6
+    pull_policy: never
     container_name: cortex-qdrant
     restart: unless-stopped
     ports:
@@ -41,6 +42,7 @@ services:
   # ─────────────────────────────────────────────
   llm-proxy:
     image: eceasy/cli-proxy-api:latest
+    pull_policy: never
     container_name: cortex-llm-proxy
     restart: unless-stopped
     ports:
@@ -72,6 +74,7 @@ services:
       context: ..
       dockerfile: infra/Dockerfile.gitnexus
     image: ghcr.io/lktiep/cortex-gitnexus:latest
+    pull_policy: never
     container_name: cortex-gitnexus
     restart: unless-stopped
     ports:
@@ -103,6 +106,7 @@ services:
         COMMIT_SHA: ${COMMIT_SHA:-dev}
         BUILD_DATE: ${BUILD_DATE:-}
     image: ghcr.io/lktiep/cortex-api:latest
+    pull_policy: never
     container_name: cortex-api
     restart: unless-stopped
     ports:
@@ -129,6 +133,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       MEM9_LLM_MODEL: ${MEM9_LLM_MODEL:-gpt-5.4-mini}
       MEM9_EMBEDDING_MODEL: ${MEM9_EMBEDDING_MODEL:-gemini-embedding-2-preview}
+      MEM9_EMBEDDING_ENABLED: ${MEM9_EMBEDDING_ENABLED:-false}
       # GitNexus
       GITNEXUS_URL: http://gitnexus:4848
     depends_on:
@@ -155,6 +160,7 @@ services:
       context: ..
       dockerfile: infra/Dockerfile.hub-mcp
     image: ghcr.io/lktiep/cortex-mcp:latest
+    pull_policy: never
     container_name: cortex-mcp
     restart: unless-stopped
     ports:
@@ -193,6 +199,7 @@ services:
   # ─────────────────────────────────────────────
   watchtower:
     image: containrrr/watchtower:latest
+    pull_policy: never
     container_name: cortex-watchtower
     restart: unless-stopped
     volumes:
