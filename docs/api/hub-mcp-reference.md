@@ -12,403 +12,305 @@ All requests require a valid API key in the `Authorization` header:
 Authorization: Bearer <API_KEY>
 ```
 
-Keys are issued per-agent and configured as Cloudflare Worker secrets. Invalid or missing keys return `401 Unauthorized`.
+Keys are issued per-agent via the Dashboard (Settings → API Keys).
 
 ---
 
-## Tool Groups
+## Tool Reference
 
-### `code.*` — Code Intelligence (via GitNexus)
+### Code Intelligence (7 tools)
 
-#### `code.query`
+#### `cortex_code_search`
 
 Search the code knowledge graph for execution flows related to a concept.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `repo` | string | ✓ | Repository name |
 | `query` | string | ✓ | Natural language or keyword search |
-| `goal` | string | — | What you want to find (improves ranking) |
-| `limit` | number | — | Max processes to return (default: 5) |
+| `project` | string | | Project name (e.g. "cortex-hub"), slug, or git URL |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `branch` | string | | Git branch to search |
+| `limit` | number | | Maximum results (default: 5) |
 
-```json
-{
-  "tool": "code.query",
-  "params": {
-    "repo": "keothom",
-    "query": "auction bidding logic",
-    "goal": "understand how bids are placed"
-  }
-}
-```
+#### `cortex_code_context`
 
-#### `code.context`
-
-360-degree view of a single code symbol — callers, callees, imports, process participation.
+Get a 360° view of a code symbol: callers, callees, methods, execution flows.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `repo` | string | ✓ | Repository name |
 | `name` | string | ✓ | Symbol name (function, class, method) |
-| `include_content` | boolean | — | Include full source code (default: false) |
+| `project` | string | | Project name, slug, or git URL |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `file` | string | | File path for disambiguation |
 
-#### `code.impact`
+#### `cortex_code_impact`
 
-Analyze the blast radius of changing a code symbol.
+Analyze blast radius of changing a symbol — what breaks if you edit it.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `repo` | string | ✓ | Repository name |
 | `target` | string | ✓ | Symbol name to analyze |
-| `direction` | string | ✓ | `upstream` (what depends on this) or `downstream` |
-| `maxDepth` | number | — | Max traversal depth (default: 3) |
+| `project` | string | | Project name, slug, or git URL |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `branch` | string | | Git branch |
+| `direction` | string | | `upstream`, `downstream` (default) |
 
-**Response includes:**
-- Risk level: `LOW` / `MEDIUM` / `HIGH` / `CRITICAL`
-- Affected symbols grouped by depth
-- Affected execution flows
-- Affected modules
+#### `cortex_code_read`
 
-#### `code.detect_changes`
-
-Analyze uncommitted git changes and find affected execution flows.
+Read raw source code from an indexed repository.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `repo` | string | ✓ | Repository name |
-| `scope` | string | — | `unstaged`, `staged`, `all`, or `compare` |
+| `file` | string | ✓ | Relative file path (e.g. "src/utils/auth.ts") |
+| `project` | string | | Project name, slug, or git URL |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `startLine` | number | | Start line (1-indexed, inclusive) |
+| `endLine` | number | | End line (1-indexed, inclusive) |
 
-#### `code.cypher`
+#### `cortex_list_repos`
 
-Execute raw Cypher queries against the code knowledge graph.
+List all indexed repositories with project ID mapping.
+
+No parameters required.
+
+#### `cortex_cypher`
+
+Run Cypher queries against the GitNexus knowledge graph.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `repo` | string | ✓ | Repository name |
-| `query` | string | ✓ | Cypher query string |
+| `query` | string | ✓ | Cypher query (e.g. `MATCH (n) RETURN n.name LIMIT 10`) |
+| `project` | string | | Project name, slug, or git URL |
+| `projectId` | string | | Project ID (overrides `project`) |
+
+#### `cortex_detect_changes`
+
+Detect uncommitted changes and analyze risk level.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `scope` | string | | `all` (default), `staged`, or `unstaged` |
+| `project` | string | | Project name, slug, or git URL |
+| `projectId` | string | | Project ID (overrides `project`) |
 
 ---
 
-### `memory.*` — Agent Memory (via mem9)
+### Agent Memory (2 tools)
 
-#### `memory.add`
+#### `cortex_memory_store`
 
-Store a memory for the calling agent.
+Store a memory for an AI agent. Persists across sessions.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `content` | string | ✓ | Memory content |
-| `metadata` | object | — | Additional metadata tags |
+| `agentId` | string | | Agent identifier (default: "default") |
+| `project` | string | | Project name to scope memory |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `branch` | string | | Git branch (requires projectId) |
+| `metadata` | object | | Optional metadata tags |
 
-#### `memory.search`
+#### `cortex_memory_search`
 
 Search agent memories by semantic similarity.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `query` | string | ✓ | Search query |
-| `limit` | number | — | Max results (default: 10) |
-| `agent_id` | string | — | Filter by agent (default: calling agent) |
-
-#### `memory.list`
-
-List recent memories for the calling agent.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `limit` | number | — | Max results (default: 20) |
+| `agentId` | string | | Filter by agent |
+| `project` | string | | Project name |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `branch` | string | | Git branch |
+| `limit` | number | | Max results (default: 5) |
 
 ---
 
-### `knowledge.*` — Knowledge Base (via Qdrant)
+### Knowledge Base (2 tools)
 
-#### `knowledge.search`
+#### `cortex_knowledge_store`
 
-Semantic search across the shared knowledge base.
+Store a knowledge document in the platform knowledge base.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | ✓ | Document title |
+| `content` | string | ✓ | Document content |
+| `tags` | string[] | | Tags for categorization |
+| `project` | string | | Project name |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `agentId` | string | | Contributing agent |
+
+#### `cortex_knowledge_search`
+
+Search the knowledge base by semantic similarity.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `query` | string | ✓ | Search query |
-| `project` | string | — | Filter by project |
-| `domain` | string | — | Filter by domain (e.g., `cloudflare`, `supabase`) |
-| `limit` | number | — | Max results (default: 10) |
-
-#### `knowledge.get`
-
-Retrieve a specific knowledge item by ID.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `id` | string | ✓ | Knowledge item UUID |
-
-#### `knowledge.contribute`
-
-Submit a new knowledge item (requires approval by default).
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `title` | string | ✓ | Item title |
-| `content` | string | ✓ | Item content (markdown) |
-| `project` | string | — | Associated project |
-| `domain` | string | ✓ | Knowledge domain |
-| `confidence` | number | — | Self-assessed confidence (0-1, default: 0.8) |
+| `tags` | string[] | | Filter by tags |
+| `project` | string | | Project name |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `limit` | number | | Max results (default: 5) |
 
 ---
 
-### `quality.*` — Quality Gates (4-Dimension Scoring)
+### Indexing (1 tool)
+
+#### `cortex_code_reindex`
+
+Trigger re-indexing of a project after code changes.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | ✓ | Project name, slug, or git URL |
+| `branch` | string | | Branch to index (default: auto-detected) |
+
+---
+
+### Quality (1 tool)
 
 #### `cortex_quality_report`
 
-Submit a quality gate report with automatic 4-dimension scoring.
-
-**New format** (recommended — auto-calculates scores):
+Report quality gate check results.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `gate_name` | string | ✓ | Gate identifier (e.g., "pre-push", "CI") |
-| `agent_id` | string | — | Agent identifier (default: "unknown") |
-| `session_id` | string | — | Current session ID |
-| `project_id` | string | — | Project ID |
-| `results` | object | — | Raw verification results (see below) |
-| `details` | string | — | Markdown log of evaluation |
-
-**`results` object (triggers auto-scoring):**
-
-| Field | Type | Description |
-|---|---|---|
-| `buildPassed` | boolean | Build compiled successfully |
-| `typecheckPassed` | boolean | TypeScript type check passed |
-| `lintPassed` | boolean | Linter passed |
-| `testsPassed` | boolean | Test suite passed |
-| `testsBaseline` | number | Baseline test count |
-| `testsCurrent` | number | Current test count |
-| `isGreenfield` | boolean | New project (auto-grants regression) |
-| `stubsFound` | number | TODO/FIXME/HACK count |
-| `secretsFound` | number | Hardcoded secrets detected |
-| `lintErrorCount` | number | Lint error count |
-| `requirementsMapped` | number | Requirements covered |
-| `requirementsTotal` | number | Total requirements |
-| `hasTests` | boolean | Has tests for new code |
-| `hasDocs` | boolean | Has documentation |
-
-**Legacy format** (backward compatible):
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `gate_name` | string | ✓ | Gate name |
-| `passed` | boolean | — | Whether gate passed |
-| `score` | number | — | Pre-computed score (0-100) |
-
-**Scoring model:** Build (25) + Regression (25) + Standards (25) + Traceability (25) = 100
-
-**Grade thresholds:**
-
-| Grade | Score | Action |
-|---|---|---|
-| A | 90-100 | Proceed immediately |
-| B | 80-89 | Proceed with minor warnings |
-| C | 70-79 | Proceed but flag at next gate |
-| D | 60-69 | Pause — show report, ask user |
-| F | 0-59 | Stop — must remediate |
-
-**REST API endpoints:**
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/quality/report` | POST | Submit quality gate report |
-| `/api/quality/reports` | GET | List reports (filter: `project_id`, `agent_id`, `grade`) |
-| `/api/quality/reports/latest` | GET | Most recent report |
-| `/api/quality/trends` | GET | Daily trends (`days`, `project_id`) |
-| `/api/quality/summary` | GET | Aggregate stats + grade distribution |
-| `/api/quality/logs` | GET | Legacy execution logs |
-
-#### `cortex_plan_quality`
-
-Assess plan quality against 8 criteria before execution. Use BEFORE implementing complex plans.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `plan` | string | Yes | The implementation plan text |
-| `request` | string | Yes | Original user request |
-| `iteration` | number | — | Iteration number (1-3, default 1) |
-| `threshold` | number | — | Minimum score to pass (default 8.0) |
-| `plan_type` | string | — | One of: feature, bugfix, refactor, architecture, migration, general |
-
-**Scoring criteria:** Completeness, Specificity, Feasibility, Risk Awareness, Scope Boundary, Ordering, Testability, Impact Clarity
-
-**Threshold:** Score >= 8.0/10 → APPROVED. Max 3 iterations.
+| `gate_name` | string | ✓ | Gate name (e.g. "pre_commit", "full") |
+| `passed` | boolean | ✓ | Whether the gate passed |
+| `score` | number | | Score (0-100) |
+| `details` | object | | JSON details |
+| `agentId` | string | | Agent identifier |
 
 ---
 
-### `routing.*` — Complexity-Based Model Routing
+### Sessions (2 tools)
 
-#### `POST /api/llm/analyze-complexity`
+#### `cortex_session_start`
 
-Analyze task complexity using pure heuristics (zero LLM cost). Returns recommended model tier.
+Start a new execution session with project context.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `prompt` | string | Yes | Task description |
-| `fileCount` | number | — | Estimated files to touch |
-| `stepCount` | number | — | Number of plan steps |
-| `taskType` | string | — | completion, planning, research, review, generation, debug, refactor |
-| `isRetry` | boolean | — | Previous attempt failed |
-| `codebaseSize` | string | — | small, medium, large |
+| `repo` | string | ✓ | Repository URL |
+| `mode` | string | | `development`, `production` |
+| `agentId` | string | ✓ | Agent identifier |
 
-**Response:**
-```json
-{
-  "analysis": {
-    "tier": "standard",
-    "score": 5.2,
-    "signals": [...],
-    "reasoning": "Complexity 5.2/10 → standard tier [keywords(6), promptLength(4), taskType(6)]"
-  }
-}
-```
+#### `cortex_session_end`
 
-**Auto-routing in chat:** Set `model: "auto"` in `/api/llm/v1/chat/completions` to auto-select model tier.
+Close a session with work summary.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `sessionId` | string | ✓ | Session ID from session_start |
+| `summary` | string | | Work summary |
 
 ---
 
-### `session.*` — Session Handoff
+### Change Awareness (1 tool)
 
-#### `session.handoff`
+#### `cortex_changes`
 
-Create a session handoff for another agent to pick up.
+Check for recent code changes pushed by other agents.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `agentId` | string | ✓ | Your agent identifier |
 | `project` | string | ✓ | Project name |
-| `task_summary` | string | ✓ | What was being worked on |
-| `context` | object | ✓ | Files changed, decisions made, blockers |
-| `to_agent` | string | — | Target agent (null = any) |
-| `priority` | number | — | 1-10, default: 5 |
-
-#### `session.pickup`
-
-Claim the oldest pending handoff.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `project` | string | — | Filter by project |
-
-#### `session.complete`
-
-Mark a handoff as completed.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `id` | string | ✓ | Handoff UUID |
+| `projectId` | string | | Project ID (overrides `project`) |
+| `acknowledge` | boolean | | Mark as seen (default: true) |
 
 ---
 
-### `analytics.*` — Tool Usage Analytics & Compliance
+### Analytics (1 tool)
 
 #### `cortex_tool_stats`
 
-View Cortex MCP tool usage analytics. Available to all team members (not admin-only).
+View Cortex MCP tool usage analytics.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `days` | number | — | Time window in days (default: 7) |
-| `agentId` | string | — | Filter by agent ID |
-| `projectId` | string | — | Filter by project ID |
-
-**Response includes:**
-- Per-tool breakdown: success rate, latency, error count, token estimates
-- Per-agent breakdown: calls, success rate
-- Daily trend with call volume and error count
-- Overall summary: total calls, success rate, estimated tokens saved
-
-#### Session Compliance Check
-
-**`GET /api/metrics/session-compliance/:sessionId`**
-
-Evaluates tool usage across 5 categories for a completed session.
-
-**Categories scored:**
-| Category | Required Tools |
-|----------|---------------|
-| Discovery | `cortex_code_search`, `cortex_code_context`, `cortex_cypher` |
-| Safety | `cortex_code_impact`, `cortex_detect_changes` |
-| Learning | `cortex_knowledge_search`, `cortex_memory_search` |
-| Contribution | `cortex_knowledge_store`, `cortex_memory_store` |
-| Lifecycle | `cortex_session_start`, `cortex_session_end`, `cortex_quality_report` |
-
-**Response:** Overall score (0-100%), grade (A/B/C/D), per-category breakdown, improvement hints.
-
-#### Cortex Hints Engine
-
-**`GET /api/metrics/hints/:agentId?currentTool=<toolName>`**
-
-Returns context-aware hints based on which tools the agent has/hasn't used in the current session window.
-
-**Hint triggers:**
-- After `code_search` → remind about `code_impact`
-- After `quality_report` → remind about `knowledge_store`
-- Before `session_end` → remind about `quality_report` + `memory_store`
-- Low discovery coverage → remind about `code_search`
-
-> 💡 Hints are automatically injected into MCP tool responses by the interceptor. Agents don't need to call this endpoint directly.
-
-#### Tool Analytics Dashboard
-
-**`GET /api/metrics/tool-analytics?days=7&agentId=x&projectId=y`**
-
-Aggregate analytics for tool usage across all sessions.
-
-**Response:**
-```json
-{
-  "period": { "days": 7, "since": "..." },
-  "summary": {
-    "totalCalls": 142,
-    "overallSuccessRate": 94.2,
-    "estimatedTokensSaved": 35000,
-    "activeAgents": 3
-  },
-  "tools": [
-    {
-      "tool": "cortex_code_search",
-      "totalCalls": 45,
-      "successRate": 97.8,
-      "avgLatencyMs": 320,
-      "estimatedTokensSaved": 12500
-    }
-  ],
-  "agents": [...],
-  "trend": [...]
-}
-```
+| `days` | number | | Time window in days (default: 7) |
+| `agentId` | string | | Filter by agent |
+| `project` | string | | Project name |
+| `projectId` | string | | Project ID (overrides `project`) |
 
 ---
 
-## Rate Limits
+### Health (1 tool)
 
-| Tier | Requests/min | Burst |
-|---|---|---|
-| Default | 60 | 10 |
-| Premium | 300 | 50 |
+#### `cortex_health`
 
-Rate limit headers are included in every response:
+Check health of all backend services.
 
-```
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 45
-X-RateLimit-Reset: 1710700000
-```
+No parameters required.
 
 ---
 
-## Error Codes
+### Task Management (7 tools)
 
-| Code | Meaning |
-|---|---|
-| `400` | Invalid request parameters |
-| `401` | Missing or invalid API key |
-| `403` | Policy violation (e.g., quality gate block) |
-| `404` | Resource not found |
-| `429` | Rate limit exceeded |
-| `500` | Internal server error |
-| `502` | Backend service unavailable |
+#### `cortex_task_create`
+
+Create a task, optionally assign to another agent.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | ✓ | Task title |
+| `description` | string | ✓ | Task description |
+| `projectId` | string | | Project ID |
+| `priority` | number | | Priority 1-10 (default: 5) |
+| `assignedTo` | string | | Agent to assign to |
+
+#### `cortex_task_list`
+
+List tasks with optional filters.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project` | string | | Project name |
+| `projectId` | string | | Project ID |
+| `status` | string | | Filter by status |
+| `assignedTo` | string | | Filter by assignee |
+| `limit` | number | | Max results (default: 20) |
+
+#### `cortex_task_pickup`
+
+Pick up an assigned task.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `agentId` | string | ✓ | Your agent identifier |
+
+#### `cortex_task_accept`
+
+Accept an assigned task.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `taskId` | string | ✓ | Task ID |
+
+#### `cortex_task_update`
+
+Update task status.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `taskId` | string | ✓ | Task ID |
+| `status` | string | ✓ | New status |
+| `result` | string | | Task result |
+
+#### `cortex_task_status`
+
+Get detailed task status.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `taskId` | string | ✓ | Task ID |
+
+#### `cortex_task_submit_strategy`
+
+Submit task execution strategy for review.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `taskId` | string | ✓ | Task ID |
+| `strategy` | object | ✓ | Strategy object |
