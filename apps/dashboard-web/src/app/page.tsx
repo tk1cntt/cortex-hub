@@ -9,6 +9,7 @@ import {
   getActivityFeed,
   getSystemMetrics,
   getConductorAgents,
+  getRecipeStats,
   type SystemMetrics,
 } from '@/lib/api'
 import {
@@ -158,6 +159,9 @@ export default function DashboardPage() {
   })
   const { data: agentsData } = useSWR('dashboard-agents', getConductorAgents, {
     refreshInterval: 10000,
+  })
+  const { data: recipeData } = useSWR('recipe-stats', getRecipeStats, {
+    refreshInterval: 30000,
   })
   const onlineAgents = agentsData?.agents?.length ?? 0
 
@@ -363,6 +367,55 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Recipe System */}
+              {recipeData && (() => {
+                const captured = (recipeData.capture.stats.captured ?? 0) + (recipeData.capture.stats.derived ?? 0)
+                const errors = recipeData.capture.stats.error ?? 0
+                const attempts = Object.values(recipeData.capture.stats).reduce((s, n) => s + n, 0)
+                const avgRate = recipeData.quality.avgEffectiveRate != null ? Math.round(recipeData.quality.avgEffectiveRate * 100) : null
+                const isAlive = captured > 0
+                return (
+                  <div className={`card ${styles.intelCard} ${styles.intelCardFadeIn}`} style={{ animationDelay: '90ms' }}>
+                    <div className={styles.intelHeader}>
+                      <span>
+                        <StatusDot variant={isAlive ? 'healthy' : errors > 0 ? 'error' : 'warning'} />
+                        {' '}Recipe System
+                      </span>
+                      <Link href="/knowledge" className={styles.intelLink}>View →</Link>
+                    </div>
+                    <div className={styles.intelGrid}>
+                      <div className={styles.intelStat}>
+                        <span className={styles.intelValue} style={{ color: captured > 0 ? '#22c55e' : undefined }}>
+                          <NumberTransition value={captured} />
+                        </span>
+                        <span className={styles.intelLabel}>Captured</span>
+                      </div>
+                      <div className={styles.intelStat}>
+                        <span className={styles.intelValue}>
+                          <NumberTransition value={attempts} />
+                        </span>
+                        <span className={styles.intelLabel}>Attempts</span>
+                      </div>
+                      {avgRate != null ? (
+                        <div className={styles.intelStat}>
+                          <span className={styles.intelValue} style={{ color: avgRate > 50 ? '#22c55e' : '#eab308' }}>
+                            {avgRate}%
+                          </span>
+                          <span className={styles.intelLabel}>Effective</span>
+                        </div>
+                      ) : (
+                        <div className={styles.intelStat}>
+                          <span className={styles.intelValue} style={{ color: errors > 0 ? '#ef4444' : undefined }}>
+                            <NumberTransition value={errors} />
+                          </span>
+                          <span className={styles.intelLabel}>Errors</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* Sessions + Keys */}
               <div className={`card ${styles.intelCard} ${styles.intelCardFadeIn}`} style={{ animationDelay: '120ms' }}>
