@@ -50,12 +50,10 @@ async function getPipeline(modelId: string): Promise<FeatureExtractionPipeline> 
       transformers.env.useFSCache = true
     }
 
-    // dtype 'quantized' maps to model_quantized.onnx (smallest, ~25MB for MiniLM)
-    // 'q8' maps to model_q8.onnx which doesn't ship for all models — caused
-    // 'Unable to get model file path or buffer' error on the all-MiniLM-L6-v2 case.
-    const pipe = await transformers.pipeline('feature-extraction', modelId, {
-      dtype: 'quantized',
-    })
+    // No dtype specified — let library pick the default variant for this model.
+    // Specifying dtype='q8' or 'quantized' caused 'Unable to get model file path
+    // or buffer' because the cache lookup didn't find the requested variant.
+    const pipe = await transformers.pipeline('feature-extraction', modelId)
     return pipe
   })()
 
