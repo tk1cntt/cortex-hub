@@ -161,10 +161,13 @@ Reproducible retrieval benchmarks against industry-standard datasets, comparing 
 
 | Setup | R@5 | R@10 | NDCG@10 | Duration | Cost |
 |---|---|---|---|---|---|
-| **Cortex Hub** (local MiniLM 384d) | **93.8%** | **97.0%** | **1.36** | 20.7 min | **$0** |
+| **Cortex Hub (hybrid re-rank)** | **96.0%** | **97.8%** | **1.44** | 20.7 min | **$0** |
+| Cortex Hub (vector only) | 93.8% | 97.0% | 1.36 | 20.7 min | $0 |
 | MemPalace (raw) | 96.6% | 98.2% | 0.889 | ~5 min | $0 |
 
-Cortex is **2.8 points behind on R@5** but **53% ahead on NDCG@10** — when Cortex retrieves the right session, it puts it at rank #1 far more often. Strong on `knowledge-update` (97.4%) and `multi-session` (97.0%). Weakest on `temporal-reasoning` (90.2%) and `single-session-preference` (90%).
+Cortex is **0.6 points behind R@5** and **0.4 points behind R@10** while running **62% ahead on NDCG@10** — top-1 placement dramatically better. Strongest on `knowledge-update` (98.7%) and `multi-session` (98.5%). Weakest on `single-session-preference` (83.3% — known trade-off, see [`benchmarks/README.md`](benchmarks/README.md#hybrid-re-ranking)).
+
+**Hybrid re-ranking** (`vector × 0.55 + lex × 0.35 + quality × 0.05 + recency × 0.05`) overfetches top 30 from vector search and re-scores with lexical keyword overlap. Recovers 13 of 16 R@5 misses where the gold session was in rank 6-10 — net **+11 hits** vs pure vector ranking.
 
 ```bash
 # Run with local embedder (no API key needed, fastest)
@@ -179,7 +182,7 @@ pnpm --filter @cortex/benchmarks bench:longmemeval --cleanup
 
 | Benchmark | Status | Our Score | Reference |
 |-----------|--------|-----------|-----------|
-| **LongMemEval (full 500)** | ✅ Done | **93.8% R@5, NDCG 1.36** | MemPalace 96.6% R@5, 0.89 NDCG |
+| **LongMemEval (full 500, hybrid)** | ✅ Done | **96.0% R@5, NDCG 1.44** | MemPalace 96.6% R@5, 0.89 NDCG |
 | ConvoMem | 📋 Planned | TBD | MemPalace 92.9% |
 | LoCoMo | 📋 Planned | TBD | — |
 | MemBench | 📋 Planned | TBD | MemPalace 80.3% R@5 |

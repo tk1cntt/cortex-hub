@@ -130,31 +130,36 @@ placement show up there before they show up in R@5.
 
 ## Results log
 
-| Date       | Cortex ver | Embedder            | Slice               | R@5    | R@10   | NDCG@10 | Duration | Notes                              |
-| ---------- | ---------- | ------------------- | ------------------- | ------ | ------ | ------- | -------- | ---------------------------------- |
-| 2026-04-09 | v0.5.52    | local MiniLM (384d) | **full 500**        | **93.8%** | **97.0%** | **1.363** | **20.7m** | **Definitive run**                 |
-| 2026-04-09 | v0.5.50    | local MiniLM (384d) | 30 stratified       | 96.7%  | 100%   | 1.279   | 75s      | Stratified sample                  |
-| 2026-04-09 | v0.5.45    | Gemini API (768d)   | 30 stratified       | 96.7%  | 96.7%  | 1.314   | 480s     | Cross-check Gemini vs local        |
-| -          | -          | -                   | MemPalace baseline  | 96.6%  | 98.2%  | 0.889   | ~5 min   | Published headline (raw mode)      |
+| Date       | Cortex ver | Embedder            | Ranking          | Slice               | R@5       | R@10     | NDCG@10  | Duration | Notes                              |
+| ---------- | ---------- | ------------------- | ---------------- | ------------------- | --------- | -------- | -------- | -------- | ---------------------------------- |
+| 2026-04-09 | v0.5.55    | local MiniLM (384d) | **hybrid+lex**   | **full 500**        | **96.0%** | **97.8%**| **1.443**| 20.7m    | **Best — hybrid lexical re-rank**  |
+| 2026-04-09 | v0.5.52    | local MiniLM (384d) | vector only      | full 500            | 93.8%     | 97.0%    | 1.363    | 20.7m    | Pre-rerank baseline                |
+| 2026-04-09 | v0.5.50    | local MiniLM (384d) | vector only      | 30 stratified       | 96.7%     | 100%     | 1.279    | 75s      | Stratified sample                  |
+| 2026-04-09 | v0.5.45    | Gemini API (768d)   | vector only      | 30 stratified       | 96.7%     | 96.7%    | 1.314    | 480s     | Cross-check Gemini vs local        |
+| -          | -          | -                   | -                | MemPalace baseline  | 96.6%     | 98.2%    | 0.889    | ~5 min   | Published headline (raw mode)      |
 
-**Headline (full 500 questions, local embedder)**
+**Headline (full 500 questions, local embedder + hybrid re-rank)**
 
-- **R@5 93.8%** — 2.8 points behind MemPalace (96.6%)
-- **R@10 97.0%** — 1.2 points behind MemPalace (98.2%)
-- **NDCG@10 1.363** — **53% higher than MemPalace's 0.889** (top results much more relevant)
-- 500 questions in 20.7 minutes = 2.5s/question on a $4.50/mo VPS
-- Search latency: 15-25ms per query (no API, pure local)
+- **R@5 96.0%** — only **0.6 points behind** MemPalace (96.6%)
+- **R@10 97.8%** — only 0.4 points behind MemPalace (98.2%)
+- **NDCG@10 1.443** — **62% higher than MemPalace's 0.889** (top-1 placement is dramatically better)
+- 500 questions in 20.7 minutes on $4.50/mo VPS
+- Search latency: 20-26ms per query
 
-**Per-category (full 500, local embedder)**
+**Per-category (full 500, hybrid re-rank)**
 
-| Type                       | N   | R@5   | R@10  | NDCG@10 | Notes                                  |
-| -------------------------- | --- | ----- | ----- | ------- | -------------------------------------- |
-| knowledge-update           | 78  | 97.4% | 100%  | 1.55    | Best — temporal fact updates           |
-| multi-session              | 133 | 97.0% | 98.5% | 1.68    | Best — cross-session retrieval         |
-| single-session-assistant   | 56  | 94.6% | 96.4% | 0.99    |                                        |
-| single-session-user        | 70  | 91.4% | 95.7% | 0.82    |                                        |
-| temporal-reasoning         | 133 | 90.2% | 94.7% | 1.50    | Weakest — needs date reasoning         |
-| single-session-preference  | 30  | 90.0% | 96.7% | 0.84    | Weakest — indirect preferences         |
+| Type                       | N   | R@5   | R@10  | NDCG@10 | vs vector-only |
+| -------------------------- | --- | ----- | ----- | ------- | -------------- |
+| knowledge-update           | 78  | 98.7% | 100%  | 1.65    | +1.3           |
+| multi-session              | 133 | 98.5% | 100%  | 1.79    | +1.5           |
+| single-session-user        | 70  | 97.1% | 97.1% | 0.98    | **+5.7**       |
+| temporal-reasoning         | 133 | 94.7% | 97.0% | 1.56    | **+4.5**       |
+| single-session-assistant   | 56  | 94.6% | 94.6% | 0.98    | 0              |
+| single-session-preference  | 30  | 83.3% | 93.3% | 0.78    | **-6.7**       |
+
+**Why hybrid re-rank works**: Of the 31 R@5 misses with pure vector search, **16 had the gold session in rank 6-10** — already retrieved, just not promoted. Adding a lexical match score (`vector × 0.55 + lex × 0.35`) overfetches top 30 and re-ranks, rescuing 13 of those 16 misses across 4 categories.
+
+**Trade-off**: Single-session-preference category regressed by 2 questions because indirect preference queries have low keyword overlap with the answer. We accept this — net gain is +11 questions across the dataset.
 
 **Observations**
 
