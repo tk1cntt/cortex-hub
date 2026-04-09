@@ -484,7 +484,15 @@ intelRouter.post('/search', async (c) => {
         }
       }
 
-      scoredHits.sort((a, b) => b.score - a.score)
+      // Sort by best match quality first, then total volume.
+      // Projects with at least 1 multi-keyword match always rank above
+      // projects with only single-keyword matches, regardless of volume.
+      scoredHits.sort((a, b) => {
+        const maxA = a.symbols ? Math.max(0, ...a.symbols.map(s => (s as { relevance?: number }).relevance ?? 0)) : 0
+        const maxB = b.symbols ? Math.max(0, ...b.symbols.map(s => (s as { relevance?: number }).relevance ?? 0)) : 0
+        if (maxA !== maxB) return maxB - maxA
+        return b.score - a.score
+      })
 
       // Build aggregated formatted output
       const lines: string[] = []
