@@ -119,7 +119,7 @@ knowledgeRouter.get('/', (c) => {
 knowledgeRouter.post('/', async (c) => {
   try {
     const body = await c.req.json()
-    const { title, content, tags, projectId, sourceAgentId, source, origin, category, sourceTaskId, parentDocId } = body as {
+    const { title, content, tags, projectId, sourceAgentId, source, origin, category, sourceTaskId, parentDocId, hallType, validFrom } = body as {
       title: string
       content: string
       tags?: string[]
@@ -130,6 +130,8 @@ knowledgeRouter.post('/', async (c) => {
       category?: string
       sourceTaskId?: string
       parentDocId?: string
+      hallType?: 'fact' | 'event' | 'discovery' | 'preference' | 'advice' | 'general'
+      validFrom?: string
     }
 
     if (!title || !content) {
@@ -177,11 +179,11 @@ knowledgeRouter.post('/', async (c) => {
       generation = (parent?.generation ?? 0) + 1
     }
 
-    // Insert document with evolution metadata
+    // Insert document with evolution metadata + MemPalace-inspired hierarchy/temporal fields
     db.prepare(
-      `INSERT INTO knowledge_documents (id, title, source, source_agent_id, project_id, tags, content_preview, chunk_count, origin, category, generation, source_task_id, created_by_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(docId, title, source ?? 'manual', sourceAgentId ?? null, normalizedProjectId, JSON.stringify(tagList), contentPreview, chunks.length, origin ?? 'manual', category ?? 'general', generation, sourceTaskId ?? null, sourceAgentId ?? null)
+      `INSERT INTO knowledge_documents (id, title, source, source_agent_id, project_id, tags, content_preview, chunk_count, origin, category, generation, source_task_id, created_by_agent, hall_type, valid_from)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(docId, title, source ?? 'manual', sourceAgentId ?? null, normalizedProjectId, JSON.stringify(tagList), contentPreview, chunks.length, origin ?? 'manual', category ?? 'general', generation, sourceTaskId ?? null, sourceAgentId ?? null, hallType ?? 'general', validFrom ?? null)
 
     // Create lineage edge if this is derived/fixed from a parent
     if (parentDocId) {
@@ -312,6 +314,54 @@ knowledgeRouter.get('/recipe-stats', (c) => {
   }
 })
 
+// ── GET /timeline — Knowledge timeline (temporal exploration) ──
+// MemPalace-inspired: browse facts ordered by valid_from
+// MUST be before /:id to avoid being caught by the parameterized route
+knowledgeRouter.get('/timeline', (c) => {
+  const projectId = c.req.query('projectId')
+  const hallType = c.req.query('hallType')
+
+  let sql = `SELECT id, title, hall_type, valid_from, invalidated_at, superseded_by, content_preview
+             FROM knowledge_documents WHERE status = 'active'`
+  const params: unknown[] = []
+  if (projectId) { sql += ' AND project_id = ?'; params.push(projectId) }
+  if (hallType) { sql += ' AND hall_type = ?'; params.push(hallType) }
+  sql += ' ORDER BY COALESCE(valid_from, created_at) DESC LIMIT 100'
+
+  try {
+    const rows = db.prepare(sql).all(...params)
+    return c.json({ timeline: rows, count: rows.length })
+  } catch (error) {
+    logger.error(`Timeline query failed: ${String(error)}`)
+    return c.json({ timeline: [], count: 0 })
+  }
+})
+
+// ── POST /:id/invalidate — Mark a document as superseded ──
+// MemPalace-inspired temporal validity
+// MUST be before /:id to avoid being caught by the parameterized route
+knowledgeRouter.post('/:id/invalidate', async (c) => {
+  const id = c.req.param('id')
+  const body = await c.req.json().catch(() => ({}))
+  const { supersededBy } = body as { supersededBy?: string }
+
+  try {
+    const result = db.prepare(
+      `UPDATE knowledge_documents
+       SET invalidated_at = datetime('now'), superseded_by = COALESCE(?, superseded_by)
+       WHERE id = ? AND status = 'active'`
+    ).run(supersededBy ?? null, id)
+
+    if (result.changes === 0) {
+      return c.json({ error: 'Document not found or already inactive' }, 404)
+    }
+    return c.json({ success: true, id, invalidated_at: new Date().toISOString() })
+  } catch (error) {
+    logger.error(`Invalidate failed: ${String(error)}`)
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
 // ── GET /:id — Document detail ──
 knowledgeRouter.get('/:id', (c) => {
   const id = c.req.param('id')
@@ -380,11 +430,13 @@ knowledgeRouter.delete('/:id', async (c) => {
 knowledgeRouter.post('/search', async (c) => {
   try {
     const body = await c.req.json()
-    const { query, tags, projectId, limit } = body as {
+    const { query, tags, projectId, limit, hallType, asOf } = body as {
       query: string
       tags?: string[]
       projectId?: string
       limit?: number
+      hallType?: 'fact' | 'event' | 'discovery' | 'preference' | 'advice' | 'general'
+      asOf?: string
     }
 
     if (!query) return c.json({ error: 'query is required' }, 400)
@@ -456,10 +508,20 @@ knowledgeRouter.post('/search', async (c) => {
       const doc = db.prepare(
         `SELECT id, title, tags, project_id, source, hit_count, status,
                 selection_count, applied_count, completion_count, fallback_count,
-                origin, category, generation, created_by_agent, updated_at
+                origin, category, generation, created_by_agent, updated_at,
+                hall_type, valid_from, invalidated_at, superseded_by
          FROM knowledge_documents WHERE id = ?`
       ).get(r.documentId) as Record<string, unknown> | undefined
       if (!doc) return r
+
+      // MemPalace-inspired filters (post-vector filter)
+      if (hallType && doc.hall_type !== hallType) return null
+      if (asOf) {
+        const vf = doc.valid_from as string | null | undefined
+        const ia = doc.invalidated_at as string | null | undefined
+        if (vf && vf > asOf) return null
+        if (ia && ia <= asOf) return null
+      }
 
       // Compute quality metrics (OpenSpace-inspired)
       const sel = (doc.selection_count as number) || 0
@@ -503,10 +565,11 @@ knowledgeRouter.post('/search', async (c) => {
       }
     })
 
-    // Re-sort by hybrid score
-    enriched.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    // Drop entries filtered out by hallType/asOf, then re-sort by hybrid score
+    const filtered = enriched.filter((r): r is NonNullable<typeof r> => r !== null)
+    filtered.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
 
-    return c.json({ query, results: enriched })
+    return c.json({ query, results: filtered })
   } catch (error) {
     logger.error(`Knowledge search failed: ${String(error)}`)
     return c.json({ error: String(error) }, 500)

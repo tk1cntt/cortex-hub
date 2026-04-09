@@ -99,6 +99,9 @@ export type KnowledgeOrigin = 'manual' | 'agent' | 'captured' | 'derived' | 'fix
 /** Knowledge document category */
 export type KnowledgeCategory = 'general' | 'workflow' | 'tool_guide' | 'reference' | 'error_fix'
 
+/** MemPalace-inspired memory hierarchy: universal hall type for knowledge documents */
+export type KnowledgeHallType = 'fact' | 'event' | 'discovery' | 'preference' | 'advice' | 'general'
+
 /** Quality metrics for a knowledge document (OpenSpace-inspired) */
 export type KnowledgeQuality = {
   selectionCount: number
@@ -135,6 +138,11 @@ export type KnowledgeDocument = {
   quality: KnowledgeQuality
   createdAt: string
   updatedAt: string
+  // MemPalace-inspired memory hierarchy + temporal validity (optional — populated for new docs)
+  hallType?: KnowledgeHallType
+  validFrom?: string | null
+  invalidatedAt?: string | null
+  supersededBy?: string | null
 }
 
 /** Lineage edge in the knowledge version DAG */

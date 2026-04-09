@@ -14,15 +14,17 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
   // ── Store knowledge ──
   server.tool(
     'cortex_knowledge_store',
-    'Store a knowledge document in the Cortex knowledge base. Auto-chunks and embeds the content for semantic search. Use this to contribute discovered patterns, resolved issues, architecture decisions, and reusable solutions.',
+    'Store a knowledge document in the Cortex knowledge base. Auto-chunks and embeds the content for semantic search. Use this to contribute discovered patterns, resolved issues, architecture decisions, and reusable solutions. Supports MemPalace-inspired memory hierarchy (hallType) and temporal validity (validFrom).',
     {
       title: z.string().describe('Document title (concise, descriptive)'),
       content: z.string().describe('Full document content to store'),
       tags: z.array(z.string()).optional().describe('Tags for categorization (e.g., ["typescript", "patterns", "deployment"])'),
       projectId: z.string().optional().describe('Project ID to scope this knowledge to'),
       agentId: z.string().optional().describe('Contributing agent identifier'),
+      hallType: z.enum(['fact', 'event', 'discovery', 'preference', 'advice', 'general']).optional().describe('MemPalace-inspired hall type: fact | event | discovery | preference | advice | general (default)'),
+      validFrom: z.string().optional().describe('ISO date when this fact became valid (temporal validity)'),
     },
-    async ({ title, content, tags, projectId, agentId }) => {
+    async ({ title, content, tags, projectId, agentId, hallType, validFrom }) => {
       try {
         const res = await apiCall(env, '/api/knowledge', {
           method: 'POST',
@@ -34,6 +36,8 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
             projectId,
             sourceAgentId: agentId,
             source: 'agent',
+            hallType,
+            validFrom,
           }),
         })
 
@@ -76,14 +80,16 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
   // ── Search knowledge ──
   server.tool(
     'cortex_knowledge_search',
-    'Search the platform knowledge base by semantic similarity. Returns relevant document snippets with metadata, tags, and hit counts. Supports filtering by tags and project.',
+    'Search the platform knowledge base by semantic similarity. Returns relevant document snippets with metadata, tags, and hit counts. Supports filtering by tags, project, hall type (MemPalace-inspired hierarchy), and "as of" date (temporal validity).',
     {
       query: z.string().describe('Text query to search for (auto-embedded)'),
       tags: z.array(z.string()).optional().describe('Filter by tags'),
       projectId: z.string().optional().describe('Filter by project ID'),
       limit: z.number().optional().describe('Maximum results (default: 5)'),
+      hallType: z.enum(['fact', 'event', 'discovery', 'preference', 'advice', 'general']).optional().describe('Filter by MemPalace hall type'),
+      asOf: z.string().optional().describe('ISO date — return only facts that were valid at this point in time'),
     },
-    async ({ query, tags, projectId, limit }) => {
+    async ({ query, tags, projectId, limit, hallType, asOf }) => {
       try {
         const res = await apiCall(env, '/api/knowledge/search', {
           method: 'POST',
@@ -93,6 +99,8 @@ export function registerKnowledgeTools(server: McpServer, env: Env) {
             tags,
             projectId,
             limit: limit ?? 5,
+            hallType,
+            asOf,
           }),
         })
 

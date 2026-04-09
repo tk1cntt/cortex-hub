@@ -764,6 +764,11 @@ export interface KnowledgeDocument {
   completion_count?: number
   fallback_count?: number
   created_by_agent?: string
+  // MemPalace-inspired memory hierarchy + temporal validity
+  hall_type?: 'fact' | 'event' | 'discovery' | 'preference' | 'advice' | 'general'
+  valid_from?: string | null
+  invalidated_at?: string | null
+  superseded_by?: string | null
 }
 
 export interface KnowledgeStats {

@@ -64,6 +64,20 @@ for (const sql of knowledgeEvolutionCols) {
   try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
 }
 
+// MemPalace-inspired memory hierarchy + temporal validity
+const memoryHierarchyCols = [
+  "ALTER TABLE knowledge_documents ADD COLUMN hall_type TEXT DEFAULT 'general' CHECK(hall_type IN ('fact','event','discovery','preference','advice','general'))",
+  "ALTER TABLE knowledge_documents ADD COLUMN valid_from TEXT",
+  "ALTER TABLE knowledge_documents ADD COLUMN invalidated_at TEXT",
+  "ALTER TABLE knowledge_documents ADD COLUMN superseded_by TEXT",
+  "CREATE INDEX IF NOT EXISTS idx_knowledge_hall_type ON knowledge_documents(hall_type)",
+  "CREATE INDEX IF NOT EXISTS idx_knowledge_valid_from ON knowledge_documents(valid_from)",
+  "CREATE INDEX IF NOT EXISTS idx_knowledge_invalidated_at ON knowledge_documents(invalidated_at)",
+]
+for (const sql of memoryHierarchyCols) {
+  try { db.exec(sql) } catch { /* ignore if exists */ }
+}
+
 if (existsSync(schemaPath)) {
   const schema = readFileSync(schemaPath, 'utf8')
   db.exec(schema)
