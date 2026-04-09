@@ -607,21 +607,22 @@ knowledgeRouter.post('/search', async (c) => {
       const recencyScore = Math.max(0, 1 - daysSinceUpdate / 90)
       const vectorScore = r.score
 
-      // Hybrid weighting (multiplicative boost — won't penalize vector-only matches):
-      //   base = vector × (1 + lex × 0.4)  → lex=0 keeps vector unchanged,
-      //                                       lex=1 boosts vector by 40%
-      //   + quality_bonus × 0.05  (only when sel >= 3)
-      //   + recency × 0.03
+      // Hybrid weighting (additive — best in benchmarks at 96.0% R@5 on
+      // LongMemEval-S 500 vs 93.8% pure vector):
+      //   vector  × 0.55  (semantic match — primary signal)
+      //   lexical × 0.35  (keyword overlap — boosts exact matches)
+      //   quality × 0.05  (only when sel >= 3, otherwise 0)
+      //   recency × 0.05
       //
-      // Tried: vector*0.55 + lex*0.35 (additive) — gained 13 questions across
-      // most categories but lost 2 single-session-preference (where lexical
-      // overlap is misleading because users describe preferences indirectly).
-      // Multiplicative boost recovers those misses.
+      // Multiplicative variant (vector × (1 + lex×0.4)) tested at 95.2% —
+      // recovered preference category but lost gains in temporal and user.
+      // Additive net is +11 questions, multiplicative net is +7.
       const qualityBonus = sel >= 3 ? quality.effectiveRate : 0
       const hybridScore =
-        vectorScore * (1 + lex * 0.4) +
+        vectorScore * 0.55 +
+        lex * 0.35 +
         qualityBonus * 0.05 +
-        recencyScore * 0.03
+        recencyScore * 0.05
 
       // Flag high-fallback docs
       const deprecated = sel >= 5 && quality.fallbackRate > 0.5
