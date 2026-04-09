@@ -40,5 +40,15 @@
     "*.{json,md,css,yml,yaml}": [
       "prettier --write"
     ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "onnxruntime-node",
+      "protobufjs",
+      "better-sqlite3",
+      "esbuild",
+      "husky",
+      "sharp"
+    ]
   }
 }

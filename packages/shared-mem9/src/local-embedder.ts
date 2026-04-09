@@ -35,20 +35,23 @@ async function getPipeline(modelId: string): Promise<FeatureExtractionPipeline> 
 
   currentModelId = modelId
   loadPromise = (async () => {
-    // Dynamic import — keeps @xenova/transformers as an optional runtime dep
-    const transformers = await import('@xenova/transformers') as {
+    // Dynamic import — keeps @huggingface/transformers as an optional runtime dep.
+    // We use @huggingface/transformers (v4+) instead of @xenova/transformers
+    // because the newer package drops the eager `sharp` dependency that broke
+    // text-only Linux deployments.
+    const transformers = await import('@huggingface/transformers') as {
       pipeline: (task: string, model: string, opts?: Record<string, unknown>) => Promise<FeatureExtractionPipeline>
       env?: { allowLocalModels?: boolean; useBrowserCache?: boolean }
     }
 
-    // Configure to use HuggingFace remote models (cached locally on disk after first download)
     if (transformers.env) {
       transformers.env.allowLocalModels = false
       transformers.env.useBrowserCache = false
     }
 
     const pipe = await transformers.pipeline('feature-extraction', modelId, {
-      quantized: true, // smaller download, slightly lower precision
+      // dtype 'q8' = 8-bit quantized — smaller download, faster, slight precision loss
+      dtype: 'q8',
     })
     pipelineSingleton = pipe
     loadPromise = null
@@ -90,13 +93,17 @@ export async function embedLocalBatch(texts: string[], modelId: string): Promise
  * Useful for ensuring Qdrant collection has the right vector size.
  */
 export function getLocalEmbeddingDim(modelId: string): number {
-  // Known dimensions for common models
+  // Known dimensions for common models (works for both Xenova/* and HF org/* names)
   const knownDims: Record<string, number> = {
     'Xenova/all-MiniLM-L6-v2': 384,
     'Xenova/all-MiniLM-L12-v2': 384,
     'Xenova/bge-small-en-v1.5': 384,
     'Xenova/bge-base-en-v1.5': 768,
     'Xenova/multilingual-e5-small': 384,
+    'sentence-transformers/all-MiniLM-L6-v2': 384,
+    'mixedbread-ai/mxbai-embed-xsmall-v1': 384,
+    'BAAI/bge-small-en-v1.5': 384,
+    'BAAI/bge-base-en-v1.5': 768,
   }
   return knownDims[modelId] ?? 384
 }
