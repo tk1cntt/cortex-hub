@@ -461,7 +461,9 @@ intelRouter.post('/search', async (c) => {
                 const scored = allSymbols
                   .map(s => ({ ...s, relevance: scoreSymbol(s.name) }))
                   .sort((a, b) => b.relevance - a.relevance)
-                const totalScore = scored.reduce((sum, s) => sum + s.relevance, 0)
+                // Quadratic score: multi-keyword matches weigh exponentially more.
+                // 1 kw = 1, 2 kw = 4, 3 kw = 9 — strongly prefers symbols matching ALL keywords.
+                const totalScore = scored.reduce((sum, s) => sum + (s.relevance * s.relevance), 0)
                 return { project: p, symbols: scored.slice(0, 10), count: allSymbols.length, score: totalScore }
               }
               if (lastErr) logger.debug(`Cypher search failed for ${p.id}: ${String(lastErr).slice(0, 100)}`)
@@ -503,8 +505,10 @@ intelRouter.post('/search', async (c) => {
           lines.push(`\n## ${projName} (${hit.project.indexed_symbols} symbols)`)
 
           if (hit.via === 'symbol' && hit.symbols && hit.symbols.length > 0) {
-            // Cypher symbol results
-            for (const sym of hit.symbols.slice(0, 8)) {
+            // Filter out File/Folder/Section noise — prefer actual code symbols
+            const codeSyms = hit.symbols.filter(s => !['File', 'Folder', 'Section'].includes(s.type))
+            const showSyms = codeSyms.length > 0 ? codeSyms : hit.symbols
+            for (const sym of showSyms.slice(0, 8)) {
               lines.push(`  → ${sym.name} (${sym.type}) — ${sym.file}`)
             }
           } else {
