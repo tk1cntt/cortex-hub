@@ -132,3 +132,21 @@ try {
 } catch (e) {
   console.warn('[ws] Conductor WebSocket not available:', (e as Error).message)
 }
+
+// Pre-warm local embedding model if EMBEDDING_PROVIDER=local.
+// The first cold-load downloads ~25MB and can take 5-10s. Doing it at
+// startup avoids the first API request hanging or timing out.
+if (process.env['EMBEDDING_PROVIDER'] === 'local') {
+  void (async () => {
+    try {
+      const t0 = Date.now()
+      const { embedLocal } = await import('@cortex/shared-mem9')
+      const model = process.env['LOCAL_EMBEDDING_MODEL'] || 'Xenova/all-MiniLM-L6-v2'
+      logger.info(`[embed] Pre-warming local model: ${model}`)
+      await embedLocal('warmup', model)
+      logger.info(`[embed] Local model ready in ${Date.now() - t0}ms`)
+    } catch (e) {
+      logger.error(`[embed] Local pre-warm FAILED: ${(e as Error).message}`)
+    }
+  })()
+}
