@@ -354,11 +354,10 @@ intelRouter.post('/search', async (c) => {
       }
 
       // Filter out empty results — count meaningful hits per project
-      type ScoredHit = { project: typeof allProjects[0]; result: unknown; score: number }
+      type ScoredHit = { project: typeof allProjects[0]; result: unknown; score: number; symbols?: Array<{ name: string; type: string; file: string }>; via: 'flow' | 'symbol' }
       const scoredHits: ScoredHit[] = hits.map(h => {
         const r = h.result as Record<string, unknown> | null
         const raw = (r?.raw as string) ?? ''
-        // Score: count process/definition mentions (rough relevance)
         const isEmpty = raw.includes('No matching execution flows') || raw.includes('No matching results')
         const procCount = (raw.match(/▸/g) ?? []).length
         const defCount = (raw.match(/→/g) ?? []).length
@@ -366,32 +365,94 @@ intelRouter.post('/search', async (c) => {
           project: h.project,
           result: h.result,
           score: isEmpty ? 0 : procCount * 10 + defCount,
+          via: 'flow' as const,
         }
       }).filter(s => s.score > 0)
+
+      // ── Fallback: cypher symbol search if flow search found nothing ──
+      if (scoredHits.length === 0) {
+        logger.info(`Code search: 0 flow matches, falling back to cypher symbol search`)
+        // Extract main keyword (longest word > 3 chars)
+        const keywords = query.split(/\s+/).filter(w => w.length > 3).sort((a, b) => b.length - a.length)
+        const mainKeyword = keywords[0] ?? query
+        const cypherQuery = `MATCH (n) WHERE n.name CONTAINS "${mainKeyword}" RETURN n.name as name, labels(n) as labels, n.filePath as file LIMIT 10`
+
+        for (let i = 0; i < allProjects.length; i += CONCURRENCY) {
+          const batch = allProjects.slice(i, i + CONCURRENCY)
+          const batchResults = await Promise.allSettled(
+            batch.map(async (p) => {
+              const candidates = resolveRepoNames(p.id)
+              for (const candidate of candidates) {
+                try {
+                  const r = await callGitNexus('cypher', { query: cypherQuery, repo: candidate }) as Record<string, unknown>
+                  // GitNexus cypher response: { rows: [...] } or { results: [...] } or raw text
+                  const rows = (r?.rows ?? r?.results ?? r?.data) as Array<Record<string, unknown>> | undefined
+                  if (Array.isArray(rows) && rows.length > 0) {
+                    return {
+                      project: p,
+                      symbols: rows.slice(0, 10).map(row => ({
+                        name: String(row.name ?? '?'),
+                        type: Array.isArray(row.labels) ? row.labels.join(',') : String(row.labels ?? ''),
+                        file: String(row.file ?? ''),
+                      })),
+                      count: rows.length,
+                    }
+                  }
+                  // Try parsing raw text response too
+                  const raw = (r?.raw as string) ?? ''
+                  if (raw && !raw.includes('error') && raw.includes(mainKeyword)) {
+                    return { project: p, symbols: [], count: 1, raw }
+                  }
+                } catch { /* try next */ }
+              }
+              return null
+            })
+          )
+          for (const r of batchResults) {
+            if (r.status === 'fulfilled' && r.value) {
+              scoredHits.push({
+                project: r.value.project,
+                result: { cypher: true, symbols: r.value.symbols, raw: (r.value as { raw?: string }).raw },
+                score: r.value.count,
+                symbols: r.value.symbols,
+                via: 'symbol' as const,
+              })
+            }
+          }
+        }
+      }
 
       scoredHits.sort((a, b) => b.score - a.score)
 
       // Build aggregated formatted output
       const lines: string[] = []
       lines.push(`🔍 Multi-project search: "${query}"`)
-      lines.push(`Scanned ${allProjects.length} repos, found matches in ${scoredHits.length}\n`)
+      const viaLabel = scoredHits.length > 0 && scoredHits[0]?.via === 'symbol' ? ' (via symbol search)' : ''
+      lines.push(`Scanned ${allProjects.length} repos, found matches in ${scoredHits.length}${viaLabel}\n`)
 
       if (scoredHits.length === 0) {
-        lines.push('⚠️ No matches found in any indexed repository.')
+        lines.push('⚠️ No matches found in any indexed repository (tried flows + symbols).')
         lines.push('\n**Hints:**')
-        lines.push('• Try broader search terms')
-        lines.push('• Use cortex_cypher for direct symbol queries')
+        lines.push('• Try a single keyword instead of a phrase')
+        lines.push('• Use cortex_cypher with custom Cypher query')
         lines.push('• Check cortex_list_repos to verify your target project is indexed')
       } else {
-        // Show top results from top projects
         const topProjects = scoredHits.slice(0, 5)
         for (const hit of topProjects) {
           const projName = hit.project.name || hit.project.slug || hit.project.id
           lines.push(`\n## ${projName} (${hit.project.indexed_symbols} symbols)`)
-          const raw = ((hit.result as Record<string, unknown>)?.raw as string) ?? ''
-          // Show first ~15 lines of result
-          const truncated = raw.split('\n').slice(0, 15).join('\n')
-          lines.push(truncated)
+
+          if (hit.via === 'symbol' && hit.symbols && hit.symbols.length > 0) {
+            // Cypher symbol results
+            for (const sym of hit.symbols.slice(0, 8)) {
+              lines.push(`  → ${sym.name} (${sym.type}) — ${sym.file}`)
+            }
+          } else {
+            // Flow results
+            const raw = ((hit.result as Record<string, unknown>)?.raw as string) ?? ''
+            const truncated = raw.split('\n').slice(0, 15).join('\n')
+            lines.push(truncated)
+          }
           lines.push(`💡 Refine: cortex_code_search(query: "${query}", repo: "${hit.project.slug ?? hit.project.name}")`)
         }
 
