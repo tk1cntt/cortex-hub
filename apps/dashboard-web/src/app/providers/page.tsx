@@ -238,6 +238,13 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
           body: JSON.stringify({ provider: 'local', model }),
           signal: AbortSignal.timeout(5000),
         })
+        // Also update routing table so dropdown stays in sync after SWR refetch
+        await fetch(`${config.api.base}/api/accounts/routing/chains`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ purpose, chain: [{ accountId: 'local', model }] }),
+          signal: AbortSignal.timeout(5000),
+        }).catch(() => { /* non-critical */ })
       } else {
         // Cloud provider — ensure embedding provider is set back to gemini/openai
         if (purpose === 'embedding') {

@@ -443,7 +443,7 @@ accountsRouter.get('/routing/active', (c) => {
         purpose: r.purpose,
         chain: chain.map((slot) => ({
           ...slot,
-          accountName: accountMap.get(slot.accountId)?.name ?? 'Unknown',
+          accountName: slot.accountId === 'local' ? 'Local Embedder' : (accountMap.get(slot.accountId)?.name ?? 'Unknown'),
         })),
       }
     })
