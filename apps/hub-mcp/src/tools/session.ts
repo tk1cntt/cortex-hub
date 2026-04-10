@@ -25,18 +25,10 @@ export function registerSessionTools(server: McpServer, env: Env) {
       role: z.string().optional().describe('Agent role from agent-identity.json'),
     },
     async ({ repo, mode, agentId, hostname, os, ide, branch, capabilities, role }) => {
-      const missionBrief = `
-# Mission Brief: Cortex Hub (Phase 6)
-Current Goal: Polish, GA Release, and Quality Enforcement.
-
-## Mandatory Standards:
-- SOLID Principles: Applied to all shared packages.
-- Clean Architecture: Decoupled services (hub-mcp, dashboard-api).
-- Quality Gates: pnpm build, typecheck, and lint MUST pass before commit.
-
-## Active Task:
-Resuming current objective from STATE.md.
-      `.trim()
+      // Extract project name from repo URL for context
+      const projectName = repo
+        ? repo.replace(/\.git$/, '').replace(/\/$/, '').split('/').pop() ?? 'unknown'
+        : 'unknown'
 
       // Register session with the dashboard API
       // API_KEY_OWNER is injected by MCP auth middleware from the validated Bearer token
@@ -72,14 +64,16 @@ Resuming current objective from STATE.md.
         // Dashboard API unavailable — continue with local session ID
       }
 
-      // Search for relevant knowledge/recipes to suggest (OpenSpace-inspired)
+      // Build dynamic mission brief from knowledge base
+      // Search for: recent session summaries, project context, active goals
+      let missionBrief = `# ${projectName}\nMode: ${mode ?? 'development'}`
       let relevantKnowledge: Array<{ id: string; title: string; description: string; origin: string; quality: Record<string, number> }> = []
       try {
-        const searchQuery = mode ?? branch ?? 'development'
+        const searchQuery = `session summary progress next session ${projectName}`
         const knowledgeRes = await fetch(`${env.DASHBOARD_API_URL}/api/knowledge/search`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: searchQuery, limit: 3 }),
+          body: JSON.stringify({ query: searchQuery, limit: 5 }),
           signal: AbortSignal.timeout(5000),
         })
         if (knowledgeRes.ok) {
@@ -93,8 +87,15 @@ Resuming current objective from STATE.md.
               deprecated?: boolean
             }>
           }
-          relevantKnowledge = (data.results ?? [])
-            .filter(r => r.documentId && !r.deprecated)
+          const results = (data.results ?? []).filter(r => r.documentId && !r.deprecated)
+
+          // Build mission from top knowledge hit (most relevant session summary)
+          if (results.length > 0) {
+            const topHit = results[0]
+            missionBrief = `# ${projectName}\n\n## Last Session Context\n${topHit?.title ?? ''}\n\n${(topHit?.content ?? '').slice(0, 500)}`
+          }
+
+          relevantKnowledge = results
             .slice(0, 3)
             .map(r => ({
               id: r.documentId!,
@@ -105,7 +106,7 @@ Resuming current objective from STATE.md.
             }))
         }
       } catch {
-        // Knowledge search unavailable — continue without suggestions
+        // Knowledge search unavailable — continue with basic mission
       }
 
       return {
@@ -116,7 +117,6 @@ Resuming current objective from STATE.md.
               session_id: sessionId,
               mission_brief: missionBrief,
               status: 'active',
-              standards: ['SOLID', 'Clean Architecture', 'Phase Gate Enforcement'],
               identity: {
                 agentId: agentId ?? 'claude-code',
                 hostname: hostname ?? null,
