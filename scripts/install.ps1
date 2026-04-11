@@ -1,4 +1,4 @@
-# Cortex Hub — Unified Installer (v4.0) — Windows PowerShell
+# Cortex Hub — Unified Installer (v0.7.0) — Windows PowerShell
 # One script for everything: global skill + MCP + hooks + IDE setup.
 # Idempotent. Version-aware. Auto-updating. Multi-IDE.
 #

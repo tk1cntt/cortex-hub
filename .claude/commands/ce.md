@@ -1,7 +1,7 @@
-# /ce — Cortex End v3.0
+# /ce — Cortex End v0.7.0
 
-> Version: 3.0 | Updated: 2026-04-10
-> Changelog: v3.0 — session_end now auto-saves memory; removed STATE.md; streamlined steps
+> Version: 0.7.0 | Updated: 2026-04-11
+> Changelog: v0.7.0 — unified versioning, session_end auto-saves memory, removed STATE.md, streamlined steps
 > Changelog: v2.0 — added detect_changes, tool stats, task completion, recipe capture check
 
 Run ALL steps IN ORDER before ending the session.

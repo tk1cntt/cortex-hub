@@ -1,7 +1,7 @@
-# /cs — Cortex Start v3.0
+# /cs — Cortex Start v0.7.0
 
-> Version: 3.0 | Updated: 2026-04-10
-> Changelog: v3.0 — removed STATE.md dependency, streamlined tool guidance, auto-memory safety net
+> Version: 0.7.0 | Updated: 2026-04-11
+> Changelog: v0.7.0 — unified versioning, removed STATE.md, streamlined tool guidance, auto-memory safety net
 > Changelog: v2.1 — added plan quality gate before implementation
 > Changelog: v2.0 — added task pickup, detect changes, recipe health, workflow recipes, versioning
 

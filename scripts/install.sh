@@ -1,5 +1,5 @@
 #!/bin/bash
-# Cortex Hub — Unified Installer (v4.0)
+# Cortex Hub — Unified Installer (v0.7.0)
 # One script for everything: global skill + MCP config + project hooks + IDE setup.
 # Idempotent. Version-aware. Auto-updating. Multi-IDE.
 #

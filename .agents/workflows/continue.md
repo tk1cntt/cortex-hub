@@ -1,7 +1,7 @@
 ---
 description: Resume work using cortex memory recall, auto-triggered by "continue", "tiếp", "go", or when no specific command given
 ---
-<!-- cortex-workflows-version: 3 -->
+<!-- cortex-workflows-version: 0.7 -->
 # /continue — Resume Current Work
 
 // turbo-all

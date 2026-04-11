@@ -180,7 +180,7 @@ Plus **plan quality** (`cortex_plan_quality`) — 8-criterion plan assessment be
 
 - **Session compliance score** — graded A/B/C/D at session end across 5 categories (Discovery, Safety, Learning, Contribution, Lifecycle)
 - **Adaptive hints** — every MCP response includes context-aware suggestions
-- **Hook-enforced workflow** — `/cs` v2.0 blocks edits until knowledge + memory recall called
+- **Hook-enforced workflow** — `/cs` blocks edits until knowledge + memory recall called
 - **Pre-commit gates** — git commits blocked until quality gates pass
 
 ### 📊 Dashboard (13 pages)
