@@ -85,36 +85,47 @@ export function registerCodeTools(server: McpServer, env: Env) {
             .filter(w => w.length > 2 && !/^(the|and|for|with|from|that|this|how|does|what|where)$/i.test(w))
             .slice(0, 4)
 
-          // Build cypher query: search Functions, Methods, Classes by name
-          const cypherConditions = searchTerms
-            .map(t => `toLower(n.name) CONTAINS toLower("${t.replace(/"/g, '')}")`)
-            .join(' OR ')
+          // Search each symbol type separately (Kuzu doesn't support multi-label WHERE)
+          const allSymbols: Array<{ name: string; type: string }> = []
+          for (const symbolType of ['Function', 'Method', 'Class', 'Interface']) {
+            const conditions = searchTerms
+              .map(t => `lower(n.name) CONTAINS "${t.toLowerCase().replace(/"/g, '')}"`)
+              .join(' OR ')
+            if (!conditions) continue
 
-          if (cypherConditions) {
             try {
               const cypherRes = await callIntel('cypher', {
-                query: `MATCH (n) WHERE (n:Function OR n:Method OR n:Class OR n:Interface) AND (${cypherConditions}) RETURN DISTINCT n.name AS name, labels(n)[0] AS type, n.file AS file LIMIT 20`,
+                query: `MATCH (n:${symbolType}) WHERE ${conditions} RETURN DISTINCT n.name AS name LIMIT 10`,
                 projectId: resolvedProject,
               })
-
-              const cypherData = cypherRes as { data?: { formatted?: string; row_count?: number } }
+              const cypherData = cypherRes as { data?: { formatted?: string; row_count?: number; rows?: Array<{ name: string }> } }
               const rows = cypherData?.data?.row_count ?? 0
-
               if (rows > 0) {
-                formatted = `Search: "${query}"\n\n`
-                formatted += `Found ${rows} symbol(s) matching your query:\n\n`
-                formatted += cypherData?.data?.formatted ?? ''
-                formatted += '\n\n---'
-                formatted += '\nNext: Run cortex_code_context "<name>" on any symbol above to see callers, callees, and full context.'
-                formatted += '\nOr: Run cortex_code_read with the file path to see the source code.'
-              } else {
-                formatted += '\n\n---'
-                formatted += '\nNo execution flows or symbols found for this query.'
-                formatted += `\nTry: cortex_cypher 'MATCH (n:Function) RETURN n.name LIMIT 30' to browse available symbols.`
+                // Parse markdown table to extract names
+                const md = cypherData?.data?.formatted ?? ''
+                const lines = md.split('\n').filter(l => l.startsWith('| ') && !l.includes('---') && !l.includes('n.name'))
+                for (const line of lines) {
+                  const name = line.replace(/\|/g, '').trim()
+                  if (name) allSymbols.push({ name, type: symbolType })
+                }
               }
-            } catch {
-              // Cypher fallback is best-effort
+            } catch { /* best-effort per type */ }
+          }
+
+          if (allSymbols.length > 0) {
+            formatted = `Search: "${query}"\n\n`
+            formatted += `Found ${allSymbols.length} symbol(s):\n\n`
+            formatted += '| Symbol | Type |\n| --- | --- |\n'
+            for (const s of allSymbols.slice(0, 20)) {
+              formatted += `| ${s.name} | ${s.type} |\n`
             }
+            formatted += '\n---'
+            formatted += '\nNext: Run cortex_code_context "<name>" on any symbol to see callers, callees, and full context.'
+            formatted += '\nOr: Run cortex_code_read with file path to see source code.'
+          } else {
+            formatted += '\n\n---'
+            formatted += '\nNo execution flows or symbols found for this query.'
+            formatted += `\nTry: cortex_cypher 'MATCH (n:Function) RETURN n.name LIMIT 30' to browse available symbols.`
           }
         }
 
