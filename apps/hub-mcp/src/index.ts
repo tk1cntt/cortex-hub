@@ -38,6 +38,8 @@ app.use('*', async (c, next) => {
   await next()
 })
 
+// MCP server requires open CORS — agents connect from any IDE/origin
+// Security is enforced via API key auth, not CORS
 app.use('*', cors())
 app.use('*', logger())
 
@@ -71,7 +73,7 @@ app.get('/.well-known/oauth-protected-resource/mcp', (c) => {
   return c.json({
     resource: `${c.req.url.replace('/.well-known/oauth-protected-resource/mcp', '/mcp')}`,
     bearer_methods_supported: ['header'],
-    resource_documentation: c.req.url.replace('/.well-known/oauth-protected-resource/mcp', '/'),
+    resource_documentation: 'https://cortex-mcp.jackle.dev',
   })
 })
 
@@ -80,7 +82,7 @@ app.get('/.well-known/oauth-protected-resource', (c) => {
   return c.json({
     resource: c.req.url.replace('/.well-known/oauth-protected-resource', '/'),
     bearer_methods_supported: ['header'],
-    resource_documentation: c.req.url.replace('/.well-known/oauth-protected-resource/mcp', '/'),
+    resource_documentation: 'https://cortex-mcp.jackle.dev',
   })
 })
 

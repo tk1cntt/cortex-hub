@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto'
 import { db } from '../db/client.js'
 import { startIndexing } from '../services/indexer.js'
 import { createLogger } from '@cortex/shared-utils'
-import { handleApiError } from '../utils/error-handler.js'
 
 const logger = createLogger('webhooks')
 
@@ -81,7 +80,7 @@ webhooksRouter.post('/push', async (c) => {
     return c.json({ received: true, eventId, projectId: project.id, reindexStarted })
   } catch (error) {
     logger.error(`Push event error: ${error}`)
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -128,7 +127,7 @@ webhooksRouter.get('/changes', (c) => {
 
     return c.json({ events, count: (events as unknown[]).length })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -152,6 +151,6 @@ webhooksRouter.post('/changes/ack', async (c) => {
 
     return c.json({ acknowledged: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })

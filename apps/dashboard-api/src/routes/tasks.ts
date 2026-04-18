@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
 import { pushTaskToAgent } from '../ws/conductor.js'
-import { handleApiError } from '../utils/error-handler.js'
 
 export const tasksRouter = new Hono()
 
@@ -45,7 +44,7 @@ tasksRouter.get('/', (c) => {
     const tasks = db.prepare(sql).all(...params)
     return c.json({ tasks })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -131,7 +130,7 @@ tasksRouter.post('/', async (c) => {
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id)
     return c.json({ task }, 201)
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -172,7 +171,7 @@ tasksRouter.get('/board', (c) => {
 
     return c.json({ board: columns })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -195,7 +194,7 @@ tasksRouter.get('/agent/:agentId', (c) => {
     const tasks = db.prepare(sql).all(...params)
     return c.json({ tasks })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -215,7 +214,7 @@ tasksRouter.get('/:id', (c) => {
 
     return c.json({ task, logs })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -290,7 +289,7 @@ tasksRouter.patch('/:id', async (c) => {
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id)
     return c.json({ task })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -322,7 +321,7 @@ tasksRouter.post('/:id/assign', async (c) => {
     const task = db.prepare('SELECT * FROM conductor_tasks WHERE id = ?').get(id)
     return c.json({ task })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -338,7 +337,7 @@ tasksRouter.get('/:id/logs', (c) => {
 
     return c.json({ logs })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -370,7 +369,7 @@ tasksRouter.post('/:id/logs', async (c) => {
     const log = db.prepare('SELECT * FROM conductor_task_logs WHERE id = ?').get(result.lastInsertRowid)
     return c.json({ log }, 201)
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -385,7 +384,7 @@ tasksRouter.delete('/:id', (c) => {
     }
     return c.json({ success: true, id })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -396,6 +395,6 @@ tasksRouter.patch('/:id/cancel', (c) => {
     db.prepare("UPDATE conductor_tasks SET status = 'cancelled', completed_at = datetime('now') WHERE id = ?").run(id)
     return c.json({ success: true, id, status: 'cancelled' })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })

@@ -35,7 +35,7 @@ Write-Host ""
 Write-Step "Connecting to Cortex Hub..."
 
 if ($McpUrl -eq "") {
-    $defaultUrl = if ($env:CORTEX_MCP_URL) { $env:CORTEX_MCP_URL } else { "" }
+    $defaultUrl = "https://cortex-mcp.jackle.dev/mcp"
     $input = Read-Host "Enter your Cortex Hub MCP URL [$defaultUrl]"
     $McpUrl = if ($input) { $input } else { $defaultUrl }
 }

@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
-import { handleApiError } from '../utils/error-handler.js'
 
 export const usageRouter = new Hono()
 
@@ -53,7 +52,7 @@ usageRouter.get('/summary', (c) => {
       estimatedCost: Math.round(estimatedCost * 100) / 100,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -75,7 +74,7 @@ usageRouter.get('/by-model', (c) => {
       .all()
     return c.json({ models: rows })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -96,7 +95,7 @@ usageRouter.get('/by-agent', (c) => {
       .all()
     return c.json({ agents: rows })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -118,7 +117,7 @@ usageRouter.get('/history', (c) => {
       .all(`-${days}`)
     return c.json({ history: rows })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -152,6 +151,6 @@ usageRouter.post('/log', async (c) => {
 
     return c.json({ success: true }, 201)
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })

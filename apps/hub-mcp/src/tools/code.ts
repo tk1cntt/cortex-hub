@@ -2,7 +2,6 @@ import { z } from 'zod'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Env } from '../types.js'
-import { apiCall } from '../api-call.js'
 
 /**
  * Register code intelligence tools.
@@ -36,51 +35,34 @@ export function registerCodeTools(server: McpServer, env: Env) {
     return response.json()
   }
 
-  // ── Helper: resolve project name/slug/ID → actual projectId ──
-  async function resolveProjectId(project?: string, projectId?: string): Promise<string | undefined> {
-    if (projectId) return projectId
-    if (!project) return undefined
-    // If it looks like an internal ID, return as-is
-    if (project.startsWith('proj-')) return project
-    // Otherwise treat as project name/slug — lookup via dashboard API
-    try {
-      const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
-      if (lookupRes.ok) {
-        const data = (await lookupRes.json()) as { id?: string }
-        if (data.id) return data.id
-      }
-      // Fallback: search all projects by slug
-      const projectsRes = await apiCall(env, '/api/projects')
-      if (projectsRes.ok) {
-        const data = (await projectsRes.json()) as { projects?: Array<{ id: string; slug?: string }> }
-        const match = data.projects?.find(p => p.slug?.toLowerCase() === project.toLowerCase())
-        if (match) return match.id
-      }
-    } catch {
-      // Best effort — return project name as-is (API will try to resolve)
-    }
-    return project
-  }
-
-  // ── Helper: resolve repo name/URL → projectId (legacy alias) ──
+  // ── Helper: resolve repo name/URL → projectId ──
   async function resolveRepo(repo?: string, projectId?: string): Promise<string | undefined> {
-    return resolveProjectId(repo, projectId)
+    if (projectId) return projectId
+    if (!repo) return undefined
+    // Try as-is first (might be a valid repo name like "cortex-hub")
+    // GitNexus accepts repo name directly — return it
+    // Strip URL to get repo name: https://github.com/org/name.git → name
+    const name = repo
+      .replace(/\.git$/, '')
+      .replace(/^https?:\/\/.*\//, '')
+      .split('/').pop() || repo
+    return name
   }
 
   // ── code_search — query codebase concepts and workflows ──
   server.tool(
     'cortex_code_search',
-    'Query the codebase for architecture concepts, execution flows, and file matches using GitNexus hybrid vector/AST search. Accepts project name (e.g. "cortex-hub"), git URL, or projectId.',
+    'Query the codebase for architecture concepts, execution flows, and file matches using GitNexus hybrid vector/AST search. Accepts repo name (e.g. "cortex-hub"), git URL, or projectId. OMIT repo to search across ALL indexed projects in parallel and get ranked hints (perfect when you don\'t know which project has the code).',
     {
       query: z.string().describe('Natural language or code query to search for'),
-      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
-      projectId: z.string().optional().describe('Project ID (e.g. "proj-2dd4c561"). Overrides project.'),
+      repo: z.string().optional().describe('Repository name (e.g. "cortex-hub") or git URL. Preferred over projectId.'),
+      projectId: z.string().optional().describe('Project ID (e.g. "proj-704127e3"). Use repo name instead if possible.'),
       branch: z.string().optional().describe('Git branch to search'),
       limit: z.number().optional().describe('Maximum flows to return (default: 5)'),
     },
-    async ({ query, project, projectId, branch, limit }) => {
+    async ({ query, repo, projectId, branch, limit }) => {
       try {
-        const resolvedProject = await resolveProjectId(project, projectId)
+        const resolvedProject = await resolveRepo(repo, projectId)
         const data = (await callIntel('search', {
           query,
           projectId: resolvedProject,
@@ -90,31 +72,89 @@ export function registerCodeTools(server: McpServer, env: Env) {
 
         let formatted = data?.data?.formatted ?? ''
 
-        // ── P0 Fix: Suggest alternatives when no flows found ──
-        // Repos with 0 execution flows (e.g., YulgangProject) always return empty.
-        // Guide agents to code_context and cypher which work on symbols directly.
+        // ── Auto-fallback: when execution flows are empty, search symbols via cypher ──
         const isEmpty = formatted && (
           formatted.includes('No matching execution flows') ||
           formatted.includes('No matching results found')
         )
-        if (isEmpty) {
-          const searchTerms = query.split(/\s+/).filter(w => w.length > 3).slice(0, 2)
-          const symbolSuggestion = searchTerms[0] ?? query
-          formatted += '\n\n---'
-          formatted += `\nNext: Pick a symbol above and run cortex_code_context "${symbolSuggestion}" to see all its callers, callees, and execution flows.`
-          formatted += `\nAlternative: Use cortex_cypher 'MATCH (n) WHERE n.name CONTAINS "${symbolSuggestion}" RETURN n.name, labels(n) LIMIT 20' for direct graph query.`
-          if (projectId) {
-            formatted += `\nProject routing: Use cortex_list_repos to verify which projectId maps to your repository.`
+
+        if (isEmpty && resolvedProject) {
+          // Extract meaningful search terms from query (split on spaces, underscores, hyphens)
+          const searchTerms = query
+            .split(/[\s_\-]+/)
+            .filter(w => w.length > 2 && !/^(the|and|for|with|from|that|this|how|does|what|where|create|get|set|use)$/i.test(w))
+            .slice(0, 4)
+
+          // Search each symbol type separately (Kuzu doesn't support multi-label WHERE)
+          const allSymbols: Array<{ name: string; type: string }> = []
+          for (const symbolType of ['Function', 'Method', 'Class', 'Interface']) {
+            const conditions = searchTerms
+              .map(t => `lower(n.name) CONTAINS "${t.toLowerCase().replace(/"/g, '')}"`)
+              .join(' OR ')
+            if (!conditions) continue
+
+            try {
+              const cypherRes = await callIntel('cypher', {
+                query: `MATCH (n:${symbolType}) WHERE ${conditions} RETURN DISTINCT n.name AS name LIMIT 10`,
+                projectId: resolvedProject,
+              })
+              // Response shape: { success, data: { raw: "{ \"markdown\": \"...\", \"row_count\": N }\n---\n..." } }
+              const wrapper = cypherRes as { data?: { raw?: string; formatted?: string; row_count?: number } }
+              let md = ''
+              let rows = 0
+
+              if (wrapper?.data?.raw) {
+                // Parse the JSON portion from raw (before "---" separator)
+                const jsonPart = wrapper.data.raw.split('\n---')[0] ?? ''
+                try {
+                  const parsed = JSON.parse(jsonPart) as { markdown?: string; row_count?: number }
+                  md = parsed.markdown ?? ''
+                  rows = parsed.row_count ?? 0
+                } catch {
+                  // raw might be plain text, try extracting table directly
+                  md = wrapper.data.raw
+                  rows = (md.match(/\| /g) ?? []).length - 2 // rough count minus headers
+                }
+              } else if (wrapper?.data?.formatted) {
+                md = wrapper.data.formatted
+                rows = wrapper.data.row_count ?? 0
+              }
+
+              if (rows > 0 && md) {
+                const lines = md.split('\n').filter(l => l.startsWith('| ') && !l.includes('---') && !l.includes('n.name') && !l.includes('name |'))
+                for (const line of lines) {
+                  const name = line.replace(/\|/g, '').trim()
+                  if (name && name !== 'name') allSymbols.push({ name, type: symbolType })
+                }
+              }
+            } catch { /* best-effort per type */ }
+          }
+
+          if (allSymbols.length > 0) {
+            formatted = `Search: "${query}"\n\n`
+            formatted += `Found ${allSymbols.length} symbol(s):\n\n`
+            formatted += '| Symbol | Type |\n| --- | --- |\n'
+            for (const s of allSymbols.slice(0, 20)) {
+              formatted += `| ${s.name} | ${s.type} |\n`
+            }
+            formatted += '\n---'
+            formatted += '\nNext: Run cortex_code_context "<name>" on any symbol to see callers, callees, and full context.'
+            formatted += '\nOr: Run cortex_code_read with file path to see source code.'
+          } else {
+            formatted += '\n\n---'
+            formatted += '\nNo execution flows or symbols found for this query.'
+            formatted += `\nTry: cortex_cypher 'MATCH (n:Function) RETURN n.name LIMIT 30' to browse available symbols.`
           }
         }
 
-        // ── Qdrant semantic code search: supplement GitNexus with actual source code ──
-        if (projectId) {
+        // ── Qdrant semantic code search: supplement with actual source code ──
+        const resolvedForCodeSearch = resolvedProject
+        if (resolvedForCodeSearch) {
           try {
             const codeRes = await fetch(`${apiUrl()}/api/intel/code-search`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ query, projectId, branch, limit: limit ?? 5 }),
+              body: JSON.stringify({ query, projectId: resolvedForCodeSearch, branch, limit: limit ?? 5 }),
               signal: AbortSignal.timeout(15000),
             })
 
@@ -134,12 +174,11 @@ export function registerCodeTools(server: McpServer, env: Env) {
 
               const codeResults = codeData?.data?.results ?? []
               if (codeResults.length > 0) {
-                const codeLines: string[] = ['\n\n📄 **Source Code Matches** (semantic search)\n']
+                const codeLines: string[] = ['\n\n---\n**Source Code Matches** (semantic search)\n']
                 for (const hit of codeResults.slice(0, 5)) {
                   const score = (hit.score * 100).toFixed(1)
                   codeLines.push(`### ${hit.filePath ?? 'unknown'} (${score}% match)`)
                   if (hit.content) {
-                    // Detect language from file extension
                     const ext = hit.filePath?.split('.').pop() ?? ''
                     const lang = { ts: 'typescript', js: 'javascript', cs: 'csharp', py: 'python', go: 'go', rs: 'rust', java: 'java' }[ext] ?? ext
                     codeLines.push(`\`\`\`${lang}`)
@@ -148,14 +187,12 @@ export function registerCodeTools(server: McpServer, env: Env) {
                   }
                   codeLines.push('')
                 }
-                codeLines.push('💡 Use cortex_code_read to view the full file content.')
+                codeLines.push('Use cortex_code_read to view the full file content.')
                 formatted += codeLines.join('\n')
-              } else if (isEmpty && codeData?.data?.message) {
-                formatted += `\n\n⚠️ ${codeData.data.message}`
               }
             }
           } catch {
-            // Qdrant search is best-effort — don't fail the entire search
+            // Qdrant search is best-effort
           }
         }
 
@@ -186,14 +223,14 @@ export function registerCodeTools(server: McpServer, env: Env) {
     'Analyze the blast radius of changing a specific symbol (function, class, file) to verify downstream impact before making edits.',
     {
       target: z.string().describe('The name of the function, class, or file to analyze'),
-      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
-      projectId: z.string().optional().describe('Project ID. Overrides project.'),
+      repo: z.string().optional().describe('Repository name (e.g. "cortex-hub") or git URL'),
+      projectId: z.string().optional().describe('Project ID. Use repo name instead if possible.'),
       branch: z.string().optional().describe('Git branch to analyze'),
       direction: z.enum(['upstream', 'downstream']).optional().describe('Direction to analyze (default: downstream)'),
     },
-    async ({ target, project, projectId, branch, direction }) => {
+    async ({ target, repo, projectId, branch, direction }) => {
       try {
-        const resolvedProject = await resolveProjectId(project, projectId)
+        const resolvedProject = await resolveRepo(repo, projectId)
         const data = await callIntel('impact', {
           target,
           projectId: resolvedProject,
@@ -317,13 +354,13 @@ export function registerCodeTools(server: McpServer, env: Env) {
     'Get a 360° view of a code symbol: its methods, callers, callees, and related execution flows. Essential for exploring class hierarchies and understanding how a symbol is used across the codebase.',
     {
       name: z.string().describe('The name of the function, class, or symbol to explore'),
-      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
-      projectId: z.string().optional().describe('Project ID. Overrides project.'),
+      repo: z.string().optional().describe('Repository name (e.g. "cortex-hub") or git URL'),
+      projectId: z.string().optional().describe('Project ID. Use repo name instead if possible.'),
       file: z.string().optional().describe('File path to disambiguate when multiple symbols share the same name'),
     },
-    async ({ name, project, projectId, file }) => {
+    async ({ name, repo, projectId, file }) => {
       try {
-        const resolvedProject = await resolveProjectId(project, projectId)
+        const resolvedProject = await resolveRepo(repo, projectId)
         const data = await callIntel('context', { name, projectId: resolvedProject, file }) as {
           data?: { results?: { raw?: string } }
         }
@@ -351,13 +388,11 @@ export function registerCodeTools(server: McpServer, env: Env) {
     'Detect uncommitted changes and analyze their risk level across the indexed codebase. Shows changed symbols, affected processes, and risk assessment.',
     {
       scope: z.string().optional().describe('Scope of changes to detect: "all" (default), "staged", or "unstaged"'),
-      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
-      projectId: z.string().optional().describe('Project ID. Overrides project.'),
+      projectId: z.string().optional().describe('Project ID to scope analysis to'),
     },
-    async ({ scope, project, projectId }) => {
+    async ({ scope, projectId }) => {
       try {
-        const resolvedProject = await resolveProjectId(project, projectId)
-        const data = await callIntel('detect-changes', { scope: scope ?? 'all', projectId: resolvedProject })
+        const data = await callIntel('detect-changes', { scope: scope ?? 'all', projectId })
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
         }
@@ -376,12 +411,12 @@ export function registerCodeTools(server: McpServer, env: Env) {
     'Run Cypher queries directly against the GitNexus knowledge graph. Supports MATCH, RETURN, WHERE, ORDER BY for exploring code relationships.\n\nAvailable node properties: name, filePath. Use labels(n) for type.\nExample: MATCH (n) WHERE n.name CONTAINS "Attack" RETURN n.name, labels(n) LIMIT 20',
     {
       query: z.string().describe('Cypher query to run (e.g., MATCH (n:Function) RETURN n.name LIMIT 10)'),
-      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
-      projectId: z.string().optional().describe('Project ID. Overrides project.'),
+      repo: z.string().optional().describe('Repository name (e.g. "cortex-hub") or git URL'),
+      projectId: z.string().optional().describe('Project ID. Use repo name instead if possible.'),
     },
-    async ({ query, project, projectId }) => {
+    async ({ query, repo, projectId }) => {
       try {
-        const resolvedProject = await resolveProjectId(project, projectId)
+        const resolvedProject = await resolveRepo(repo, projectId)
         const data = await callIntel('cypher', { query, projectId: resolvedProject })
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
@@ -421,7 +456,7 @@ export function registerCodeTools(server: McpServer, env: Env) {
         const lines: string[] = ['📦 Indexed Repositories\n']
 
         if (Array.isArray(repoData) && repoData.length > 0) {
-          // Deduplicate by name (GitNexus may return multiple entries per repo)
+          // Deduplicate by name
           const seen = new Map<string, typeof repoData[0]>()
           for (const repo of repoData) {
             const name = typeof repo === 'string' ? repo : (repo.name ?? repo.repo ?? 'unknown')
@@ -431,17 +466,18 @@ export function registerCodeTools(server: McpServer, env: Env) {
             }
           }
 
-          // Format as clean table
-          lines.push('| # | Repository | Project ID | Symbols |')
-          lines.push('|---|-----------|-----------|---------|')
+          // Format as clean table with all useful columns
+          lines.push('| # | Name | Slug (use with `repo:`) | Symbols | Flows |')
+          lines.push('|---|------|------------------------|---------|-------|')
 
           let idx = 0
           for (const [, repo] of seen) {
             idx++
             const name = typeof repo === 'string' ? repo : (repo.name ?? 'unknown')
-            const pid = repo.projectId ?? repo.project_id ?? '(auto)'
-            const symbols = repo.symbols ?? repo.symbol_count ?? '?'
-            lines.push(`| ${idx} | **${name}** | \`${pid}\` | ${symbols} |`)
+            const slug = repo.slug ?? name
+            const symbols = repo.symbols ?? '?'
+            const flows = repo.flows ?? '?'
+            lines.push(`| ${idx} | **${name}** | \`${slug}\` | ${symbols} | ${flows} |`)
           }
 
           lines.push('')
@@ -450,7 +486,11 @@ export function registerCodeTools(server: McpServer, env: Env) {
           lines.push('No indexed repositories found.')
         }
 
-        lines.push('\n💡 Pass the `Project ID` to cortex_code_search, cortex_code_context, cortex_code_impact, or cortex_cypher.')
+        lines.push('')
+        lines.push('💡 **Usage**: Pass the Name or Slug directly to the `repo` parameter:')
+        lines.push('  `cortex_code_search(query: "...", repo: "cortex-hub")`')
+        lines.push('  `cortex_code_context(name: "MyClass", repo: "my-backend")`')
+        lines.push('  No need to use `projectId` — just use the repo name.')
 
         return {
           content: [{ type: 'text' as const, text: lines.join('\n') }],
@@ -473,14 +513,14 @@ export function registerCodeTools(server: McpServer, env: Env) {
     'Read raw source code from an indexed repository. Returns full file content or a line range. Use after cortex_code_search to view complete files. Requires the project to be cloned via Code Indexing.',
     {
       file: z.string().describe('Relative file path within the repo (e.g., "src/utils/auth.ts")'),
-      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
-      projectId: z.string().optional().describe('Project ID. Overrides project.'),
+      repo: z.string().optional().describe('Repository name (e.g. "cortex-hub") or git URL'),
+      projectId: z.string().optional().describe('Project ID. Use repo name instead if possible.'),
       startLine: z.number().optional().describe('Start line (1-indexed, inclusive)'),
       endLine: z.number().optional().describe('End line (1-indexed, inclusive)'),
     },
-    async ({ file, project, projectId, startLine, endLine }) => {
+    async ({ file, repo, projectId, startLine, endLine }) => {
       try {
-        const resolvedProject = await resolveProjectId(project, projectId)
+        const resolvedProject = await resolveRepo(repo, projectId)
         const res = await fetch(`${apiUrl()}/api/intel/file-content`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

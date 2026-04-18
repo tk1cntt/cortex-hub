@@ -10,7 +10,6 @@ services:
   # ─────────────────────────────────────────────
   qdrant:
     image: qdrant/qdrant:v1.13.6
-    pull_policy: never
     container_name: cortex-qdrant
     restart: unless-stopped
     ports:
@@ -42,7 +41,6 @@ services:
   # ─────────────────────────────────────────────
   llm-proxy:
     image: eceasy/cli-proxy-api:latest
-    pull_policy: never
     container_name: cortex-llm-proxy
     restart: unless-stopped
     ports:
@@ -52,7 +50,7 @@ services:
       - ./cliproxy-config.yaml:/CLIProxyAPI/config.yaml
     environment:
       TZ: Asia/Ho_Chi_Minh
-      MANAGEMENT_PASSWORD: ${MANAGEMENT_PASSWORD:-cortex2026}
+      MANAGEMENT_PASSWORD: ${MANAGEMENT_PASSWORD:?Set MANAGEMENT_PASSWORD in .env}
     deploy:
       resources:
         limits:
@@ -74,7 +72,6 @@ services:
       context: ..
       dockerfile: infra/Dockerfile.gitnexus
     image: ghcr.io/lktiep/cortex-gitnexus:latest
-    pull_policy: never
     container_name: cortex-gitnexus
     restart: unless-stopped
     ports:
@@ -106,7 +103,6 @@ services:
         COMMIT_SHA: ${COMMIT_SHA:-dev}
         BUILD_DATE: ${BUILD_DATE:-}
     image: ghcr.io/lktiep/cortex-api:latest
-    pull_policy: never
     container_name: cortex-api
     restart: unless-stopped
     ports:
@@ -116,7 +112,7 @@ services:
       - api-data:/app/data
       - gitnexus-data:/root/.gitnexus
       - cliproxy-auth:/app/cliproxy-auth
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Docker socket removed — security risk (root access if API compromised)
     environment:
       TZ: Asia/Ho_Chi_Minh
       PORT: 4000
@@ -127,13 +123,15 @@ services:
       OPENAI_API_BASE: http://llm-proxy:8317/v1
       LLM_PROXY_URL: http://llm-proxy:8317
       CLIPROXY_AUTH_DIR: /app/cliproxy-auth
-      CLIPROXY_MANAGEMENT_KEY: ${MANAGEMENT_PASSWORD:-cortex2026}
-      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:4000}
+      CLIPROXY_MANAGEMENT_KEY: ${MANAGEMENT_PASSWORD:?Set MANAGEMENT_PASSWORD in .env}
+      DASHBOARD_URL: ${DASHBOARD_URL:-https://hub.jackle.dev}
       # mem9 Configuration
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      MEM9_LLM_MODEL: ${MEM9_LLM_MODEL:-gpt-5.4-mini}
-      MEM9_EMBEDDING_MODEL: ${MEM9_EMBEDDING_MODEL:-gemini-embedding-2-preview}
-      MEM9_EMBEDDING_ENABLED: ${MEM9_EMBEDDING_ENABLED:-false}
+      MEM9_LLM_MODEL: ${MEM9_LLM_MODEL:-gemini-2.5-flash}
+      MEM9_EMBEDDING_MODEL: ${MEM9_EMBEDDING_MODEL:-gemini-embedding-001}
+      # Embedding provider: local (default, free, fast) or gemini (API, $$)
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-local}
+      LOCAL_EMBEDDING_MODEL: ${LOCAL_EMBEDDING_MODEL:-Xenova/all-MiniLM-L6-v2}
       # GitNexus
       GITNEXUS_URL: http://gitnexus:4848
     depends_on:
@@ -160,7 +158,6 @@ services:
       context: ..
       dockerfile: infra/Dockerfile.hub-mcp
     image: ghcr.io/lktiep/cortex-mcp:latest
-    pull_policy: never
     container_name: cortex-mcp
     restart: unless-stopped
     ports:
@@ -174,7 +171,7 @@ services:
       CLIPROXY_URL: http://llm-proxy:8317
       GITNEXUS_URL: http://gitnexus:4848
       MCP_SERVER_NAME: "cortex-hub"
-      MCP_SERVER_VERSION: "0.1.0"
+      MCP_SERVER_VERSION: "0.7.0"
       API_KEYS: ${MCP_API_KEYS:-}
     depends_on:
       cortex-api:
@@ -199,7 +196,6 @@ services:
   # ─────────────────────────────────────────────
   watchtower:
     image: containrrr/watchtower:latest
-    pull_policy: never
     container_name: cortex-watchtower
     restart: unless-stopped
     volumes:

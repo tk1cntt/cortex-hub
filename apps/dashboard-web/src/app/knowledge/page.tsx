@@ -8,9 +8,11 @@ import {
   createKnowledgeDocument,
   deleteKnowledgeDocument,
   getKnowledgeTags,
+  getRecipeStats,
   getAllProjects,
   type KnowledgeDocument,
   type Project,
+  type RecipeStats,
 } from '@/lib/api'
 import styles from './page.module.css'
 
@@ -228,6 +230,149 @@ function ProjectSection({
   )
 }
 
+// ── Recipe Health Panel ──
+function RecipeHealthPanel({ data }: { data: RecipeStats }) {
+  const captureTotal = Object.values(data.capture.stats).reduce((s, n) => s + n, 0)
+  const captured = (data.capture.stats.captured ?? 0) + (data.capture.stats.derived ?? 0)
+  const errors = data.capture.stats.error ?? 0
+  const skipped = data.capture.stats.skipped ?? 0
+
+  const isAlive = captured > 0
+  const hasErrors = errors > 0
+
+  const quality = data.quality
+  const avgRate = quality.avgEffectiveRate != null ? Math.round(quality.avgEffectiveRate * 100) : null
+
+  return (
+    <div className={styles.recipePanel}>
+      <div className={styles.recipePanelHeader}>
+        <h3 className={styles.recipePanelTitle}>
+          Recipe System
+          <span className={`${styles.statusDot} ${isAlive ? styles.statusAlive : styles.statusDead}`} />
+          <span className={styles.statusLabel}>{isAlive ? 'Active' : 'No captures yet'}</span>
+        </h3>
+      </div>
+
+      <div className={styles.recipeStatsGrid}>
+        {/* Capture Pipeline */}
+        <div className={`card ${styles.recipeStatCard}`}>
+          <div className={styles.recipeStatHeader}>Capture Pipeline</div>
+          <div className={styles.recipeStatRow}>
+            <span>Attempts</span>
+            <span className="live-value">{captureTotal}</span>
+          </div>
+          <div className={styles.recipeStatRow}>
+            <span>Captured</span>
+            <span className="live-value" style={{ color: 'var(--success)' }}>{captured}</span>
+          </div>
+          <div className={styles.recipeStatRow}>
+            <span>Skipped</span>
+            <span className="live-value">{skipped}</span>
+          </div>
+          {hasErrors && (
+            <div className={styles.recipeStatRow}>
+              <span>Errors</span>
+              <span className="live-value" style={{ color: 'var(--danger)' }}>{errors}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Quality Metrics */}
+        <div className={`card ${styles.recipeStatCard}`}>
+          <div className={styles.recipeStatHeader}>Quality Metrics</div>
+          <div className={styles.recipeStatRow}>
+            <span>Docs with selections</span>
+            <span className="live-value">{quality.selected ?? 0}/{quality.total ?? 0}</span>
+          </div>
+          <div className={styles.recipeStatRow}>
+            <span>Total selections</span>
+            <span className="live-value">{quality.totalSelections ?? 0}</span>
+          </div>
+          <div className={styles.recipeStatRow}>
+            <span>Completions</span>
+            <span className="live-value" style={{ color: 'var(--success)' }}>{quality.totalCompletions ?? 0}</span>
+          </div>
+          <div className={styles.recipeStatRow}>
+            <span>Fallbacks</span>
+            <span className="live-value" style={{ color: quality.totalFallbacks ? 'var(--warning)' : undefined }}>{quality.totalFallbacks ?? 0}</span>
+          </div>
+          {avgRate != null && (
+            <div className={styles.recipeStatRow}>
+              <span>Avg effective rate</span>
+              <span className="live-value" style={{ color: avgRate > 50 ? 'var(--success)' : 'var(--warning)' }}>{avgRate}%</span>
+            </div>
+          )}
+        </div>
+
+        {/* Origin Distribution */}
+        <div className={`card ${styles.recipeStatCard}`}>
+          <div className={styles.recipeStatHeader}>Knowledge Origins</div>
+          {Object.entries(data.origins).map(([origin, count]) => (
+            <div key={origin} className={styles.recipeStatRow}>
+              <span className={styles.originLabel}>
+                <span className={`${styles.originDot} ${styles['origin_' + origin]}`} />
+                {origin}
+              </span>
+              <span className="live-value">{count}</span>
+            </div>
+          ))}
+          {data.lineage > 0 && (
+            <div className={styles.recipeStatRow}>
+              <span>Lineage edges</span>
+              <span className="live-value">{data.lineage}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Recent Activity */}
+        <div className={`card ${styles.recipeStatCard}`}>
+          <div className={styles.recipeStatHeader}>Usage (7 days)</div>
+          {Object.entries(data.usage).length > 0 ? (
+            Object.entries(data.usage).map(([action, count]) => (
+              <div key={action} className={styles.recipeStatRow}>
+                <span>{action}</span>
+                <span className="live-value">{count}</span>
+              </div>
+            ))
+          ) : (
+            <div className={styles.recipeStatEmpty}>No usage data yet</div>
+          )}
+        </div>
+      </div>
+
+      {/* Recent Capture Attempts */}
+      {data.capture.recent.length > 0 && (
+        <details className={styles.recentCaptures}>
+          <summary className={styles.recentCapturesSummary}>
+            Recent capture attempts ({data.capture.recent.length})
+          </summary>
+          <div className={styles.captureLogTable}>
+            <div className={styles.captureLogHeader}>
+              <span>Time</span>
+              <span>Source</span>
+              <span>Status</span>
+              <span>Details</span>
+            </div>
+            {data.capture.recent.map((entry) => (
+              <div key={entry.id} className={`${styles.captureLogRow} ${styles['captureStatus_' + entry.status]}`}>
+                <span>{new Date(entry.created_at).toLocaleString()}</span>
+                <span>{entry.source}</span>
+                <span className={`badge ${
+                  entry.status === 'captured' || entry.status === 'derived' ? 'badge-healthy' :
+                  entry.status === 'error' ? 'badge-warning' : ''
+                }`}>{entry.status}</span>
+                <span className={styles.captureLogDetail}>
+                  {entry.title ?? entry.error_message ?? entry.source_id ?? '-'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  )
+}
+
 // ── Main Page ──
 export default function KnowledgePage() {
   const [showCreate, setShowCreate] = useState(false)
@@ -246,6 +391,7 @@ export default function KnowledgePage() {
 
   const { data: tagsData } = useSWR('knowledge-tags', getKnowledgeTags)
   const { data: projectsData } = useSWR('all-projects', getAllProjects)
+  const { data: recipeData } = useSWR('recipe-stats', getRecipeStats, { refreshInterval: 30000 })
 
   const projects = projectsData?.projects ?? []
   const projectMap = useMemo(() => {
@@ -320,6 +466,9 @@ export default function KnowledgePage() {
 
   return (
     <DashboardLayout title="Knowledge Base" subtitle="Shared knowledge organized by project">
+      {/* Recipe System Health */}
+      {recipeData && <RecipeHealthPanel data={recipeData} />}
+
       {/* Stats Row */}
       {stats && (
         <div className={styles.statsGrid}>

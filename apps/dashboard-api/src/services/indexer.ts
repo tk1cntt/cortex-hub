@@ -1,88 +1,12 @@
-import { spawn, exec, ChildProcess } from 'child_process'
+import { spawn, ChildProcess } from 'child_process'
 import { existsSync, mkdirSync, rmSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, extname } from 'path'
-import { request as httpRequest } from 'node:http'
 import { db } from '../db/client.js'
 import { createLogger } from '@cortex/shared-utils'
-
-const logger = createLogger('indexer')
-
-const GITNEXUS_CONTAINER = 'cortex-gitnexus'
-const DOCKER_SOCK = '/var/run/docker.sock'
-
-/**
- * Make an HTTP request to Docker API via Unix socket.
- */
-function dockerApiRequest(method: string, path: string, body?: unknown, timeoutMs = 30000): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Docker API timeout')), timeoutMs)
-    const req = httpRequest({
-      socketPath: DOCKER_SOCK,
-      path,
-      method,
-      headers: { 'Content-Type': 'application/json' },
-    }, (res) => {
-      let data = ''
-      res.on('data', (chunk: Buffer) => { data += chunk.toString() })
-      res.on('end', () => {
-        clearTimeout(timer)
-        try { resolve(JSON.parse(data)) } catch { resolve({ _raw: data.trim() }) }
-      })
-    })
-    req.on('error', (err) => { clearTimeout(timer); reject(err) })
-    if (body) req.write(JSON.stringify(body))
-    req.end()
-  })
-}
-
-/**
- * Start a command inside a container (detached mode — returns immediately).
- * Returns execId for polling status later.
- */
-async function dockerExecStart(container: string, cmd: string): Promise<string> {
-  const execInfo = await dockerApiRequest('POST', `/containers/${container}/exec`, {
-    AttachStdout: true,
-    AttachStderr: true,
-    Cmd: ['bash', '-c', cmd],
-  })
-  const execId = (execInfo as Record<string, string>).Id
-  if (!execId) throw new Error('No exec ID returned')
-
-  // Start detached — don't wait for output
-  await dockerApiRequest('POST', `/exec/${execId}/start`, { Detach: true, Tty: false })
-  return execId
-}
-
-/**
- * Poll exec status and retrieve output when done.
- */
-async function dockerExecInspect(execId: string): Promise<{ running: boolean; exitCode: number; output: string }> {
-  const inspectInfo = await dockerApiRequest('GET', `/exec/${execId}/json`)
-  const running = (inspectInfo.Running as boolean) ?? false
-  const exitCode = (inspectInfo.ExitCode as number) ?? -1
-
-  // If inspect returns "No such exec" or similar, treat as completed
-  const errMsg = (inspectInfo.message as string) ?? ''
-  if (errMsg.toLowerCase().includes('no such exec')) {
-    return { running: false, exitCode: 0, output: '' }
-  }
-
-  let output = ''
-  if (!running) {
-    // Retrieve logs only when finished
-    try {
-      const logRes = await dockerApiRequest('GET', `/exec/${execId}/logs?stdout=true&stderr=true`, undefined, 15000)
-      output = (logRes._raw as string) ?? ''
-    } catch {
-      // Exec may have been cleaned up — output unavailable
-      output = '(exec completed, output unavailable)'
-    }
-  }
-
-  return { running, exitCode, output }
-}
 import { embedProject } from './mem9-embedder.js'
 import { buildKnowledgeFromDocs } from './docs-knowledge-builder.js'
+
+const logger = createLogger('indexer')
 
 // Track running processes for cancellation
 const runningJobs = new Map<string, ChildProcess>()
@@ -365,7 +289,8 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
     }
 
     // ── Step 2: GitNexus Analyze ──
-    // Try in order: local CLI → docker exec into gitnexus container → pure JS fallback.
+    // Try CLI first (only works if gitnexus is installed in this container),
+    // then try HTTP API to the gitnexus container, then pure JS fallback.
     updateJob(jobId, { status: 'analyzing', progress: 30 })
     logger.info(`[${jobId}] Running gitnexus analyze`)
 
@@ -393,125 +318,16 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
       // gitnexus not installed locally — expected in cortex-api container
     }
 
-    // Strategy 2: Docker exec into gitnexus container (detached + poll).
+    // Strategy 2: Pure JS fallback (regex-based, no native deps)
     if (!gitnexusSuccess) {
-      try {
-        appendLog(jobId, 'Calling GitNexus container via Docker socket (detached)...')
-        logger.info(`[${jobId}] Starting docker exec (detached) into gitnexus container`)
+      appendLog(jobId, `[info] Using pure JS symbol extraction (gitnexus CLI not available)`)
+      logger.info(`[${jobId}] Using pure JS fallback extraction`)
 
-        const execId = await dockerExecStart(
-          GITNEXUS_CONTAINER,
-          `cd ${repoDir} && gitnexus analyze --force --embeddings 2>&1`,
-        )
-
-        appendLog(jobId, `GitNexus analyze started (execId: ${execId.slice(0, 12)}). Polling for completion...`)
-
-        // Poll in background — don't block the main flow
-        const POLL_INTERVAL_MS = 10000
-        const MAX_POLL_TIME_MS = 600000 // 10 min max for large repos
-        const pollStartTime = Date.now()
-
-        let fallbackRan = false
-
-        const pollInterval = setInterval(async () => {
-          const elapsed = Date.now() - pollStartTime
-          if (elapsed > MAX_POLL_TIME_MS) {
-            clearInterval(pollInterval)
-            logger.warn(`[${jobId}] GitNexus analyze timed out after ${Math.round(elapsed/1000)}s`)
-            appendLog(jobId, `[warn] GitNexus analyze timed out (${Math.round(elapsed/1000)}s)`)
-            if (!gitnexusSuccess && !fallbackRan) {
-              fallbackRan = true
-              await runFallback()
-            }
-            return
-          }
-
-          try {
-            const { running, exitCode, output } = await dockerExecInspect(execId)
-
-            if (!running) {
-              clearInterval(pollInterval)
-              const cleanOutput = output.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-              const execCleaned = cleanOutput.includes('exec completed, output unavailable')
-
-              const symbolMatch = cleanOutput.match(/(\d+)\s*symbols?/i)
-              const fileMatch = cleanOutput.match(/(\d+)\s*files?/i)
-              const nodesMatch = cleanOutput.match(/([\d,]+)\s*nodes/i)
-              const edgesMatch = cleanOutput.match(/([\d,]+)\s*edges/i)
-              const successMatch = cleanOutput.match(/indexed successfully/i)
-
-              if (symbolMatch?.[1]) symbolsFound = parseInt(symbolMatch[1], 10)
-              if (fileMatch?.[1]) totalFiles = parseInt(fileMatch[1], 10)
-              if (!symbolsFound && nodesMatch?.[1]) symbolsFound = parseInt(nodesMatch[1].replace(/,/g, ''), 10)
-              if (!totalFiles && edgesMatch?.[1]) totalFiles = parseInt(edgesMatch[1].replace(/,/g, ''), 10)
-
-              if (successMatch && (symbolsFound > 0 || totalFiles > 0)) {
-                gitnexusSuccess = true
-                appendLog(jobId, `GitNexus (docker): ${totalFiles} edges, ${symbolsFound} nodes (${Math.round(elapsed/1000)}s)`)
-                updateJob(jobId, { symbols_found: symbolsFound, total_files: totalFiles })
-                logger.info(`[${jobId}] GitNexus docker analyze done: ${totalFiles} edges, ${symbolsFound} nodes`)
-              } else if (execCleaned && (symbolsFound > 0 || totalFiles > 0)) {
-                // Exec cleaned up but we have data from fallback — GitNexus completed
-                gitnexusSuccess = true
-                appendLog(jobId, `GitNexus (docker): completed (${Math.round(elapsed/1000)}s, output cleaned up)`)
-                logger.info(`[${jobId}] GitNexus docker analyze completed (${Math.round(elapsed/1000)}s)`)
-              } else if (successMatch || execCleaned) {
-                gitnexusSuccess = true
-                appendLog(jobId, `GitNexus (docker): indexed successfully (${Math.round(elapsed/1000)}s)`)
-              }
-
-              // Continue to step 3 if still not successful
-              if (!gitnexusSuccess && !fallbackRan) {
-                fallbackRan = true
-                await runFallback()
-              }
-            } else {
-              // Still running — log progress
-              appendLog(jobId, `GitNexus still running... (${Math.round(elapsed/1000)}s)`)
-              logger.info(`[${jobId}] GitNexus still running... ${Math.round(elapsed/1000)}s`)
-            }
-          } catch (pollErr) {
-            logger.warn(`[${jobId}] Poll error: ${pollErr}`)
-          }
-        }, POLL_INTERVAL_MS)
-
-        // Helper for fallback if poll fails
-        async function runFallback() {
-          if (fallbackRan) return
-          appendLog(jobId, '[info] Using pure JS symbol extraction (gitnexus CLI not available)')
-          logger.info(`[${jobId}] Using pure JS fallback extraction`)
-          const fallback = extractSymbolsFromDir(repoDir)
-          totalFiles = fallback.totalFiles
-          symbolsFound = fallback.symbolsFound
-          symbolNames = fallback.symbolNames
-          appendLog(jobId, `Extracted: ${totalFiles} files, ${symbolsFound} symbols`)
-          if (symbolNames.length > 0) {
-            appendLog(jobId, `Sample symbols: ${symbolNames.slice(0, 20).join(', ')}`)
-          }
-          // Update DB with fallback results
-          updateJob(jobId, { symbols_found: symbolsFound, total_files: totalFiles })
-        }
-      } catch (err) {
-        logger.warn(`[${jobId}] Docker exec start failed: ${err}`)
-        appendLog(jobId, `[warn] Docker exec failed: ${String(err).slice(0, 300)}`)
-        // Will fall through to pure JS below
-      }
-    }
-
-    // Strategy 3: Pure JS fallback (regex-based, no native deps)
-    // Wait a few seconds to give Strategy 2 poll time to detect completion first.
-    if (!gitnexusSuccess) {
-      await new Promise<void>(r => setTimeout(r, 5000))
-      if (!gitnexusSuccess) {
-        appendLog(jobId, `[info] Using pure JS symbol extraction (gitnexus CLI not available)`)
-        logger.info(`[${jobId}] Using pure JS fallback extraction`)
-
-        const fallback = extractSymbolsFromDir(repoDir)
-        totalFiles = fallback.totalFiles
-        symbolsFound = fallback.symbolsFound
-        symbolNames = fallback.symbolNames
-        appendLog(jobId, `Extracted: ${totalFiles} files, ${symbolsFound} symbols`)
-      }
+      const fallback = extractSymbolsFromDir(repoDir)
+      totalFiles = fallback.totalFiles
+      symbolsFound = fallback.symbolsFound
+      symbolNames = fallback.symbolNames
+      appendLog(jobId, `Extracted: ${totalFiles} files, ${symbolsFound} symbols`)
     }
 
     if (symbolNames.length > 0) {
@@ -536,56 +352,44 @@ export async function startIndexing(projectId: string, jobId: string, branch: st
 
     logger.info(`[${jobId}] Indexing complete!`)
 
-    // ── Step 5: Auto-trigger mem9 embedding (controlled by MEM9_EMBEDDING_ENABLED) ──
-    // Default: enabled in production, disabled in dev/test.
-    // Override explicitly with MEM9_EMBEDDING_ENABLED=true/false.
-    const mem9Enabled = process.env.MEM9_EMBEDDING_ENABLED === undefined
-      ? process.env.NODE_ENV === 'production'
-      : process.env.MEM9_EMBEDDING_ENABLED === 'true'
+    // ── Step 5: Auto-trigger mem9 embedding (fire-and-forget) ──
+    try {
+      updateJob(jobId, { mem9_status: 'embedding' })
+      appendLog(jobId, '🧠 Auto-starting mem9 embedding...')
 
-    if (!mem9Enabled) {
-      logger.info(`[${jobId}] Skipping mem9 embedding (MEM9_EMBEDDING_ENABLED=${process.env.MEM9_EMBEDDING_ENABLED || 'undefined'}, NODE_ENV=${process.env.NODE_ENV || 'undefined'}). Embedding costs money — enable when needed.`)
-      appendLog(jobId, '⏭️ Skipped mem9 embedding. Enable via MEM9_EMBEDDING_ENABLED=true or run manually: POST /api/indexing/:id/index/mem9')
-      updateJob(jobId, { mem9_status: 'skipped' })
-    } else {
-      try {
-        updateJob(jobId, { mem9_status: 'embedding' })
-        appendLog(jobId, '🧠 Auto-starting mem9 embedding...')
+      embedProject(projectId, branch, jobId, (progress, chunks, totalChunks) => {
+        db.prepare('UPDATE index_jobs SET mem9_chunks = ?, mem9_progress = ?, mem9_total_chunks = ? WHERE id = ?')
+          .run(chunks, progress, totalChunks, jobId)
+      }).then((result) => {
+        updateJob(jobId, { mem9_status: result.status, mem9_chunks: result.chunks })
+        appendLog(jobId, `✅ mem9 done: ${result.chunks} chunks embedded`)
+        if (result.errors.length > 0) {
+          appendLog(jobId, `⚠️ mem9 errors: ${result.errors.slice(0, 3).join('; ')}`)
+        }
+        logger.info(`[${jobId}] mem9 complete: ${result.chunks} chunks`)
 
-        embedProject(projectId, branch, jobId, (progress, chunks, totalChunks) => {
-          db.prepare('UPDATE index_jobs SET mem9_chunks = ?, mem9_progress = ?, mem9_total_chunks = ? WHERE id = ?')
-            .run(chunks, progress, totalChunks, jobId)
-        }).then((result) => {
-          updateJob(jobId, { mem9_status: result.status, mem9_chunks: result.chunks })
-          appendLog(jobId, `✅ mem9 done: ${result.chunks} chunks embedded`)
-          if (result.errors.length > 0) {
-            appendLog(jobId, `⚠️ mem9 errors: ${result.errors.slice(0, 3).join('; ')}`)
-          }
-          logger.info(`[${jobId}] mem9 complete: ${result.chunks} chunks`)
-
-          // ── Step 6: Auto-build knowledge from docs (fire-and-forget) ──
-          updateJob(jobId, { docs_knowledge_status: 'building' })
-          appendLog(jobId, '📚 Auto-building knowledge from documentation...')
-          buildKnowledgeFromDocs(projectId, jobId, repoDir).then((docsResult) => {
-            updateJob(jobId, {
-              docs_knowledge_status: 'done',
-              docs_knowledge_count: docsResult.docsProcessed,
-            })
-            appendLog(jobId, `📚 Docs knowledge: ${docsResult.docsProcessed}/${docsResult.docsFound} docs → ${docsResult.chunksCreated} chunks`)
-            logger.info(`[${jobId}] Docs knowledge complete: ${docsResult.docsProcessed} docs processed`)
-          }).catch((err) => {
-            updateJob(jobId, { docs_knowledge_status: 'error' })
-            appendLog(jobId, `⚠️ Docs knowledge failed (non-fatal): ${err}`)
-            logger.warn(`[${jobId}] Docs knowledge failed: ${err}`)
+        // ── Step 6: Auto-build knowledge from docs (fire-and-forget) ──
+        updateJob(jobId, { docs_knowledge_status: 'building' })
+        appendLog(jobId, '📚 Auto-building knowledge from documentation...')
+        buildKnowledgeFromDocs(projectId, jobId, repoDir).then((docsResult) => {
+          updateJob(jobId, {
+            docs_knowledge_status: 'done',
+            docs_knowledge_count: docsResult.docsProcessed,
           })
+          appendLog(jobId, `📚 Docs knowledge: ${docsResult.docsProcessed}/${docsResult.docsFound} docs → ${docsResult.chunksCreated} chunks`)
+          logger.info(`[${jobId}] Docs knowledge complete: ${docsResult.docsProcessed} docs processed`)
         }).catch((err) => {
-          updateJob(jobId, { mem9_status: 'error' })
-          appendLog(jobId, `❌ mem9 failed: ${err}`)
-          logger.warn(`[${jobId}] mem9 failed (non-fatal): ${err}`)
+          updateJob(jobId, { docs_knowledge_status: 'error' })
+          appendLog(jobId, `⚠️ Docs knowledge failed (non-fatal): ${err}`)
+          logger.warn(`[${jobId}] Docs knowledge failed: ${err}`)
         })
-      } catch (err) {
-        logger.warn(`[${jobId}] mem9 auto-trigger failed: ${err}`)
-      }
+      }).catch((err) => {
+        updateJob(jobId, { mem9_status: 'error' })
+        appendLog(jobId, `❌ mem9 failed: ${err}`)
+        logger.warn(`[${jobId}] mem9 failed (non-fatal): ${err}`)
+      })
+    } catch (err) {
+      logger.warn(`[${jobId}] mem9 auto-trigger failed: ${err}`)
     }
 
   } catch (err) {

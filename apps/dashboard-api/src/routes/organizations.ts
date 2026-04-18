@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { db } from '../db/client.js'
 import { randomUUID } from 'crypto'
 import { getMem9 } from './mem9-proxy.js'
-import { handleApiError } from '../utils/error-handler.js'
 
 export const orgsRouter = new Hono()
 
@@ -18,7 +17,7 @@ orgsRouter.get('/', (c) => {
       .all()
     return c.json({ organizations: orgs })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -30,7 +29,7 @@ orgsRouter.get('/:id', (c) => {
     if (!org) return c.json({ error: 'Organization not found' }, 404)
     return c.json(org)
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -56,7 +55,7 @@ orgsRouter.post('/', async (c) => {
     if (String(error).includes('UNIQUE constraint')) {
       return c.json({ error: 'Organization with this name already exists' }, 409)
     }
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -83,7 +82,7 @@ orgsRouter.put('/:id', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -106,7 +105,7 @@ orgsRouter.delete('/:id', (c) => {
     db.prepare('DELETE FROM organizations WHERE id = ?').run(id)
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -119,7 +118,7 @@ orgsRouter.get('/:id/projects', (c) => {
       .all(id)
     return c.json({ projects })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -167,38 +166,12 @@ orgsRouter.post('/:id/projects', async (c) => {
     if (String(error).includes('UNIQUE constraint')) {
       return c.json({ error: 'Project with this name already exists in this organization' }, 409)
     }
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
 // ── Projects Router (flat) ──
 export const projectsRouter = new Hono()
-
-// ── Lookup project by repo URL (MUST be before /:id to avoid route collision) ──
-projectsRouter.get('/lookup', (c) => {
-  const repo = c.req.query('repo')
-  if (!repo) return c.json({ error: 'repo query param required' }, 400)
-
-  try {
-    const normalize = (url: string) => url.replace(/\.git$/, '').replace(/\/+$/, '').toLowerCase()
-    const cleanRepo = normalize(repo)
-
-    const projects = db
-      .prepare('SELECT id, name, slug, git_repo_url, indexed_at, indexed_symbols FROM projects')
-      .all() as Array<Record<string, unknown>>
-
-    const match = projects.find((p) => {
-      const dbRepo = (p.git_repo_url as string ?? '').replace(/\.git$/, '').replace(/\/+$/, '').toLowerCase()
-      const slugPart = cleanRepo.split('/').pop()?.toLowerCase() ?? ''
-      return dbRepo === cleanRepo || (p.slug as string ?? '').toLowerCase() === slugPart
-    })
-
-    if (!match) return c.json({ error: 'Project not found' }, 404)
-    return c.json(match)
-  } catch (error) {
-    return handleApiError(c, error)
-  }
-})
 
 // ── Get Project ──
 projectsRouter.get('/:id', (c) => {
@@ -255,7 +228,7 @@ projectsRouter.get('/:id', (c) => {
 
     return c.json({ ...(project as Record<string, unknown>), stats, activity })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -304,7 +277,7 @@ projectsRouter.put('/:id', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -315,7 +288,7 @@ projectsRouter.delete('/:id', (c) => {
     db.prepare('DELETE FROM projects WHERE id = ?').run(id)
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -332,7 +305,31 @@ projectsRouter.get('/', (c) => {
       .all()
     return c.json({ projects })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// ── Lookup project by repo URL ──
+projectsRouter.get('/lookup', (c) => {
+  const repo = c.req.query('repo')
+  if (!repo) return c.json({ error: 'repo query param required' }, 400)
+
+  try {
+    // Try exact match first, then without .git suffix
+    const cleanRepo = repo.replace(/\.git$/, '')
+    const project = db
+      .prepare(
+        `SELECT id, name, git_repo_url, indexed_at, indexed_symbols
+         FROM projects
+         WHERE git_repo_url = ? OR REPLACE(git_repo_url, '.git', '') = ?
+         LIMIT 1`
+      )
+      .get(repo, cleanRepo) as Record<string, unknown> | undefined
+
+    if (!project) return c.json({ error: 'Project not found' }, 404)
+    return c.json(project)
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -356,7 +353,7 @@ projectsRouter.get('/:id/state', async (c) => {
       tokensUsed: result.tokensUsed || 0,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 

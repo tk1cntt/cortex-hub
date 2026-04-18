@@ -91,38 +91,22 @@ export function registerChangeTools(server: McpServer, env: Env) {
     'Check for recent code changes pushed by other agents/team members. Returns unseen commits and affected files. Call this before starting work on shared branches to avoid conflicts.',
     {
       agentId: z.string().describe('Your agent identifier'),
-      project: z.string().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
-      projectId: z.string().optional().describe('Project ID. Overrides project.'),
+      projectId: z.string().describe('Project ID to check changes for'),
       acknowledge: z
         .boolean()
         .optional()
         .default(true)
         .describe('Mark these changes as seen to avoid repeat noise (default: true)'),
     },
-    async ({ agentId, project, projectId, acknowledge }) => {
+    async ({ agentId, projectId, acknowledge }) => {
       try {
-        // Resolve project name/slug → projectId
-        let resolvedProjectId = projectId
-        if (!resolvedProjectId) {
-          try {
-            const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
-            if (lookupRes.ok) {
-              const data = (await lookupRes.json()) as { id?: string }
-              if (data.id) resolvedProjectId = data.id
-            }
-          } catch { /* best effort */ }
-        }
-        if (!resolvedProjectId) {
-          return { content: [{ type: 'text' as const, text: `Error: Could not resolve project "${project}" to a projectId.` }], isError: true }
-        }
-
-        const { events, count } = await fetchUnseenChanges(env, agentId, resolvedProjectId)
+        const { events, count } = await fetchUnseenChanges(env, agentId, projectId)
 
         // Auto-acknowledge (default: true) to reduce repeat noise
         if (acknowledge !== false && events.length > 0) {
           const latestId = (events as ChangeEvent[])[0]?.id
           if (latestId) {
-            await acknowledgeChanges(env, agentId, resolvedProjectId, latestId)
+            await acknowledgeChanges(env, agentId, projectId, latestId)
           }
         }
 

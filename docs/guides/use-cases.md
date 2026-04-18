@@ -208,13 +208,13 @@ You manage multiple projects (e.g., an e-commerce platform, a game server, an in
 
 ### Without Cortex
 ```
-Agent works on GameServer project:
-  User: "Implement damage formula: base_atk × skill_multiplier × (1 - defense_rate)"
+Agent works on backend project:
+  User: "Implement pricing formula: base_price × discount_rate × (1 - tax_modifier)"
   Agent: Writes from scratch, guesses at patterns, no context from other projects.
   → 2 hours implementing, testing, and refining.
 
-Later: "We need the same pattern for the pricing engine"
-  → Agent starts from zero again in the e-commerce project.
+Later: "We need the same pattern for the billing engine"
+  → Agent starts from zero again in the billing project.
 ```
 
 ### With Cortex
@@ -244,7 +244,7 @@ Agent: cortex_knowledge_store(
 
 ## Cortex Hub vs Standalone Tools
 
-| Aspect | **Standalone Tools** (GitNexus + mem0 local) | **Cortex Hub** |
+| Aspect | **Standalone Tools** (GitNexus + mem9 local) | **Cortex Hub** |
 |--------|----------------------------------------------|----------------|
 | **Setup** | Install each tool separately on each dev machine | One `docker compose up`, all agents connect |
 | **Memory** | Per-machine only, lost when VM resets | Persistent server-side, survives reboots |

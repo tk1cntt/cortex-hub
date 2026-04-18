@@ -12,17 +12,17 @@ import { apiCall } from '../api-call.js'
 export function registerIndexingTools(server: McpServer, env: Env) {
   server.tool(
     'cortex_code_reindex',
-    'Trigger re-indexing of a project after code changes. Looks up the project by name, slug, or repo URL and starts a GitNexus re-index job. Call this after pushing significant code changes to keep code intelligence up-to-date.',
+    'Trigger re-indexing of a project after code changes. Looks up the project by repo URL and starts a GitNexus re-index job. Call this after pushing significant code changes to keep code intelligence up-to-date.',
     {
-      project: z.string().describe('Project name (e.g. "cortex-hub"), slug, or git repository URL.'),
-      branch: z.string().optional().describe('Branch to index (default: auto-detected from git HEAD)'),
+      repo: z.string().describe('Git repository URL (e.g. https://github.com/org/repo)'),
+      branch: z.string().optional().describe('Branch to index (default: main)'),
     },
-    async ({ project, branch }) => {
+    async ({ repo, branch }) => {
       try {
         const apiUrl = env.DASHBOARD_API_URL || 'http://localhost:4000'
 
-        // Step 1: Look up project by name/slug/repo URL
-        const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
+        // Step 1: Look up project by repo URL
+        const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(repo)}`)
 
         let projectId: string | null = null
 
@@ -38,7 +38,7 @@ export function registerIndexingTools(server: McpServer, env: Env) {
             const data = (await projectsRes.json()) as { projects?: Array<{ id: string; git_repo_url?: string }> }
             const normalize = (url: string) => url.replace(/\.git$/, '').replace(/\/+$/, '')
             const match = data.projects?.find(
-              (p) => p.git_repo_url && normalize(p.git_repo_url) === normalize(project)
+              (p) => p.git_repo_url && normalize(p.git_repo_url) === normalize(repo)
             )
             projectId = match?.id ?? null
           }
@@ -51,8 +51,8 @@ export function registerIndexingTools(server: McpServer, env: Env) {
                 type: 'text' as const,
                 text: JSON.stringify({
                   status: 'error',
-                  message: `No project found for: ${project}. Register the project in the Cortex Hub dashboard first.`,
-                  suggestion: `Go to ${env.DASHBOARD_API_URL || 'your-dashboard'}/projects to add the project.`,
+                  message: `No project found for repo: ${repo}. Register the project in the Cortex Hub dashboard first.`,
+                  suggestion: 'Go to hub.jackle.dev/projects to add the project.',
                 }, null, 2),
               },
             ],
@@ -60,14 +60,11 @@ export function registerIndexingTools(server: McpServer, env: Env) {
           }
         }
 
-        // Step 2: Trigger re-index (API auto-detects branch if not specified)
-        const indexBody: Record<string, unknown> = { triggeredBy: 'reindex' }
-        if (branch) indexBody.branch = branch
-
+        // Step 2: Trigger re-index
         const indexRes = await apiCall(env, `/api/projects/${projectId}/index`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(indexBody),
+          body: JSON.stringify({ branch: branch ?? 'main', triggeredBy: 'reindex' }),
         })
 
         const indexData = (await indexRes.json()) as Record<string, unknown>

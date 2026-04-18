@@ -2,7 +2,6 @@ import { z } from 'zod'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Env } from '../types.js'
-import { apiCall } from '../api-call.js'
 
 /**
  * Register analytics tools.
@@ -19,26 +18,14 @@ export function registerAnalyticsTools(server: McpServer, env: Env) {
     {
       days: z.number().optional().describe('Time window in days (default: 7)'),
       agentId: z.string().optional().describe('Filter by agent ID'),
-      project: z.string().optional().describe('Project name (e.g. "cortex-hub"), slug, or git URL.'),
-      projectId: z.string().optional().describe('Project ID. Overrides project.'),
+      projectId: z.string().optional().describe('Filter by project ID'),
     },
-    async ({ days, agentId, project, projectId }) => {
+    async ({ days, agentId, projectId }) => {
       try {
-        // Resolve project name/slug → projectId
-        let resolvedProjectId = projectId
-        if (!resolvedProjectId && project) {
-          try {
-            const lookupRes = await apiCall(env, `/api/projects/lookup?repo=${encodeURIComponent(project)}`)
-            if (lookupRes.ok) {
-              const data = (await lookupRes.json()) as { id?: string }
-              if (data.id) resolvedProjectId = data.id
-            }
-          } catch { /* best effort */ }
-        }
         const params = new URLSearchParams()
         if (days) params.set('days', String(days))
         if (agentId) params.set('agentId', agentId)
-        if (resolvedProjectId) params.set('projectId', resolvedProjectId)
+        if (projectId) params.set('projectId', projectId)
 
         const response = await fetch(
           `${apiUrl()}/api/metrics/tool-analytics?${params.toString()}`,

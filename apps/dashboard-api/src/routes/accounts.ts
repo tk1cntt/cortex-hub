@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'crypto'
 import { db } from '../db/client.js'
-import { handleApiError } from '../utils/error-handler.js'
 
 export const accountsRouter = new Hono()
 
@@ -29,7 +28,7 @@ interface RoutingRow {
 const CLIPROXY_URL = () =>
   process.env.LLM_PROXY_URL || process.env.CLIPROXY_URL || 'http://localhost:8317'
 const MANAGEMENT_KEY = () =>
-  process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || 'cortex2026'
+  process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || ''
 
 // ── Auto-seed existing providers on first load ──
 let seeded = false
@@ -139,7 +138,7 @@ accountsRouter.get('/', (c) => {
       },
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -175,7 +174,7 @@ accountsRouter.post('/', async (c) => {
 
     return c.json({ success: true, id }, 201)
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -212,7 +211,7 @@ accountsRouter.put('/:id', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -224,7 +223,7 @@ accountsRouter.delete('/:id', (c) => {
     if (result.changes === 0) return c.json({ error: 'Account not found' }, 404)
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -244,7 +243,7 @@ accountsRouter.post('/:id/test', async (c) => {
     }
   } catch (error) {
     db.prepare("UPDATE provider_accounts SET status = 'error', updated_at = datetime('now') WHERE id = ?").run(id)
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error) }, 500)
   }
 })
 
@@ -322,7 +321,7 @@ accountsRouter.post('/test-key', async (c) => {
       })
     }
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error) }, 500)
   }
 })
 
@@ -355,7 +354,7 @@ accountsRouter.post('/oauth/start', async (c) => {
     const data = (await res.json()) as { url?: string; status?: string }
     return c.json({ success: true, authUrl: data.url, status: data.status })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -383,8 +382,8 @@ accountsRouter.get('/oauth/status/:provider', async (c) => {
     if (!res.ok) return c.json({ connected: false })
     const data = (await res.json()) as { status?: string }
     return c.json({ connected: data.status === 'ok' })
-  } catch (error) {
-    return handleApiError(c, error)
+  } catch {
+    return c.json({ connected: false })
   }
 })
 
@@ -403,7 +402,7 @@ accountsRouter.get('/routing/chains', (c) => {
 
     return c.json({ routing })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -425,7 +424,7 @@ accountsRouter.put('/routing/chains', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -444,14 +443,14 @@ accountsRouter.get('/routing/active', (c) => {
         purpose: r.purpose,
         chain: chain.map((slot) => ({
           ...slot,
-          accountName: accountMap.get(slot.accountId)?.name ?? 'Unknown',
+          accountName: slot.accountId === 'local' ? 'Local Embedder' : (accountMap.get(slot.accountId)?.name ?? 'Unknown'),
         })),
       }
     })
 
     return c.json({ config, totalAccounts: accounts.length })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 

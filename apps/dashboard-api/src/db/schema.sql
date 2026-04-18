@@ -1,23 +1,3 @@
--- Cortex Hub v1 — SQLite WAL mode
--- Active schema — all tables used by dashboard-api
-
--- ============================================================
--- Admin Users (GitHub OAuth)
--- ============================================================
-CREATE TABLE IF NOT EXISTS admin_user (
-    id           TEXT PRIMARY KEY,
-    github_id    TEXT UNIQUE NOT NULL,
-    username     TEXT NOT NULL,
-    display_name TEXT,
-    avatar_url   TEXT,
-    email        TEXT,
-    created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
--- ============================================================
--- Setup Status
--- ============================================================
 CREATE TABLE IF NOT EXISTS setup_status (
     id INTEGER PRIMARY KEY DEFAULT 1,
     completed BOOLEAN DEFAULT 0,
@@ -102,15 +82,6 @@ CREATE TABLE IF NOT EXISTS index_jobs (
     symbols_found INTEGER DEFAULT 0,
     log TEXT,                             -- stdout/stderr from gitnexus
     error TEXT,
-    commit_hash TEXT,                     -- short git commit hash
-    commit_message TEXT,                  -- commit message (first 200 chars)
-    triggered_by TEXT,                    -- 'manual', 'webhook', 'setup'
-    mem9_status TEXT,                     -- pending | embedding | done | error
-    mem9_chunks INTEGER DEFAULT 0,        -- number of chunks embedded
-    mem9_progress INTEGER DEFAULT 0,      -- 0-100 for embedding progress
-    mem9_total_chunks INTEGER DEFAULT 0,  -- total chunks to embed
-    docs_knowledge_status TEXT,           -- pending | building | done | error
-    docs_knowledge_count INTEGER DEFAULT 0, -- number of docs knowledge entries
     started_at TEXT,
     completed_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
@@ -207,49 +178,6 @@ INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('quality_g
 INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('task_assignment', 1);
 INSERT OR IGNORE INTO notification_preferences (key, enabled) VALUES ('session_handoff', 1);
 
--- ── Knowledge Documents (Vector-searchable knowledge base) ──
-CREATE TABLE IF NOT EXISTS knowledge_documents (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    source TEXT NOT NULL DEFAULT 'manual',
-    source_agent_id TEXT,
-    project_id TEXT,
-    tags TEXT DEFAULT '[]',
-    content_preview TEXT,
-    chunk_count INTEGER DEFAULT 0,
-    status TEXT DEFAULT 'active'
-        CHECK(status IN ('active', 'archived', 'deprecated')),
-    hit_count INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    selection_count INTEGER DEFAULT 0,
-    applied_count INTEGER DEFAULT 0,
-    completion_count INTEGER DEFAULT 0,
-    fallback_count INTEGER DEFAULT 0,
-    origin TEXT DEFAULT 'manual',
-    generation INTEGER DEFAULT 0,
-    source_task_id TEXT,
-    created_by_agent TEXT,
-    category TEXT DEFAULT 'general'
-);
-
-CREATE INDEX IF NOT EXISTS idx_knowledge_documents_status ON knowledge_documents(status);
-CREATE INDEX IF NOT EXISTS idx_knowledge_documents_project ON knowledge_documents(project_id);
-CREATE INDEX IF NOT EXISTS idx_knowledge_documents_updated ON knowledge_documents(updated_at DESC);
-
--- ── Knowledge Chunks (Individual embeddable text segments) ──
-CREATE TABLE IF NOT EXISTS knowledge_chunks (
-    id TEXT PRIMARY KEY,
-    document_id TEXT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
-    chunk_index INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    char_count INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    UNIQUE(document_id, chunk_index)
-);
-
-CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document ON knowledge_chunks(document_id);
-
 -- ── Knowledge Lineage (Version DAG — inspired by OpenSpace) ──
 CREATE TABLE IF NOT EXISTS knowledge_lineage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,70 +209,20 @@ CREATE TABLE IF NOT EXISTS knowledge_usage_log (
 CREATE INDEX IF NOT EXISTS idx_knowledge_usage_doc ON knowledge_usage_log(document_id);
 CREATE INDEX IF NOT EXISTS idx_knowledge_usage_task ON knowledge_usage_log(task_id);
 
--- ── Quality Reports (Quality gate results) ──
-CREATE TABLE IF NOT EXISTS quality_reports (
-    id TEXT PRIMARY KEY,
+-- ── Recipe Capture Log (diagnostics — track attempts and failures) ──
+CREATE TABLE IF NOT EXISTS recipe_capture_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL CHECK(source IN ('task', 'session')),
+    source_id TEXT,
+    agent_id TEXT,
     project_id TEXT,
-    agent_id TEXT NOT NULL,
-    session_id TEXT,
-    gate_name TEXT NOT NULL,              -- 'pre_commit', 'full', 'plan_quality'
-    score_build INTEGER DEFAULT 0,        -- 0-25
-    score_regression INTEGER DEFAULT 0,   -- 0-25
-    score_standards INTEGER DEFAULT 0,    -- 0-25
-    score_traceability INTEGER DEFAULT 0, -- 0-25
-    score_total INTEGER DEFAULT 0,        -- 0-100
-    grade TEXT CHECK(grade IN ('A','B','C','D','F')),
-    passed INTEGER DEFAULT 0,
-    details TEXT,                         -- JSON
-    api_key_name TEXT,
+    status TEXT NOT NULL CHECK(status IN ('attempt', 'captured', 'derived', 'skipped', 'error')),
+    title TEXT,
+    doc_id TEXT,
+    error_message TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
-
-CREATE INDEX IF NOT EXISTS idx_quality_reports_agent ON quality_reports(agent_id);
-CREATE INDEX IF NOT EXISTS idx_quality_reports_project ON quality_reports(project_id);
-CREATE INDEX IF NOT EXISTS idx_quality_reports_created ON quality_reports(created_at DESC);
-
--- ── Budget Settings (Token usage limits) ──
-CREATE TABLE IF NOT EXISTS budget_settings (
-    id INTEGER PRIMARY KEY DEFAULT 1,
-    daily_limit INTEGER DEFAULT 0,
-    monthly_limit INTEGER DEFAULT 0,
-    alert_threshold REAL DEFAULT 0.8,
-    updated_at TEXT DEFAULT (datetime('now'))
-);
-
-INSERT OR IGNORE INTO budget_settings (id) VALUES (1);
-
--- ── Provider Accounts (LLM providers: OAuth/API keys) ──
-CREATE TABLE IF NOT EXISTS provider_accounts (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL,                -- 'openai_compat', 'gemini', 'anthropic', etc.
-    auth_type TEXT DEFAULT 'api_key'
-        CHECK(auth_type IN ('api_key', 'oauth')),
-    api_base TEXT NOT NULL,
-    api_key TEXT,
-    status TEXT DEFAULT 'enabled'
-        CHECK(status IN ('enabled', 'disabled', 'error')),
-    capabilities TEXT DEFAULT '["chat"]',  -- JSON array: ["chat","embedding","code"]
-    models TEXT DEFAULT '[]',              -- JSON array of model IDs
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_provider_accounts_status ON provider_accounts(status);
-CREATE INDEX IF NOT EXISTS idx_provider_accounts_type ON provider_accounts(type);
-
--- ── Model Routing (Fallback chains per purpose) ──
-CREATE TABLE IF NOT EXISTS model_routing (
-    purpose TEXT PRIMARY KEY,          -- 'embedding', 'chat', 'code'
-    chain TEXT NOT NULL,               -- JSON array of {accountId, model}
-    updated_at TEXT DEFAULT (datetime('now'))
-);
-
--- Insert default model routing (empty — configured via setup wizard)
-INSERT OR IGNORE INTO model_routing (purpose, chain) VALUES ('embedding', '[]');
-INSERT OR IGNORE INTO model_routing (purpose, chain) VALUES ('chat', '[]');
+CREATE INDEX IF NOT EXISTS idx_recipe_capture_log_status ON recipe_capture_log(status);
 
 -- Insert default uncompleted setup status
 INSERT OR IGNORE INTO setup_status (id, completed) VALUES (1, 0);

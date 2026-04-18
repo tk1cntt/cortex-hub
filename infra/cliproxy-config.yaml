@@ -12,7 +12,7 @@ debug: false
 # Remote management (for onboarding via web)
 remote-management:
   allow-remote: true
-  secret-key: $2a$10$VEcq/ehUemHmQHsJn.Jec.dO3iraXhQ/RrQ8gVKwpfYDQs6KNZKIq
+  secret-key: "${MANAGEMENT_PASSWORD}"
 # OpenAI-compatible endpoints
 # API key is synced from Codex OAuth by dashboard-api startup
 openai-compatibility:

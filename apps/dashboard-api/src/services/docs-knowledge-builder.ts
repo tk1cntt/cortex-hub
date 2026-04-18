@@ -200,13 +200,9 @@ export async function buildKnowledgeFromDocs(
     }
   }
 
-  // 4. Setup embedder
-  const embedConfig: EmbedderConfig = {
-    provider: 'gemini' as const,
-    apiKey: resolveGeminiApiKey(),
-    model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-2-preview',
-  }
-  const embedder = new Embedder(embedConfig)
+  // 4. Setup embedder (respects EMBEDDING_PROVIDER env var)
+  const { createEmbedder } = await import('../lib/embedder-factory.js')
+  const embedder = createEmbedder()
 
   const vectorStoreConfig: VectorStoreConfig = {
     url: QDRANT_URL,

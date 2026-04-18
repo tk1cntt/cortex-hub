@@ -270,7 +270,7 @@ POST https://cortex-api.jackle.dev/api/llm/v1/chat/completions
 |----------|---------|-------------|
 | `LLM_GATEWAY_URL` | `http://localhost:4000/api/llm` | Gateway URL for internal consumers |
 | `LLM_PROXY_URL` | `http://localhost:8317` | Legacy CLIProxy URL |
-| `CLIPROXY_MANAGEMENT_KEY` | `cortex2026` | CLIProxy management auth |
+| `CLIPROXY_MANAGEMENT_KEY` | *(required, no default)* | CLIProxy management auth |
 
 ---
 

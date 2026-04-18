@@ -35,31 +35,20 @@ import { settingsRouter } from './routes/settings.js'
 const app = new Hono()
 const logger = createLogger('dashboard-api')
 
-app.use('*', cors())
+app.use('*', cors({
+  origin: (origin) => {
+    // Allow same-origin, localhost dev, and configured dashboard URL
+    const allowed = [
+      /^https?:\/\/localhost(:\d+)?$/,
+      /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+    ]
+    const dashboardUrl = process.env['DASHBOARD_URL']
+    if (dashboardUrl) allowed.push(new RegExp(`^${dashboardUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+    if (!origin || allowed.some(re => re.test(origin))) return origin
+    return null  // block unknown origins
+  },
+}))
 app.use('*', honoLogger())
-
-// Global error handler — logs full error details before responding
-app.onError((error, c) => {
-  // Log full error details for debugging
-  logger.error(`Error: ${error.message || 'Unknown error'}`, {
-    stack: error.stack,
-    name: error.name,
-    cause: error.cause,
-    path: c.req.path,
-    method: c.req.method,
-    query: c.req.query(),
-  })
-
-  // Return detailed error in development, sanitized in production
-  const isDev = process.env.NODE_ENV !== 'production'
-  return c.json({
-    error: error.message || 'Internal Server Error',
-    ...(isDev && {
-      stack: error.stack,
-      name: error.name,
-    }),
-  }, error instanceof Error && 'status' in error ? (error as any).status : 500)
-})
 
 app.get('/health', async (c) => {
   const startTime = Date.now()
@@ -78,7 +67,7 @@ app.get('/health', async (c) => {
     checkService('cliproxy', `${process.env['LLM_PROXY_URL'] || 'http://llm-proxy:8317'}/v1/models`),
     checkService('gitnexus', `${process.env['GITNEXUS_URL'] || 'http://gitnexus:4848'}/health`),
     checkService('mem9', `http://localhost:${process.env.PORT || 4000}/api/mem9/health`),
-    checkService('mcp', `${process.env['MCP_HEALTH_URL'] || 'http://cortex-mcp:8317/health'}`),
+    checkService('mcp', `${process.env['MCP_HEALTH_URL'] || 'https://cortex-mcp.jackle.dev/health'}`),
   ])
 
   const services = { qdrant, cliproxy, gitnexus, mem9, mcp }
@@ -119,18 +108,6 @@ app.route('/api/tasks', tasksRouter)
 app.route('/api/conductor', conductorRouter)
 app.route('/api/settings', settingsRouter)
 
-// -- MCP Health Proxy (for dashboard web same-origin access) --
-app.get('/mcp/health', async (c) => {
-  const mcpUrl = process.env['MCP_HEALTH_URL'] || 'http://cortex-mcp:8317/health'
-  try {
-    const res = await fetch(mcpUrl, { signal: AbortSignal.timeout(5000) })
-    const data = await res.json()
-    return c.json(data, res.status as 200)
-  } catch (err) {
-    return c.json({ status: 'error', service: 'hub-mcp', error: String(err) }, 503 as 503)
-  }
-})
-
 // Serve Dashboard Web static files (Next.js static export)
 // Clean URLs: /keys → /keys.html, / → /index.html
 app.use('/*', serveStatic({ 
@@ -166,4 +143,27 @@ try {
   setupConductorWebSocket(server as any)
 } catch (e) {
   console.warn('[ws] Conductor WebSocket not available:', (e as Error).message)
+}
+
+// Pre-warm local embedding model if EMBEDDING_PROVIDER=local.
+// The first cold-load downloads ~25MB and can take 5-10s. Doing it at
+// startup avoids the first API request hanging or timing out.
+if (process.env['EMBEDDING_PROVIDER'] === 'local') {
+  // Defer to next tick so it doesn't block startup logs
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const t0 = Date.now()
+        logger.info('[embed] Importing @cortex/shared-mem9...')
+        const { embedLocal } = await import('@cortex/shared-mem9')
+        const model = process.env['LOCAL_EMBEDDING_MODEL'] || 'Xenova/all-MiniLM-L6-v2'
+        logger.info(`[embed] Pre-warming local model: ${model}`)
+        const v = await embedLocal('warmup', model)
+        logger.info(`[embed] Local model ready in ${Date.now() - t0}ms (dim=${v.length})`)
+      } catch (e) {
+        const err = e as Error
+        logger.error(`[embed] Local pre-warm FAILED: ${err.message}\n${err.stack?.slice(0, 2000)}`)
+      }
+    })()
+  }, 500)
 }

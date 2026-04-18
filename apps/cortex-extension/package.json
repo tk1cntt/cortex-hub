@@ -1,8 +1,8 @@
 {
   "name": "cortex-agent",
   "displayName": "Cortex Agent",
-  "description": "VS Code extension for Cortex Hub \u2014 real-time agent orchestration via WebSocket conductor",
-  "version": "0.5.0",
+  "description": "VS Code extension for Cortex Hub — real-time agent orchestration via WebSocket conductor",
+  "version": "0.7.0",
   "publisher": "cortex-hub",
   "license": "MIT",
   "engines": {
@@ -58,7 +58,7 @@
         },
         "cortexHub.hubUrl": {
           "type": "string",
-          "default": "",
+          "default": "wss://cortex-mcp.jackle.dev",
           "markdownDescription": "Cortex Hub WebSocket URL. Falls back to `CORTEX_HUB_WS_URL` env var, then `~/.claude.json` MCP config."
         },
         "cortexHub.agentId": {

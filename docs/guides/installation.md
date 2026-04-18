@@ -1,209 +1,232 @@
-# Installation Guide
+# All-in-One Installation Guide
 
-> Install Cortex Hub on any server. Two options: quick deploy or full setup.
+> Install Cortex Hub on any server with a single command. Designed for quick deployment and future distribution as a packaged release.
 
 ---
 
-## Option 1: Quick Deploy (Docker only)
-
-If you have Docker installed and just want to get running:
+## Quick Start (All-in-One)
 
 ```bash
-git clone https://github.com/lktiep/cortex-hub.git
+curl -fsSL https://raw.githubusercontent.com/<org>/cortex-hub/main/install.sh | bash
+```
+
+Or manually:
+
+```bash
+git clone https://github.com/<org>/cortex-hub.git
 cd cortex-hub
-cp .env.example .env
-# Edit .env with your domain and API keys
-docker compose -f infra/docker-compose.yml up -d
-```
-
-Services will start on these ports:
-- **Dashboard API**: `http://localhost:4000`
-- **Hub MCP**: `http://localhost:8317` (Streamable HTTP)
-- **Qdrant**: `http://localhost:6333`
-- **GitNexus**: `http://localhost:4848`
-- **CLIProxy (LLM)**: `http://localhost:8317` (internal)
-
----
-
-## Option 2: Full Setup (from source)
-
-### Prerequisites
-
-| Requirement | Minimum | Check |
-|---|---|---|
-| **OS** | Linux (Ubuntu 22+) | `uname -a` |
-| **RAM** | 4 GB | `free -m` |
-| **Disk** | 15 GB | `df -h /` |
-| **Docker** | 20+ | `docker --version` |
-| **Node.js** | 22 LTS | `node -v` |
-| **pnpm** | 10+ | `pnpm -v` |
-
-### Step 1: Clone and Install
-
-```bash
-git clone https://github.com/lktiep/cortex-hub.git
-cd cortex-hub
-```
-
-If you need to install dependencies:
-
-```bash
-# Docker
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-
-# Node.js 22 LTS
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# pnpm
-corepack enable
-corepack prepare pnpm@latest --activate
-```
-
-### Step 2: Configure
-
-```bash
-cp .env.example .env
-# Edit .env with your settings:
-# - CORTEX_BASE_DOMAIN=your-domain.com
-# - GEMINI_API_KEY=your-key
-# - MCP_API_KEYS=generate-with-openssl-rand-hex-32
-```
-
-### Step 3: Build and Deploy
-
-```bash
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Start services
-docker compose -f infra/docker-compose.yml up -d
-```
-
-Or use the deploy script:
-
-```bash
-bash scripts/deploy.sh              # All services
-bash scripts/deploy.sh cortex-api   # Single service
+./infra/scripts/install.sh
 ```
 
 ---
 
-## What Gets Deployed
+## What the Installer Does
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  Cortex Hub — Docker Compose Stack              │
+│  Cortex Hub — All-in-One Installer              │
 │                                                 │
-│  Service         Port   Description             │
-│  ─────────────────────────────────────────────  │
-│  dashboard-api   4000   Hono REST API + mem9    │
-│  hub-mcp         8317   MCP Streamable HTTP     │
-│  qdrant          6333   Vector database         │
-│  gitnexus        4848   Code intelligence       │
-│  llm-proxy       8317   OAuth LLM gateway       │
-│  watchtower      —      Auto-update containers  │
+│  1. ✅ Check system requirements                │
+│  2. ✅ Install Docker (if missing)              │
+│  3. ✅ Install Node.js 22 LTS (if missing)     │
+│  4. ✅ Install pnpm (if missing)               │
+│  5. ✅ Generate .env from prompts               │
+│  6. ✅ Build all packages                       │
+│  7. ✅ Pull and start Docker containers         │
+│  8. ✅ Deploy Hub MCP as Docker service              │
+│  9. ✅ Run health checks                        │
+│  10. ✅ Print connection details                │
 │                                                 │
-│  Volumes: qdrant-data, api-data,                │
-│           gitnexus-data, cliproxy-auth          │
+│  Total time: ~5 minutes                         │
 └─────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Verification
+## Install Script Reference
+
+### `install.sh`
 
 ```bash
-# Check all services are healthy
-docker compose -f infra/docker-compose.yml ps
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Test API health
-curl http://localhost:4000/health
+CORTEX_VERSION="${CORTEX_VERSION:-latest}"
+CORTEX_DIR="${CORTEX_DIR:-/opt/cortex-hub}"
+DATA_DIR="${DATA_DIR:-/opt/cortex-hub/infra/data}"
 
-# Test MCP health
-curl http://localhost:8317/health
+# ─── Colors ────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; NC='\033[0m'
 
-# Test Qdrant
-curl http://localhost:6333/healthz
-```
+log()  { echo -e "${BLUE}[cortex]${NC} $*"; }
+ok()   { echo -e "${GREEN}  ✓${NC} $*"; }
+warn() { echo -e "${YELLOW}  ⚠${NC} $*"; }
+fail() { echo -e "${RED}  ✗${NC} $*"; exit 1; }
 
-Expected response from `/health`:
-```json
-{
-  "status": "ok",
-  "service": "dashboard-api",
-  "services": {
-    "qdrant": "ok",
-    "cliproxy": "ok",
-    "gitnexus": "ok",
-    "mem9": "ok",
-    "mcp": "ok"
-  }
+# ─── System Check ──────────────────────────────
+check_requirements() {
+  log "Checking system requirements..."
+
+  [[ $(uname) == "Linux" ]] || fail "Linux required (got $(uname))"
+  
+  local mem_mb=$(free -m | awk '/^Mem:/{print $2}')
+  [[ $mem_mb -ge 3500 ]] || fail "Minimum 4GB RAM required (got ${mem_mb}MB)"
+  ok "RAM: ${mem_mb}MB"
+
+  local disk_gb=$(df -BG / | awk 'NR==2{print $4}' | tr -d 'G')
+  [[ $disk_gb -ge 15 ]] || fail "Minimum 15GB disk required (got ${disk_gb}GB)"
+  ok "Disk: ${disk_gb}GB available"
 }
+
+# ─── Docker ────────────────────────────────────
+install_docker() {
+  if command -v docker &>/dev/null; then
+    ok "Docker $(docker --version | awk '{print $3}')"
+    return
+  fi
+  log "Installing Docker..."
+  curl -fsSL https://get.docker.com | sh
+  sudo usermod -aG docker "$USER"
+  ok "Docker installed"
+}
+
+# ─── Node.js ───────────────────────────────────
+install_node() {
+  if command -v node &>/dev/null && [[ $(node -v | cut -d. -f1 | tr -d v) -ge 22 ]]; then
+    ok "Node.js $(node -v)"
+    return
+  fi
+  log "Installing Node.js 22 LTS..."
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+  ok "Node.js $(node -v)"
+}
+
+# ─── pnpm ──────────────────────────────────────
+install_pnpm() {
+  if command -v pnpm &>/dev/null; then
+    ok "pnpm $(pnpm -v)"
+    return
+  fi
+  log "Installing pnpm..."
+  corepack enable
+  corepack prepare pnpm@latest --activate
+  ok "pnpm installed"
+}
+
+# ─── Build ─────────────────────────────────────
+build_project() {
+  log "Installing dependencies..."
+  cd "$CORTEX_DIR"
+  pnpm install --frozen-lockfile
+  ok "Dependencies installed"
+
+  log "Building packages..."
+  pnpm -r build
+  ok "All packages built"
+}
+
+# ─── Docker Stack ──────────────────────────────
+start_services() {
+  log "Starting Docker services..."
+  cd "$CORTEX_DIR/infra"
+  docker compose up -d
+  ok "Services started"
+
+  log "Waiting for health checks..."
+  sleep 10
+
+  local services=("localhost:6333/healthz" "localhost:4848/health" "localhost:4000/health")
+  for url in "${services[@]}"; do
+    if curl -sf "http://$url" &>/dev/null; then
+      ok "$url"
+    else
+      warn "$url — not ready yet (may need more time)"
+    fi
+  done
+}
+
+# ─── Main ──────────────────────────────────────
+main() {
+  echo ""
+  echo "  ┌──────────────────────────────────┐"
+  echo "  │  🧠 Cortex Hub Installer         │"
+  echo "  │     v${CORTEX_VERSION}            │"
+  echo "  └──────────────────────────────────┘"
+  echo ""
+
+  check_requirements
+  install_docker
+  install_node
+  install_pnpm
+  build_project
+  start_services
+
+  echo ""
+  log "Installation complete! 🎉"
+  echo ""
+  echo "  Dashboard:    http://localhost:3000"
+  echo "  API:          http://localhost:4000"
+  echo "  GitNexus:     http://localhost:4848"
+  echo "  Qdrant:       http://localhost:6333"
+  echo ""
+  echo "  Next steps:"
+  echo "    1. Configure .env with your API keys"
+  echo "    2. Setup Cloudflare Tunnel (see docs/guides/implementation.md)"
+  echo "    3. Deploy Hub MCP (Docker container)"
+  echo ""
+}
+
+main "$@"
 ```
-
----
-
-## Production Deploy (with Cloudflare Tunnel)
-
-For public access, set up Cloudflare Tunnel:
-
-1. Point subdomains to your server:
-   - `hub.your-domain.com` → Dashboard
-   - `cortex-api.your-domain.com` → API
-   - `cortex-mcp.your-domain.com` → MCP
-
-2. Configure `.env`:
-   ```
-   CORTEX_BASE_DOMAIN=your-domain.com
-   CORTEX_MCP_URL=https://cortex-mcp.your-domain.com
-   CORTEX_API_URL=https://cortex-api.your-domain.com
-   CORTEX_DASHBOARD_URL=https://hub.your-domain.com
-   ```
-
-3. Deploy:
-   ```bash
-   bash scripts/deploy.sh
-   ```
 
 ---
 
 ## Uninstall
 
 ```bash
-cd cortex-hub
-docker compose -f infra/docker-compose.yml down -v   # Stop + remove volumes
-cd ..
-rm -rf cortex-hub   # Remove project files
+cd /opt/cortex-hub/infra
+docker compose down -v       # Stop and remove containers + volumes
+cd /
+rm -rf /opt/cortex-hub       # Remove project files
 ```
 
 ---
 
-## Updating
+## Portable Release (Future)
 
-```bash
-cd cortex-hub
-git pull
-bash scripts/deploy.sh   # Rebuild + restart all services
+Cortex Hub is designed for future packaging as a single distributable archive:
+
+```
+cortex-hub-v1.0.0-linux-amd64.tar.gz
+├── install.sh               # All-in-one installer
+├── docker-compose.yml       # Pre-configured stack
+├── .env.example             # Template configuration
+├── apps/                    # Pre-built applications
+│   ├── hub-mcp/             # Built Worker bundle
+│   ├── dashboard-api/       # Built API server
+│   └── dashboard-web/       # Built static frontend
+└── docs/                    # Offline documentation
 ```
 
-Or for a single service:
+### Distribution Channels
+
+| Channel | Format | Use Case |
+|---|---|---|
+| **GitHub Releases** | `.tar.gz` | Direct download |
+| **Docker Hub** | `cortexhub/cortex:latest` | Container-native deployment |
+| **npm** | `npx cortex-hub@latest init` | Node.js ecosystem |
+| **Homebrew** | `brew install cortex-hub` | macOS development |
+
+### Docker-Only Deployment (Planned)
+
 ```bash
-bash scripts/deploy.sh cortex-api
+# Single command — no Node.js required
+docker run -d \
+  --name cortex \
+  -p 3000:3000 -p 4000:4000 \
+  -v cortex-data:/data \
+  -e OPENAI_API_KEY=sk-... \
+  cortexhub/cortex:latest
 ```
-
----
-
-## Troubleshooting
-
-| Issue | Solution |
-|---|---|
-| Container won't start | Check logs: `docker logs cortex-api` |
-| Port conflict | Change port in `docker-compose.yml` |
-| Out of disk | `docker system prune -af` |
-| Stuck indexing job | Kill via API: update `index_jobs` status to `error` |
-| MCP tools not working | Check `docker logs cortex-mcp` for auth errors |

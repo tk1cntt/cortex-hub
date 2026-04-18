@@ -230,15 +230,41 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
   const handleChange = async (purpose: string, accountId: string, model: string) => {
     setSaving(purpose)
     try {
-      await fetch(`${config.api.base}/api/accounts/routing/chains`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          purpose,
-          chain: [{ accountId, model }],
-        }),
-        signal: AbortSignal.timeout(5000),
-      })
+      // Special handling: switching embedding to/from local provider
+      if (purpose === 'embedding' && accountId === 'local') {
+        await fetch(`${config.api.base}/api/settings/embedding-provider`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: 'local', model }),
+          signal: AbortSignal.timeout(5000),
+        })
+        // Also update routing table so dropdown stays in sync after SWR refetch
+        await fetch(`${config.api.base}/api/accounts/routing/chains`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ purpose, chain: [{ accountId: 'local', model }] }),
+          signal: AbortSignal.timeout(5000),
+        }).catch(() => { /* non-critical */ })
+      } else {
+        // Cloud provider — ensure embedding provider is set back to gemini/openai
+        if (purpose === 'embedding') {
+          await fetch(`${config.api.base}/api/settings/embedding-provider`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: 'gemini' }),
+            signal: AbortSignal.timeout(5000),
+          }).catch(() => { /* non-critical */ })
+        }
+        await fetch(`${config.api.base}/api/accounts/routing/chains`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            purpose,
+            chain: [{ accountId, model }],
+          }),
+          signal: AbortSignal.timeout(5000),
+        })
+      }
       mutateRouting()
     } catch { /* ignore */ }
     setSaving(null)
@@ -275,6 +301,16 @@ function ActiveConfigPanel({ accounts }: { accounts: ProviderAccount[] }) {
               }}
             >
               <option value="">— Select model —</option>
+              {key === 'embedding' && (
+                <>
+                  <option value="local|Xenova/all-MiniLM-L6-v2">
+                    Local (in-process) &rarr; all-MiniLM-L6-v2 (384d, free, ~1ms)
+                  </option>
+                  <option value="local|Xenova/bge-small-en-v1.5">
+                    Local (in-process) &rarr; bge-small-en-v1.5 (384d, free, ~1ms)
+                  </option>
+                </>
+              )}
               {enabledAccounts.map((acc) => {
                 const models: string[] = Array.isArray(acc.models) ? acc.models : []
                 const relevantModels = key === 'embedding'

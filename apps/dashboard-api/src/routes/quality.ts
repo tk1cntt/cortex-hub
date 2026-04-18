@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
-import { handleApiError } from '../utils/error-handler.js'
+import { getMem9 } from './mem9-proxy.js'
 import {
   calculateFromVerificationResults,
   scoreToGrade,
@@ -146,7 +146,7 @@ qualityRouter.post('/report', async (c) => {
       },
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -189,7 +189,7 @@ qualityRouter.get('/reports', (c) => {
       totalPages: Math.ceil(total / limit),
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -210,7 +210,7 @@ qualityRouter.get('/reports/latest', (c) => {
     ).get()
     return c.json({ report: report || null })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -246,7 +246,7 @@ qualityRouter.get('/trends', (c) => {
     const trends = db.prepare(sql).all(...params)
     return c.json({ trends, days })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -277,7 +277,7 @@ qualityRouter.get('/summary', (c) => {
 
     return c.json({ summary, latest })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -291,7 +291,7 @@ qualityRouter.post('/plan-quality', async (c) => {
     const result = assessPlanQuality(body)
     return c.json({ result })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -313,7 +313,7 @@ qualityRouter.get('/logs', (c) => {
       totalPages: Math.ceil(total / limit),
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -323,10 +323,12 @@ export const sessionsRouter = new Hono()
 sessionsRouter.post('/start', async (c) => {
   try {
     const body = await c.req.json()
-    const { repo, mode, agentId: bodyAgentId, hostname, os, ide, branch, capabilities, role } = body
+    // Accept both 'repo' (new) and 'project' (legacy) field names
+    const { repo: bodyRepo, project: bodyProject, mode, agentId: bodyAgentId, hostname, os, ide, branch, capabilities, role } = body as Record<string, unknown>
+    const repo = (bodyRepo ?? bodyProject) as string | undefined
 
     // Identity resolution: keep self-reported agentId, API key name tracked separately
-    const agentId = bodyAgentId
+    const agentId = bodyAgentId as string | undefined
     const apiKeyName = c.req.header('X-API-Key-Owner') || null
 
     // Safe migration: add api_key_name column if not exists
@@ -339,21 +341,36 @@ sessionsRouter.post('/start', async (c) => {
     }
 
     const normalizedRepo = repo
-      ? repo.replace(/\.git$/, '').replace(/\/$/, '')
+      ? (repo as string).replace(/\.git$/, '').replace(/\/$/, '')
       : 'unknown'
+
+    // Extract repo name from URL for fuzzy matching: https://github.com/org/name → name
+    const repoName = normalizedRepo !== 'unknown'
+      ? normalizedRepo.split('/').pop() ?? normalizedRepo
+      : null
 
     let project: Record<string, unknown> | undefined
     if (repo) {
-      const stmt = db.prepare(
+      // Try exact URL match first
+      project = db.prepare(
         `SELECT * FROM projects
          WHERE git_repo_url IN (?, ?, ?, ?)`
-      )
-      project = stmt.get(
+      ).get(
         normalizedRepo,
         `${normalizedRepo}.git`,
         `${normalizedRepo}/`,
-        repo
+        repo,
       ) as Record<string, unknown> | undefined
+
+      // Fallback: match by repo name (case-insensitive) against slug or name
+      if (!project && repoName) {
+        project = db.prepare(
+          `SELECT * FROM projects
+           WHERE slug = ? COLLATE NOCASE
+              OR name = ? COLLATE NOCASE
+              OR slug LIKE ? COLLATE NOCASE`
+        ).get(repoName, repoName, `%${repoName}%`) as Record<string, unknown> | undefined
+      }
     }
 
     let sessionId: string
@@ -447,20 +464,18 @@ sessionsRouter.post('/start', async (c) => {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
 sessionsRouter.get('/all', (c) => {
   try {
-    // Auto-close stale sessions: mark "active" sessions older than 2 hours as "completed"
-    db.prepare(
-      `UPDATE session_handoffs
-       SET status = 'completed',
-           task_summary = task_summary || ' [auto-closed: stale >2h]'
-       WHERE status = 'active'
-         AND created_at <= datetime('now', '-2 hours')`
-    ).run()
+    // Sessions stay active until explicitly closed by /ce, Stop hook, or new /cs.
+    // Previously auto-closed sessions >2h on every page load — this killed
+    // overnight sessions and lost context. Removed in favor of:
+    //   1. Stop hook auto-close (session-end-check.sh)
+    //   2. /cs reuses existing active session for same agent+project
+    //   3. last_activity updated on each tool call for staleness detection
 
     const limit = Number(c.req.query('limit') || '50')
     const status = c.req.query('status')
@@ -502,7 +517,7 @@ sessionsRouter.get('/all', (c) => {
 
     return c.json({ sessions: sessionsWithSavings })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -520,11 +535,72 @@ sessionsRouter.post('/:id/end', async (c) => {
       ? Date.now() - new Date(existing.created_at).getTime()
       : null
 
+    // Get session details before closing (for recipe capture)
+    const session = db.prepare('SELECT from_agent, project_id, project FROM session_handoffs WHERE id = ?')
+      .get(id) as { from_agent: string; project_id: string | null; project: string } | undefined
+
     db.prepare(
       `UPDATE session_handoffs
        SET status = 'completed', task_summary = COALESCE(?, task_summary)
        WHERE id = ?`
     ).run(summary ?? null, id)
+
+    // Fire-and-forget recipe capture from session summary
+    if (summary && summary.length > 50 && session) {
+      import('../services/recipe-capture.js').then(({ captureFromSession }) =>
+        captureFromSession({
+          sessionId: id,
+          summary,
+          agentId: session.from_agent,
+          projectId: session.project_id,
+        }).catch(e => {
+          console.warn('[recipe-capture] Session capture error:', (e as Error).message)
+          try {
+            db.prepare(
+              `INSERT INTO recipe_capture_log (source, source_id, agent_id, project_id, status, error_message)
+               VALUES ('session', ?, ?, ?, 'error', ?)`
+            ).run(id, session.from_agent ?? null, session.project_id ?? null, (e as Error).message?.slice(0, 500))
+          } catch { /* ignore */ }
+        })
+      ).catch((e) => {
+        console.warn('[recipe-capture] Module load error:', (e as Error).message)
+        try {
+          db.prepare(
+            `INSERT INTO recipe_capture_log (source, source_id, status, error_message)
+             VALUES ('session', ?, 'error', ?)`
+          ).run(id, `Module load: ${(e as Error).message}`.slice(0, 500))
+        } catch { /* ignore */ }
+      })
+    }
+
+    // Auto-store session summary as searchable memory (safety net)
+    // This ensures session context is ALWAYS recoverable even if
+    // the agent skips cortex_memory_store or user doesn't run /ce fully
+    if (summary && summary.length > 20 && session) {
+      const agentId = session.from_agent || 'unknown'
+      const projectScope = session.project_id
+        ? `project-${session.project_id}`
+        : agentId
+      try {
+        const mem9 = getMem9()
+        mem9.add({
+          messages: [{ role: 'user', content: `[Session Summary] ${summary}` }],
+          userId: projectScope,
+          agentId,
+          metadata: {
+            type: 'session-summary',
+            session_id: id,
+            project_id: session.project_id ?? undefined,
+            project: session.project ?? undefined,
+            auto_captured: true,
+          },
+        }).catch(e => {
+          console.warn('[session-end] Auto memory store failed:', (e as Error).message)
+        })
+      } catch (e) {
+        console.warn('[session-end] Memory init failed:', (e as Error).message)
+      }
+    }
 
     return c.json({
       success: true,
@@ -535,7 +611,7 @@ sessionsRouter.post('/:id/end', async (c) => {
       },
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -566,15 +642,29 @@ sessionsRouter.patch('/:id/complete', async (c) => {
           summary: task_summary,
           agentId: session.from_agent,
           projectId: session.project_id,
-        }).catch(e =>
+        }).catch(e => {
           console.warn('[recipe-capture] Session capture error:', (e as Error).message)
-        )
-      ).catch(() => { /* module load failure — non-critical */ })
+          try {
+            db.prepare(
+              `INSERT INTO recipe_capture_log (source, source_id, agent_id, project_id, status, error_message)
+               VALUES ('session', ?, ?, ?, 'error', ?)`
+            ).run(id, session.from_agent ?? null, session.project_id ?? null, (e as Error).message?.slice(0, 500))
+          } catch { /* ignore */ }
+        })
+      ).catch((e) => {
+        console.warn('[recipe-capture] Module load error:', (e as Error).message)
+        try {
+          db.prepare(
+            `INSERT INTO recipe_capture_log (source, source_id, status, error_message)
+             VALUES ('session', ?, 'error', ?)`
+          ).run(id, `Module load: ${(e as Error).message}`.slice(0, 500))
+        } catch { /* ignore */ }
+      })
     }
 
     return c.json({ success: true, id, status: status ?? 'completed' })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -584,6 +674,6 @@ sessionsRouter.delete('/:id', (c) => {
     db.prepare('DELETE FROM session_handoffs WHERE id = ?').run(id)
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })

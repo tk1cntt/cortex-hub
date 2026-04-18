@@ -1,5 +1,5 @@
 # Cortex Hub MCP Server
-name = "cortex-hub"
+name = "cortex-hub-mcp"
 main = "src/index.ts"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
@@ -7,16 +7,15 @@ compatibility_flags = ["nodejs_compat"]
 # Enable workers.dev subdomain
 workers_dev = true
 
-# Custom domain route (configure via Cloudflare dashboard)
-# routes = [{ pattern = "mcp.hub.your-domain.com", custom_domain = true }]
+# Custom domain route (jackle.dev zone must be on this CF account)
+# routes = [{ pattern = "mcp.hub.jackle.dev", custom_domain = true }]
 
-# Backend service URLs — SET VIA wrangler secret put, NOT here
-# Run these after deploying:
-#   wrangler secret put QDRANT_URL
-#   wrangler secret put MEM9_URL
-#   wrangler secret put CLIPROXY_URL
-#   wrangler secret put DASHBOARD_API_URL
 [vars]
+# Backend service URLs (via Cloudflare Tunnel → server)
+QDRANT_URL = "https://qdrant.hub.jackle.dev"
+MEM9_URL = "https://mem9.hub.jackle.dev"
+CLIPROXY_URL = "https://llm.hub.jackle.dev"
+DASHBOARD_API_URL = "https://api.hub.jackle.dev"
 
 # MCP Server metadata
 MCP_SERVER_NAME = "cortex-hub"

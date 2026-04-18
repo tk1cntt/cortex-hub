@@ -13,24 +13,24 @@ graph TB
         CC["🐙 Claude Code"]
         CU["⚡ Cursor"]
         WS["🌊 Windsurf"]
-        BOT["🤖 Headless Bots<br/>(OpenClaw, custom)"]
+        BOT["🤖 Headless Bots<br/>(Codex, custom)"]
     end
 
     subgraph MCP["Hub MCP Server (Hono + Streamable HTTP)"]
-        AUTH["🔐 API Key Auth<br/>Bearer tokens"]
-        ROUTER["🔀 Tool Router<br/>17+ MCP tools"]
+        AUTH["🔐 API Key Auth<br/>+ Owner Resolution"]
+        ROUTER["🔀 Tool Router<br/>25 MCP tools"]
         TEL["📊 Telemetry<br/>Query logging"]
     end
 
     subgraph Backend["Backend Services (Docker Compose)"]
         GN["GitNexus<br/>Code Graph + AST<br/>:4848"]
-        API["Dashboard API<br/>Hono + SQLite<br/>:4000"]
+        M9["mem9<br/>Embedding Pipeline<br/>:4000"]
         QD["Qdrant<br/>Vector Database<br/>:6333"]
-        LP["CLIProxy (LLM Gateway)<br/>OAuth-based<br/>:8317"]
-        MCP_SVC["Hub MCP<br/>Hono Node.js<br/>:8317"]
+        DB[(SQLite<br/>WAL Mode)]
     end
 
-    subgraph LLM["LLM Providers"]
+    subgraph LLM["LLM Gateway (Multi-Provider)"]
+        PROXY["API Proxy<br/>/v1/chat/completions<br/>/v1/embeddings"]
         GEM["Gemini"]
         OAI["OpenAI"]
         ANT["Anthropic"]
@@ -38,27 +38,27 @@ graph TB
     end
 
     subgraph Dashboard["Dashboard"]
+        API["Dashboard API<br/>Hono REST"]
         WEB["Dashboard Web<br/>Next.js 15 + React 19"]
     end
 
     Agents -->|"MCP JSON-RPC<br/>over Streamable HTTP"| AUTH
     AUTH --> ROUTER
     ROUTER --> TEL
+    
+    ROUTER -->|"cortex_code_search<br/>cortex_code_impact<br/>cortex_code_reindex"| GN
+    ROUTER -->|"cortex_memory_search<br/>cortex_memory_store"| M9
+    ROUTER -->|"cortex_knowledge_search<br/>cortex_knowledge_store"| QD
+    ROUTER -->|"cortex_quality_report<br/>cortex_session_start<br/>cortex_session_end<br/>cortex_changes"| DB
 
-    ROUTER -->|"cortex_code_search<br/>cortex_code_impact<br/>cortex_code_context<br/>cortex_code_read<br/>cortex_list_repos<br/>cortex_cypher<br/>cortex_detect_changes"| GN
-    ROUTER -->|"cortex_code_reindex"| API
-    ROUTER -->|"cortex_memory_search<br/>cortex_memory_store"| API
-    ROUTER -->|"cortex_knowledge_search<br/>cortex_knowledge_store"| API
-    ROUTER -->|"cortex_quality_report<br/>cortex_session_start<br/>cortex_session_end<br/>cortex_changes<br/>cortex_tool_stats<br/>cortex_task_*"| API
+    TEL -->|"POST /api/metrics/query-log"| DB
 
-    TEL -->|"POST /api/metrics/query-log"| API
+    M9 -->|"embed + store"| QD
+    GN -->|"index repos"| DB
 
-    API -->|"embed + search"| QD
-    API -->|"analyze repos"| GN
-    API -->|"LLM calls via"| LP
-
-    LP --> GEM & OAI & ANT & OTHER
-    WEB -->|"REST API (same-origin)| API
+    PROXY --> GEM & OAI & ANT & OTHER
+    API --> DB
+    WEB -->|"REST API"| API
 ```
 
 ---
@@ -67,27 +67,23 @@ graph TB
 
 ### 1. Hub MCP Server (`apps/hub-mcp`)
 
-The **central gateway** for all agent interactions. Agents connect to a single endpoint and access all capabilities through MCP tools.
+The **central gateway** for all agent interactions. Agents connect to a single endpoint (`cortex-mcp.jackle.dev/mcp`) and access all capabilities through MCP tools.
 
 **Transport:** Streamable HTTP (POST with JSON-RPC payloads, SSE for streaming responses)
 
 **Key features:**
-- API key authentication with owner identity resolution
+- API key authentication with owner identity resolution (`X-API-Key-Owner`)
 - Stateless transport — no session affinity needed
 - Global telemetry: every `tools/call` is parsed, timed, and logged to dashboard analytics
-- 17+ tools spanning code intelligence, memory, knowledge, quality, sessions, tasks, and analytics
+- 12 tools spanning code intelligence, memory, knowledge, quality, and sessions
 
 | Tool Group | Tools | Backend |
 |---|---|---|
-| **Code Intelligence** | `cortex_code_search`, `cortex_code_impact`, `cortex_code_context`, `cortex_code_read`, `cortex_list_repos`, `cortex_cypher`, `cortex_detect_changes` | GitNexus |
-| **Agent Memory** | `cortex_memory_search`, `cortex_memory_store` | Dashboard API → mem9 → Qdrant |
-| **Knowledge Base** | `cortex_knowledge_search`, `cortex_knowledge_store` | Dashboard API → Qdrant + SQLite |
-| **Quality Gates** | `cortex_quality_report` | Dashboard API → SQLite |
-| **Sessions** | `cortex_session_start`, `cortex_session_end` | Dashboard API → SQLite |
-| **Change Awareness** | `cortex_changes` | Dashboard API → SQLite |
-| **Indexing** | `cortex_code_reindex` | Dashboard API → GitNexus |
-| **Analytics** | `cortex_tool_stats` | Dashboard API → SQLite |
-| **Task Management** | `cortex_task_create`, `cortex_task_pickup`, `cortex_task_accept`, `cortex_task_update`, `cortex_task_list`, `cortex_task_status`, `cortex_task_submit_strategy` | Dashboard API → SQLite |
+| **Code Intelligence** | `cortex_code_search`, `cortex_code_impact`, `cortex_code_reindex` | GitNexus |
+| **Agent Memory** | `cortex_memory_search`, `cortex_memory_store` | mem9 → Qdrant |
+| **Knowledge Base** | `cortex_knowledge_search`, `cortex_knowledge_store` | Qdrant + SQLite |
+| **Quality Gates** | `cortex_quality_report` | SQLite |
+| **Sessions** | `cortex_session_start`, `cortex_session_end`, `cortex_changes` | SQLite |
 | **Health** | `cortex_health` | All services |
 
 ### 2. GitNexus (Code Intelligence)
@@ -99,12 +95,11 @@ Standalone Docker service (HTTP eval-server on `:4848`). Provides deep code unde
 - **Impact analysis** — blast radius calculation before changes
 - **Community detection** — Leiden algorithm clusters related code
 - **Symbol context** — 360° view of any function, class, or method
-- **Cypher queries** — direct graph exploration via Cypher
 - **HTTP API** — `POST /tool/query`, `/tool/impact`, `/tool/context`
 
 ### 3. mem9 (Embedding Pipeline + Agent Memory)
 
-Long-term memory for AI agents, backed by **Qdrant** vectors. Runs **in-process** within the Dashboard API container:
+Long-term memory for AI agents, backed by **Qdrant** vectors:
 
 - Remembers decisions, patterns, and context across sessions
 - Per-agent isolation with optional shared spaces
@@ -115,18 +110,15 @@ Long-term memory for AI agents, backed by **Qdrant** vectors. Runs **in-process*
 **Indexing Pipeline:**
 
 ```
-git clone → GitNexus AST analyze (with --embeddings) → Symbol extraction
+git clone → GitNexus AST analyze → Symbol extraction
                                     ↓
-                     mem9 code embed (opt-in, MEM9_EMBEDDING_ENABLED) → Qdrant
+                              mem9 code embed → Qdrant (code search)
                                     ↓
                         docs-knowledge-builder → Qdrant (knowledge search)
                      (scans *.md, *.mdx, *.txt, *.rst)
 ```
 
-Key behaviors:
-- **GitNexus embedding** (`--embeddings`) runs on every index — local AST embeddings, no API cost
-- **mem9 code embedding** is **disabled by default** (`MEM9_EMBEDDING_ENABLED=false`) to save API costs. Enable for production or trigger manually via `POST /api/indexing/:id/index/mem9`
-- After code embedding completes, **docs-knowledge-builder** automatically scans for documentation files, chunks, embeds, and stores as knowledge tagged `auto-docs`. On re-index, existing auto-docs are replaced.
+After code embedding completes, the **docs-knowledge-builder** automatically scans the repository for documentation files, chunks them, embeds via the same pipeline, and stores as knowledge items tagged `auto-docs`. On re-index, existing auto-docs are replaced to ensure freshness. Can also be triggered manually via the Dashboard’s “📚 Build Knowledge” button.
 
 ### 4. Qdrant (Vector Database)
 
@@ -137,9 +129,9 @@ High-performance vector database for semantic search:
 - Hybrid search: keyword + semantic vector matching
 - Cross-project knowledge sharing (deployment patterns, API conventions, etc.)
 
-### 5. CLIProxy (LLM Gateway)
+### 5. LLM API Gateway (`routes/llm.ts`)
 
-OAuth-based LLM proxy (`:8317`) — no API keys needed:
+Centralized LLM proxy with intelligent routing:
 
 - **Multi-provider** — Gemini, OpenAI, Anthropic, any OpenAI-compatible API
 - **Ordered fallback chains** — automatic retry on 429/502/503/504
@@ -152,14 +144,13 @@ OAuth-based LLM proxy (`:8317`) — no API keys needed:
 
 Full monitoring and management interface:
 
-- Real-time service health (Qdrant, GitNexus, CLIProxy, MCP)
+- Real-time service health (Qdrant, GitNexus, mem9, MCP)
 - Per-project query analytics (agents, tools, latency)
 - Quality report trending with grade history
 - Session management with API key tracking
 - LLM provider configuration with model discovery
 - Usage analytics with budget controls
 - Organization and project management
-- Code indexing with progress tracking and branch auto-detection
 
 ---
 
@@ -223,7 +214,7 @@ Internet
 Agent → tools/call → Hub MCP intercepts body →
   parse tool name + projectId + args →
   execute tool →
-  POST /api/metrics/query-log { agent, tool, latencyMs, status, projectId, inputSize, outputSize, computeTokens, computeModel } →
+  POST /api/metrics/query-log { agent, tool, latencyMs, status, projectId } →
   dashboard analytics (query_logs table)
 ```
 

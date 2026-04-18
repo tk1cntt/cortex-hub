@@ -1,298 +1,514 @@
-# Database Schema — Cortex Hub
+# Database Schema Reference
 
-> SQLite application database (WAL mode). Vectors stored in Qdrant separately.
-
----
-
-## Tables
-
-### `api_keys` — API key registry
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID prefix + random |
-| `name` | TEXT | Human-readable name |
-| `key_hash` | TEXT | SHA-256 hash |
-| `scope` | TEXT | `all`, `knowledge`, `hub` |
-| `permissions` | TEXT | JSON permissions |
-| `project_id` | TEXT | Optional project scope |
-| `created_at` | TEXT | ISO 8601 |
-| `expires_at` | TEXT | ISO 8601 or NULL |
-| `last_used_at` | TEXT | ISO 8601 or NULL |
-
-### `organizations` — Multi-tenant orgs
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID |
-| `name` | TEXT | Org name |
-| `slug` | TEXT UNIQUE | URL-safe slug |
-| `description` | TEXT | |
-| `created_at` | TEXT | |
-| `updated_at` | TEXT | |
-
-### `projects` — Repositories
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID (e.g. `proj-abc123`) |
-| `org_id` | TEXT FK → organizations | |
-| `name` | TEXT | |
-| `slug` | TEXT | Unique per org |
-| `description` | TEXT | |
-| `git_repo_url` | TEXT | |
-| `git_provider` | TEXT | `github`, `gitlab`, etc. |
-| `git_username` | TEXT | |
-| `git_token` | TEXT | Encrypted token |
-| `indexed_at` | TEXT | Last index timestamp |
-| `indexed_symbols` | INT | Symbol count |
-| `created_at` | TEXT | |
-| `updated_at` | TEXT | |
-
-### `index_jobs` — Indexing job tracking
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID (e.g. `idx-abc123`) |
-| `project_id` | TEXT FK → projects | |
-| `branch` | TEXT | Git branch (auto-detected if omitted) |
-| `status` | TEXT | `pending`, `cloning`, `analyzing`, `done`, `error` |
-| `progress` | INT | 0-100 |
-| `total_files` | INT | |
-| `symbols_found` | INT | |
-| `log` | TEXT | stdout/stderr |
-| `error` | TEXT | Error message |
-| `commit_hash` | TEXT | Short hash |
-| `commit_message` | TEXT | First 200 chars |
-| `triggered_by` | TEXT | `manual`, `webhook`, `setup` |
-| `mem9_status` | TEXT | `pending`, `embedding`, `done`, `error`, `skipped` |
-| `mem9_chunks` | INT | Chunks embedded |
-| `mem9_progress` | INT | 0-100 |
-| `mem9_total_chunks` | INT | |
-| `docs_knowledge_status` | TEXT | |
-| `docs_knowledge_count` | INT | |
-| `started_at` | TEXT | |
-| `completed_at` | TEXT | |
-| `created_at` | TEXT | |
-
-### `knowledge_documents` — Knowledge base entries
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID (e.g. `kdoc-abc123`) |
-| `title` | TEXT | |
-| `source` | TEXT | `manual`, `agent`, `captured`, `derived`, `fixed` |
-| `source_agent_id` | TEXT | |
-| `project_id` | TEXT | |
-| `tags` | TEXT | JSON array |
-| `content_preview` | TEXT | First 500 chars |
-| `chunk_count` | INT | |
-| `status` | TEXT | `active`, `archived`, `deprecated` |
-| `hit_count` | INT | |
-| `selection_count` | INT | Recipe system metric |
-| `applied_count` | INT | |
-| `completion_count` | INT | |
-| `fallback_count` | INT | |
-| `origin` | TEXT | `manual`, `agent`, `captured`, `derived`, `fixed` |
-| `generation` | INT | DAG depth from root |
-| `source_task_id` | TEXT | |
-| `created_by_agent` | TEXT | |
-| `category` | TEXT | `general`, `workflow`, `tool_guide`, etc. |
-| `created_at` | TEXT | |
-| `updated_at` | TEXT | |
-
-### `knowledge_chunks` — Embeddable text segments
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID |
-| `document_id` | TEXT FK → knowledge_documents | |
-| `chunk_index` | INT | |
-| `content` | TEXT | |
-| `char_count` | INT | |
-| `created_at` | TEXT | |
-
-### `knowledge_lineage` — Version DAG
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INT PK AUTO | |
-| `parent_id` | TEXT FK → knowledge_documents | |
-| `child_id` | TEXT FK → knowledge_documents | |
-| `relationship` | TEXT | `derived`, `fixed` |
-| `change_summary` | TEXT | |
-| `created_at` | TEXT | |
-
-### `knowledge_usage_log` — Quality feedback tracking
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INT PK AUTO | |
-| `document_id` | TEXT | |
-| `task_id` | TEXT | |
-| `session_id` | TEXT | |
-| `agent_id` | TEXT | |
-| `action` | TEXT | `suggested`, `applied`, `completed`, `fallback` |
-| `token_count` | INT | |
-| `created_at` | TEXT | |
-
-### `conductor_tasks` — Task orchestration
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID (e.g. `task_xxx`) |
-| `title` | TEXT | |
-| `description` | TEXT | |
-| `project_id` | TEXT | |
-| `parent_task_id` | TEXT | |
-| `created_by_agent` | TEXT | |
-| `assigned_to_agent` | TEXT | |
-| `assigned_session_id` | TEXT | |
-| `status` | TEXT | Full workflow (see below) |
-| `priority` | INT | 1-10, default 5 |
-| `required_capabilities` | TEXT | JSON array |
-| `depends_on` | TEXT | JSON array |
-| `notify_on_complete` | TEXT | JSON array |
-| `notified_agents` | TEXT | JSON array |
-| `context` | TEXT | JSON |
-| `result` | TEXT | |
-| `completed_by` | TEXT | |
-| `created_at` | TEXT | |
-| `assigned_at` | TEXT | |
-| `accepted_at` | TEXT | |
-| `completed_at` | TEXT | |
-
-**Status workflow:** `pending` → `blocked` → `assigned` → `accepted` → `in_progress` → `analyzing` → `strategy_review` → `synthesis` → `discussion` → `review` → `approved`/`rejected` → `completed`/`failed`/`cancelled`
-
-### `conductor_task_logs` — Task audit trail
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INT PK AUTO | |
-| `task_id` | TEXT | |
-| `agent_id` | TEXT | |
-| `action` | TEXT | |
-| `message` | TEXT | |
-| `created_at` | TEXT | |
-
-### `conductor_comments` — Task discussion
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INT PK AUTO | |
-| `task_id` | TEXT | |
-| `finding_id` | TEXT | |
-| `agent_id` | TEXT | |
-| `comment` | TEXT | |
-| `comment_type` | TEXT | `comment`, `agree`, `disagree`, `amendment` |
-| `created_at` | TEXT | |
-
-### `quality_reports` — Quality gate results
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID |
-| `project_id` | TEXT | |
-| `agent_id` | TEXT | |
-| `session_id` | TEXT | |
-| `gate_name` | TEXT | `pre_commit`, `full`, `plan_quality` |
-| `score_build` | INT | 0-25 |
-| `score_regression` | INT | 0-25 |
-| `score_standards` | INT | 0-25 |
-| `score_traceability` | INT | 0-25 |
-| `score_total` | INT | 0-100 |
-| `grade` | TEXT | A, B, C, D, F |
-| `passed` | INT | 0 or 1 |
-| `details` | TEXT | JSON |
-| `api_key_name` | TEXT | |
-| `created_at` | TEXT | |
-
-### `session_handoffs` — Session transfers
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID |
-| `from_agent` | TEXT | |
-| `to_agent` | TEXT | NULL = open handoff |
-| `project` | TEXT | |
-| `task_summary` | TEXT | |
-| `context` | TEXT | JSON |
-| `priority` | INT | 1-10 |
-| `status` | TEXT | `pending`, `claimed`, `completed`, `expired` |
-| `claimed_by` | TEXT | |
-| `project_id` | TEXT | |
-| `created_at` | TEXT | |
-| `expires_at` | TEXT | |
-
-### `query_logs` — MCP tool telemetry
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INT PK AUTO | |
-| `agent_id` | TEXT | |
-| `tool` | TEXT | MCP tool name |
-| `params` | TEXT | JSON |
-| `latency_ms` | INT | |
-| `status` | TEXT | `ok`, `error` |
-| `error` | TEXT | |
-| `project_id` | TEXT | |
-| `created_at` | TEXT | |
-
-### `usage_logs` — LLM usage tracking
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | INT PK AUTO | |
-| `agent_id` | TEXT | |
-| `model` | TEXT | |
-| `prompt_tokens` | INT | |
-| `completion_tokens` | INT | |
-| `total_tokens` | INT | |
-| `project_id` | TEXT | |
-| `request_type` | TEXT | `chat`, `embedding`, `tool` |
-| `created_at` | TEXT | |
-
-### `provider_accounts` — LLM provider config
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | TEXT PK | UUID |
-| `name` | TEXT | |
-| `type` | TEXT | `openai_compat`, `gemini`, `anthropic` |
-| `auth_type` | TEXT | `api_key`, `oauth` |
-| `api_base` | TEXT | |
-| `api_key` | TEXT | |
-| `status` | TEXT | `enabled`, `disabled`, `error` |
-| `capabilities` | TEXT | JSON: `["chat","embedding","code"]` |
-| `models` | TEXT | JSON array |
-| `created_at` | TEXT | |
-| `updated_at` | TEXT | |
-
-### `model_routing` — Fallback chains
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `purpose` | TEXT PK | `embedding`, `chat`, `code` |
-| `chain` | TEXT | JSON: `[{accountId, model}]` |
-| `updated_at` | TEXT | |
-
-### Other Tables
-
-| Table | Purpose |
-|-------|---------|
-| `admin_user` | GitHub OAuth users |
-| `hub_config` | Key-value config (hub_name, description) |
-| `budget_settings` | Token usage limits (daily/monthly) |
-| `notification_preferences` | Per-event notification toggles |
-| `setup_status` | Setup wizard completion flag |
+> All 25 tables are in **SQLite** (better-sqlite3, WAL mode). There is no Supabase.
+> Vector data lives in **Qdrant** (3 collections). See bottom of this document.
 
 ---
 
-## Notes
+## Core
 
-- **Database:** SQLite 3.x with WAL mode (not Supabase/PostgreSQL)
-- **Vectors:** Stored in Qdrant, not in SQLite. `knowledge_documents` has no vector column.
-- **All IDs:** UUIDs v4 (TEXT), not auto-increment integers
-- **All timestamps:** ISO 8601 TEXT strings
-- **JSON columns:** Stored as TEXT, parsed by application code
-- **Total tables:** 20+ (excluding indexes and config tables)
+### `setup_status`
+
+Single-row table tracking whether initial setup wizard has been completed.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | 1 | PK, always 1 |
+| completed | BOOLEAN | 0 | |
+| completed_at | TEXT | NULL | ISO 8601 |
+
+### `api_keys`
+
+API keys used by agents and external callers to authenticate against the Hub MCP Server.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK (prefix + short random) |
+| name | TEXT | | NOT NULL, human-readable label |
+| key_hash | TEXT | | NOT NULL, SHA-256 hash of actual key |
+| scope | TEXT | | NOT NULL, e.g. "all", "knowledge", "hub" |
+| permissions | TEXT | NULL | JSON string of permissions |
+| project_id | TEXT | NULL | Optional scope to a project |
+| created_at | TEXT | datetime('now') | |
+| expires_at | TEXT | NULL | |
+| last_used_at | TEXT | NULL | |
+
+### `query_logs`
+
+Records every tool call routed through the Hub MCP Server.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | AUTOINCREMENT | PK |
+| agent_id | TEXT | | NOT NULL |
+| tool | TEXT | | NOT NULL, e.g. "cortex_code_search" |
+| params | TEXT | NULL | JSON string |
+| latency_ms | INTEGER | NULL | Response time in ms |
+| status | TEXT | "ok" | "ok", "error", "policy_blocked" |
+| error | TEXT | NULL | Error message if failed |
+| project_id | TEXT | NULL | |
+| created_at | TEXT | datetime('now') | |
+
+**Indexes:** `idx_query_logs_agent(agent_id)`, `idx_query_logs_tool(tool)`, `idx_query_logs_created(created_at)`
+
+### `hub_config`
+
+Key-value configuration store for Hub settings.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| key | TEXT | | PK |
+| value | TEXT | | NOT NULL |
+| updated_at | TEXT | datetime('now') | |
+
+**Default rows:** `hub_name = "Cortex Hub"`, `hub_description = "Self-hosted MCP Intelligence Platform"`
+
+---
+
+## Organizations and Projects
+
+### `organizations`
+
+Top-level organizational units. A default "Personal" org is created on first run.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| name | TEXT | | NOT NULL |
+| slug | TEXT | | UNIQUE NOT NULL |
+| description | TEXT | NULL | |
+| created_at | TEXT | datetime('now') | |
+| updated_at | TEXT | datetime('now') | |
+
+### `projects`
+
+Git repositories registered for indexing and tracking.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| org_id | TEXT | | NOT NULL, FK -> organizations(id) |
+| name | TEXT | | NOT NULL |
+| slug | TEXT | | NOT NULL, UNIQUE(org_id, slug) |
+| description | TEXT | NULL | |
+| git_repo_url | TEXT | NULL | |
+| git_provider | TEXT | NULL | "github", "gitlab", "bitbucket", "azure", "local" |
+| git_username | TEXT | NULL | Added via migration |
+| git_token | TEXT | NULL | Added via migration |
+| indexed_at | TEXT | NULL | Last successful index time |
+| indexed_symbols | INTEGER | 0 | Symbol count from last index |
+| created_at | TEXT | datetime('now') | |
+| updated_at | TEXT | datetime('now') | |
+
+### `index_jobs`
+
+Tracks code indexing jobs (GitNexus) for each project.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| project_id | TEXT | | NOT NULL, FK -> projects(id) ON DELETE CASCADE |
+| branch | TEXT | "main" | |
+| status | TEXT | "pending" | "pending", "cloning", "analyzing", "ingesting", "done", "error" |
+| progress | INTEGER | 0 | 0-100 |
+| total_files | INTEGER | 0 | |
+| symbols_found | INTEGER | 0 | |
+| log | TEXT | NULL | stdout/stderr from GitNexus |
+| error | TEXT | NULL | |
+| started_at | TEXT | NULL | |
+| completed_at | TEXT | NULL | |
+| created_at | TEXT | datetime('now') | |
+
+---
+
+## Sessions
+
+### `session_handoffs`
+
+Active and historical agent sessions. Also used for cross-agent handoff.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| from_agent | TEXT | | NOT NULL |
+| to_agent | TEXT | NULL | NULL = open for any agent |
+| project | TEXT | | NOT NULL |
+| task_summary | TEXT | | NOT NULL |
+| context | TEXT | | NOT NULL, JSON (files changed, decisions, blockers) |
+| priority | INTEGER | 5 | |
+| status | TEXT | "pending" | "pending", "active", "claimed", "completed", "expired" |
+| claimed_by | TEXT | NULL | |
+| project_id | TEXT | NULL | Soft FK to projects |
+| hostname | TEXT | NULL | Agent machine hostname (migration) |
+| os | TEXT | NULL | Agent OS (migration) |
+| ide | TEXT | NULL | Agent IDE (migration) |
+| branch | TEXT | NULL | Git branch (migration) |
+| capabilities | TEXT | "[]" | JSON array (migration) |
+| role | TEXT | NULL | Agent role (migration) |
+| last_activity | TEXT | datetime('now') | Updated on each tool call (migration) |
+| api_key_name | TEXT | NULL | API key owner name (migration) |
+| created_at | TEXT | datetime('now') | |
+| expires_at | TEXT | NULL | |
+
+---
+
+## Conductor (Multi-Agent Orchestration)
+
+### `conductor_tasks`
+
+Tasks assigned to and executed by agents, with dependency tracking and status workflow.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| title | TEXT | | NOT NULL |
+| description | TEXT | "" | NOT NULL |
+| project_id | TEXT | NULL | |
+| parent_task_id | TEXT | NULL | Self-referencing FK for subtasks |
+| created_by_agent | TEXT | NULL | |
+| assigned_to_agent | TEXT | NULL | |
+| assigned_session_id | TEXT | NULL | |
+| status | TEXT | "pending" | CHECK constraint, see below |
+| priority | INTEGER | 5 | |
+| required_capabilities | TEXT | "[]" | JSON array |
+| depends_on | TEXT | "[]" | JSON array of task IDs |
+| notify_on_complete | TEXT | "[]" | JSON array of agent IDs |
+| notified_agents | TEXT | "[]" | JSON array |
+| context | TEXT | "{}" | JSON, arbitrary task context |
+| result | TEXT | NULL | |
+| completed_by | TEXT | NULL | |
+| created_at | TEXT | datetime('now') | |
+| assigned_at | TEXT | NULL | |
+| accepted_at | TEXT | NULL | |
+| completed_at | TEXT | NULL | |
+
+**Status values:** `pending`, `blocked`, `assigned`, `accepted`, `in_progress`, `analyzing`, `strategy_review`, `synthesis`, `discussion`, `review`, `approved`, `rejected`, `completed`, `failed`, `cancelled`
+
+**Indexes:**
+- `idx_conductor_tasks_assigned(assigned_to_agent, status)`
+- `idx_conductor_tasks_status(status)`
+- `idx_conductor_tasks_parent(parent_task_id)`
+
+### `conductor_task_logs`
+
+Audit log for task lifecycle events.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | AUTOINCREMENT | PK |
+| task_id | TEXT | | NOT NULL |
+| agent_id | TEXT | NULL | |
+| action | TEXT | | NOT NULL |
+| message | TEXT | NULL | |
+| created_at | TEXT | datetime('now') | |
+
+**Indexes:** `idx_conductor_task_logs_task(task_id)`
+
+### `conductor_comments`
+
+Discussion comments on tasks and findings, supporting structured agreement/disagreement.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | AUTOINCREMENT | PK |
+| task_id | TEXT | | NOT NULL |
+| finding_id | TEXT | NULL | |
+| agent_id | TEXT | NULL | |
+| comment | TEXT | | NOT NULL |
+| comment_type | TEXT | "comment" | "comment", "agree", "disagree", "amendment" |
+| created_at | TEXT | datetime('now') | |
+
+**Indexes:** `idx_conductor_comments_task(task_id)`
+
+---
+
+## Knowledge Base
+
+### `knowledge_documents`
+
+Metadata for knowledge documents. Content is stored as chunks (see `knowledge_chunks`). Vectors are in Qdrant "knowledge" collection.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| title | TEXT | | NOT NULL |
+| source | TEXT | "manual" | "manual", "agent", "import", "auto-docs" |
+| source_agent_id | TEXT | NULL | |
+| project_id | TEXT | NULL | |
+| tags | TEXT | "[]" | JSON array of strings |
+| status | TEXT | "active" | "active", "archived" |
+| hit_count | INTEGER | 0 | Incremented on search match |
+| chunk_count | INTEGER | 0 | |
+| content_preview | TEXT | NULL | First ~500 chars |
+| selection_count | INTEGER | 0 | Times selected in search results (migration) |
+| applied_count | INTEGER | 0 | Times applied by agent (migration) |
+| completion_count | INTEGER | 0 | Times task completed with this doc (migration) |
+| fallback_count | INTEGER | 0 | Times triggered fallback (migration) |
+| origin | TEXT | "manual" | "manual", "fixed", "derived", "captured" (migration) |
+| generation | INTEGER | 0 | Lineage generation number (migration) |
+| source_task_id | TEXT | NULL | Task that generated this doc (migration) |
+| created_by_agent | TEXT | NULL | (migration) |
+| category | TEXT | "general" | (migration) |
+| hall_type | TEXT | "general" | "fact", "event", "discovery", "preference", "advice", "general" (migration) |
+| valid_from | TEXT | NULL | Temporal validity start (migration) |
+| invalidated_at | TEXT | NULL | When this doc was invalidated (migration) |
+| superseded_by | TEXT | NULL | ID of replacement doc (migration) |
+| created_at | TEXT | datetime('now') | |
+| updated_at | TEXT | datetime('now') | |
+
+**Indexes:**
+- `idx_knowledge_docs_project(project_id)`
+- `idx_knowledge_hall_type(hall_type)`
+- `idx_knowledge_valid_from(valid_from)`
+- `idx_knowledge_invalidated_at(invalidated_at)`
+
+### `knowledge_chunks`
+
+Individual text chunks of knowledge documents. Each chunk's `id` doubles as its Qdrant point ID in the "knowledge" collection.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK (also the Qdrant point ID) |
+| document_id | TEXT | | NOT NULL, FK -> knowledge_documents(id) ON DELETE CASCADE |
+| chunk_index | INTEGER | | NOT NULL |
+| content | TEXT | | NOT NULL |
+| char_count | INTEGER | 0 | |
+| created_at | TEXT | datetime('now') | |
+
+**Indexes:** `idx_knowledge_chunks_doc(document_id)`
+
+### `knowledge_lineage`
+
+Version DAG tracking how knowledge documents evolve (derive from or fix others).
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | AUTOINCREMENT | PK |
+| parent_id | TEXT | | NOT NULL, FK -> knowledge_documents(id) ON DELETE CASCADE |
+| child_id | TEXT | | NOT NULL, FK -> knowledge_documents(id) ON DELETE CASCADE |
+| relationship | TEXT | "derived" | "derived", "fixed" |
+| change_summary | TEXT | NULL | |
+| created_at | TEXT | datetime('now') | |
+
+**Constraints:** UNIQUE(parent_id, child_id)
+
+**Indexes:** `idx_knowledge_lineage_parent(parent_id)`, `idx_knowledge_lineage_child(child_id)`
+
+### `knowledge_usage_log`
+
+Tracks how knowledge documents are used by agents (quality feedback loop).
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | AUTOINCREMENT | PK |
+| document_id | TEXT | | NOT NULL |
+| task_id | TEXT | NULL | |
+| session_id | TEXT | NULL | |
+| agent_id | TEXT | NULL | |
+| action | TEXT | | NOT NULL, "suggested", "applied", "completed", "fallback" |
+| token_count | INTEGER | 0 | |
+| created_at | TEXT | datetime('now') | |
+
+**Indexes:** `idx_knowledge_usage_doc(document_id)`, `idx_knowledge_usage_task(task_id)`
+
+### `recipe_capture_log`
+
+Diagnostics table tracking automatic recipe capture attempts (from completed tasks and sessions).
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | AUTOINCREMENT | PK |
+| source | TEXT | | NOT NULL, "task" or "session" |
+| source_id | TEXT | NULL | Task or session ID |
+| agent_id | TEXT | NULL | |
+| project_id | TEXT | NULL | |
+| status | TEXT | | NOT NULL, "attempt", "captured", "derived", "skipped", "error" |
+| title | TEXT | NULL | |
+| doc_id | TEXT | NULL | Created knowledge_documents.id |
+| error_message | TEXT | NULL | |
+| created_at | TEXT | datetime('now') | |
+
+**Indexes:** `idx_recipe_capture_log_status(status)`
+
+---
+
+## LLM and Providers
+
+### `provider_accounts`
+
+LLM provider configurations (OpenAI-compatible, Gemini, Anthropic, etc.).
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| name | TEXT | | NOT NULL, e.g. "OpenAI (Personal)" |
+| type | TEXT | | NOT NULL, "openai_compat", "gemini", "anthropic" |
+| auth_type | TEXT | "api_key" | "oauth", "api_key" |
+| api_base | TEXT | | NOT NULL, e.g. "http://llm-proxy:8317/v1" |
+| api_key | TEXT | NULL | Stored for runtime use |
+| status | TEXT | "enabled" | "enabled", "disabled", "error" |
+| capabilities | TEXT | '["chat"]' | JSON array: "chat", "embedding", "code" |
+| models | TEXT | "[]" | JSON array of model IDs |
+| created_at | TEXT | datetime('now') | |
+| updated_at | TEXT | datetime('now') | |
+
+### `model_routing`
+
+Fallback chains per purpose. Each row maps a purpose to an ordered array of provider+model slots.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| purpose | TEXT | | PK, "chat", "embedding", or "code" |
+| chain | TEXT | "[]" | JSON: `[{"accountId":"...","model":"gpt-4o"},...]` |
+| updated_at | TEXT | datetime('now') | |
+
+### `usage_logs`
+
+Token usage tracking per agent and model.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | AUTOINCREMENT | PK |
+| agent_id | TEXT | | NOT NULL |
+| model | TEXT | | NOT NULL |
+| prompt_tokens | INTEGER | 0 | |
+| completion_tokens | INTEGER | 0 | |
+| total_tokens | INTEGER | 0 | |
+| project_id | TEXT | NULL | |
+| request_type | TEXT | "chat" | "chat", "embedding", "tool" |
+| created_at | TEXT | datetime('now') | |
+
+### `budget_settings`
+
+Single-row table for daily/monthly token budget limits. Created lazily on first access.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | INTEGER | 1 | PK, always 1 |
+| daily_limit | INTEGER | 0 | 0 = unlimited |
+| monthly_limit | INTEGER | 0 | 0 = unlimited |
+| alert_threshold | REAL | 0.8 | Fraction (0.0-1.0) to trigger warning |
+| updated_at | TEXT | datetime('now') | |
+
+---
+
+## Quality
+
+### `quality_reports`
+
+4-dimension quality gate results. Each report scores Build + Regression + Standards + Traceability (each 0-25, total 0-100).
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| project_id | TEXT | NULL | |
+| agent_id | TEXT | | NOT NULL |
+| session_id | TEXT | NULL | |
+| gate_name | TEXT | | NOT NULL |
+| score_build | INTEGER | 0 | 0-25 |
+| score_regression | INTEGER | 0 | 0-25 |
+| score_standards | INTEGER | 0 | 0-25 |
+| score_traceability | INTEGER | 0 | 0-25 |
+| score_total | INTEGER | 0 | 0-100 (sum of 4 dimensions) |
+| grade | TEXT | "F" | CHECK: "A", "B", "C", "D", "F" |
+| passed | BOOLEAN | 0 | |
+| details | TEXT | NULL | JSON |
+| api_key_name | TEXT | NULL | Added via migration |
+| created_at | TEXT | datetime('now') | |
+
+**Grade thresholds:** A >= 90, B >= 80, C >= 70, D >= 60, F < 60
+
+**Indexes:**
+- `idx_quality_reports_project_created(project_id, created_at DESC)`
+- `idx_quality_reports_agent(agent_id, created_at DESC)`
+
+---
+
+## Notifications
+
+### `notification_preferences`
+
+Per-event notification toggles.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| key | TEXT | | PK |
+| enabled | INTEGER | 1 | 0 = disabled, 1 = enabled |
+| updated_at | TEXT | datetime('now') | |
+
+**Default rows:** `agent_disconnect`, `quality_gate_failure`, `task_assignment`, `session_handoff`
+
+---
+
+## Change Tracking
+
+### `change_events`
+
+Records code push events from webhooks, lefthook, or CI. Used by `cortex_detect_changes` to notify agents of unseen changes.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| id | TEXT | | PK |
+| project_id | TEXT | | NOT NULL, FK -> projects(id) ON DELETE CASCADE |
+| branch | TEXT | | NOT NULL |
+| agent_id | TEXT | NULL | Who pushed |
+| commit_sha | TEXT | NULL | |
+| commit_message | TEXT | NULL | |
+| files_changed | TEXT | NULL | JSON array of file paths |
+| created_at | TEXT | datetime('now') | |
+
+**Indexes:** `idx_change_events_project_created(project_id, created_at DESC)`
+
+### `agent_ack`
+
+Tracks the last change event each agent has acknowledged, per project.
+
+| Column | Type | Default | Notes |
+|--------|------|---------|-------|
+| agent_id | TEXT | | PK (composite) |
+| project_id | TEXT | | PK (composite) |
+| last_seen_event_id | TEXT | | NOT NULL |
+| updated_at | TEXT | datetime('now') | |
+
+**Primary key:** `(agent_id, project_id)` -- uses ON CONFLICT DO UPDATE for upsert.
+
+---
+
+## Qdrant Vector Collections
+
+Vector data is stored in Qdrant, not SQLite. Dimensions depend on the configured embedding provider.
+
+### `cortex_memories`
+
+Agent memories managed by mem9. Each memory is a vector embedding of conversation context.
+
+- **Dimensions:** 384 (local embedder) or 768 (Gemini)
+- **Payloads:** userId, agentId, metadata (type, session_id, project_id, etc.)
+- **Used by:** `cortex_memory_store`, `cortex_memory_search`
+
+### `knowledge`
+
+Embedded chunks of knowledge documents. Point IDs correspond 1:1 to `knowledge_chunks.id` in SQLite.
+
+- **Dimensions:** 384 (local embedder) or 768 (Gemini)
+- **Payloads:** document_id, chunk_index, title, project_id, tags
+- **Used by:** `cortex_knowledge_store`, `cortex_knowledge_search`
+
+### `cortex-project-{projectId}`
+
+Code chunks from GitNexus indexing. One collection per project.
+
+- **Dimensions:** 384 (local embedder) or 768 (Gemini)
+- **Payloads:** file path, symbol name, language, code content
+- **Used by:** `cortex_code_search`, `cortex_code_reindex`
+
+---
+
+## Schema Management
+
+- **Primary schema:** `apps/dashboard-api/src/db/schema.sql` -- executed on startup via `client.ts`
+- **Migrations:** `apps/dashboard-api/src/db/client.ts` -- safe ALTER TABLE statements wrapped in try/catch for backward compatibility
+- **Lazy creation:** `budget_settings` and `recipe_capture_log` are created on first access in their respective route handlers
+- **WAL mode:** Enabled via `PRAGMA journal_mode = WAL` for concurrent read/write
+- **Foreign keys:** Enabled via `PRAGMA foreign_keys = ON` (set in schema.sql, some worktrees)
+- **Database file:** `data/cortex.db` (configurable via `DATABASE_PATH` env var)

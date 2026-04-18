@@ -11,9 +11,9 @@
 
 import { Hono } from 'hono'
 import { Mem9, Embedder } from '@cortex/shared-mem9'
-import type { Mem9Config, EmbedderConfig } from '@cortex/shared-mem9'
+import type { Mem9Config } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
-import { handleApiError } from '../utils/error-handler.js'
+import { createEmbedder } from '../lib/embedder-factory.js'
 
 export const mem9ProxyRouter = new Hono()
 
@@ -27,11 +27,9 @@ let embedderInstance: Embedder | null = null
  * 2. provider_accounts table in SQLite (Providers UI)
  */
 function resolveGeminiApiKey(): string {
-  // 1. Environment variable (highest priority)
   const envKey = process.env['GEMINI_API_KEY']
   if (envKey) return envKey
 
-  // 2. Providers DB — look for a Gemini provider with an API key
   try {
     const row = db.prepare(
       "SELECT api_key FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
@@ -44,17 +42,63 @@ function resolveGeminiApiKey(): string {
   return ''
 }
 
+/**
+ * Resolve the LLM model for mem9 (fact extraction, dedup).
+ * Priority: MEM9_LLM_MODEL env → chat routing chain from DB → fallback
+ */
+function resolveLlmModel(): string {
+  // 1. Explicit env var
+  const envModel = process.env['MEM9_LLM_MODEL']
+  if (envModel) return envModel
+
+  // 2. Dashboard chat routing chain (what user selected in Providers UI)
+  try {
+    const row = db.prepare(
+      "SELECT chain FROM model_routing WHERE purpose = 'chat'"
+    ).get() as { chain: string } | undefined
+    if (row?.chain) {
+      const chain = JSON.parse(row.chain) as { model?: string }[]
+      if (chain[0]?.model) return chain[0].model
+    }
+  } catch {
+    // DB might not be ready yet
+  }
+
+  // 3. Fallback
+  return 'gemini-2.5-flash'
+}
+
+/**
+ * Build a config fingerprint to detect when settings change
+ * and singleton needs to be recreated.
+ */
+function configFingerprint(): string {
+  const provider = process.env['EMBEDDING_PROVIDER'] || 'local'
+  const localModel = process.env['LOCAL_EMBEDDING_MODEL'] || ''
+  return `${resolveGeminiApiKey()}|${resolveLlmModel()}|${provider}|${localModel}`
+}
+
+let lastFingerprint = ''
+
 function getMem9Config(): Mem9Config {
+  const embeddingProvider = (process.env['EMBEDDING_PROVIDER'] || 'local') as 'gemini' | 'local'
+
   return {
     llm: {
-      baseUrl: `${process.env['LLM_PROXY_URL'] || 'http://llm-proxy:8317'}/v1`,
-      model: process.env['MEM9_LLM_MODEL'] || 'gpt-4.1-mini',
+      baseUrl: `http://localhost:${process.env['PORT'] || 4000}/api/llm/v1`,
+      model: resolveLlmModel(),
     },
-    embedder: {
-      provider: 'gemini' as const,
-      apiKey: resolveGeminiApiKey(),
-      model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-2-preview',
-    },
+    embedder: embeddingProvider === 'local'
+      ? {
+          provider: 'local' as const,
+          apiKey: '',
+          model: process.env['LOCAL_EMBEDDING_MODEL'] || 'Xenova/all-MiniLM-L6-v2',
+        }
+      : {
+          provider: 'gemini' as const,
+          apiKey: resolveGeminiApiKey(),
+          model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-001',
+        },
     vectorStore: {
       url: process.env['QDRANT_URL'] || 'http://qdrant:6333',
       collection: 'cortex_memories',
@@ -62,13 +106,10 @@ function getMem9Config(): Mem9Config {
   }
 }
 
-/** Track the API key used to create singletons — invalidate if it changes */
-let lastApiKey = ''
-
 export function getMem9(): Mem9 {
-  const currentKey = resolveGeminiApiKey()
-  if (!mem9Instance || currentKey !== lastApiKey) {
-    lastApiKey = currentKey
+  const fp = configFingerprint()
+  if (!mem9Instance || fp !== lastFingerprint) {
+    lastFingerprint = fp
     mem9Instance = new Mem9(getMem9Config())
     embedderInstance = null // also invalidate embedder
   }
@@ -76,11 +117,10 @@ export function getMem9(): Mem9 {
 }
 
 function getEmbedder(): Embedder {
-  const currentKey = resolveGeminiApiKey()
-  if (!embedderInstance || currentKey !== lastApiKey) {
-    lastApiKey = currentKey
-    const config = getMem9Config()
-    embedderInstance = new Embedder(config.embedder)
+  const fp = configFingerprint()
+  if (!embedderInstance || fp !== lastFingerprint) {
+    lastFingerprint = fp
+    embedderInstance = createEmbedder()
   }
   return embedderInstance
 }
@@ -102,7 +142,7 @@ mem9ProxyRouter.post('/store', async (c) => {
     const result = await mem9.add({ messages, userId, agentId, metadata })
 
     c.header('X-Cortex-Compute-Tokens', String(result.tokensUsed || 0))
-    c.header('X-Cortex-Compute-Model', process.env['MEM9_LLM_MODEL'] || 'gpt-4.1-mini')
+    c.header('X-Cortex-Compute-Model', resolveLlmModel())
 
     return c.json({
       success: true,
@@ -111,7 +151,7 @@ mem9ProxyRouter.post('/store', async (c) => {
     })
   } catch (error) {
     console.error('[mem9-proxy] store error:', error)
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -132,7 +172,7 @@ mem9ProxyRouter.post('/search', async (c) => {
     const result = await mem9.search({ query, userId, agentId, limit })
 
     c.header('X-Cortex-Compute-Tokens', String(result.tokensUsed || 0))
-    c.header('X-Cortex-Compute-Model', process.env['MEM9_LLM_MODEL'] || 'gpt-4.1-mini')
+    c.header('X-Cortex-Compute-Model', resolveLlmModel())
 
     return c.json({
       memories: result.memories,
@@ -140,7 +180,7 @@ mem9ProxyRouter.post('/search', async (c) => {
     })
   } catch (error) {
     console.error('[mem9-proxy] search error:', error)
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -163,7 +203,7 @@ mem9ProxyRouter.post('/embed', async (c) => {
     return c.json({ vector, dimensions: vector.length })
   } catch (error) {
     console.error('[mem9-proxy] embed error:', error)
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -181,6 +221,9 @@ mem9ProxyRouter.get('/health', async (c) => {
       vectorStore: status.vectorStore ? 'ok' : 'error',
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({
+      status: 'error',
+      error: String(error),
+    }, 500)
   }
 })

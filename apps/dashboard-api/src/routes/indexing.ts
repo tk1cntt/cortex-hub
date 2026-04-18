@@ -2,53 +2,14 @@ import { Hono } from 'hono'
 import { randomUUID } from 'crypto'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { execFileSync } from 'child_process'
 import { db } from '../db/client.js'
 import { startIndexing, cancelJob, buildAuthUrl } from '../services/indexer.js'
 import { embedProject } from '../services/mem9-embedder.js'
 import { buildKnowledgeFromDocs } from '../services/docs-knowledge-builder.js'
-import { handleApiError } from '../utils/error-handler.js'
 
 const REPOS_DIR = process.env.REPOS_DIR ?? '/app/data/repos'
 
 export const indexingRouter = new Hono()
-
-/**
- * Auto-detect the default branch of a git repo.
- * Tries: HEAD ref → main → master → first branch found.
- */
-function detectDefaultBranch(repoUrl: string, username?: string | null, token?: string | null): string {
-  const authUrl = buildAuthUrl(repoUrl, username, token)
-  try {
-    const output = execFileSync('git', ['ls-remote', '--symref', authUrl, 'HEAD'], {
-      timeout: 10000,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    // Output: "ref: refs/heads/main\tHEAD\n<sha>\tHEAD"
-    const headMatch = output.match(/ref: refs\/heads\/(\S+)/)
-    if (headMatch) return headMatch[1]!
-  } catch {
-    // Fallback: try common branches
-  }
-
-  // Fallback: list all branches, prefer main/master
-  try {
-    const output = execFileSync('git', ['ls-remote', '--heads', authUrl], {
-      timeout: 10000,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
-    const branches = output.split('\n').filter(Boolean).map((l) => l.split('\t')[1]?.replace('refs/heads/', '') ?? '')
-    if (branches.includes('main')) return 'main'
-    if (branches.includes('master')) return 'master'
-    if (branches.length > 0) return branches[0]!
-  } catch {
-    // Best effort
-  }
-
-  return 'main' // Last resort
-}
 
 interface IndexJob {
   id: string
@@ -91,20 +52,15 @@ indexingRouter.post('/:id/index', async (c) => {
       return c.json({ error: 'An indexing job is already running', jobId: activeJob.id }, 409)
     }
 
-    // Parse branch from body — auto-detect if not specified
-    let branch: string | undefined
+    // Parse branch from body
+    let branch = 'main'
     let triggeredBy = 'manual'
     try {
       const body = await c.req.json()
-      branch = body.branch
+      if (body.branch) branch = body.branch
       if (body.triggeredBy) triggeredBy = body.triggeredBy
     } catch {
-      // No body is OK
-    }
-
-    // Auto-detect default branch when not specified
-    if (!branch) {
-      branch = detectDefaultBranch(project.git_repo_url, null, null)
+      // No body is OK, use default branch
     }
 
     // Create job record
@@ -120,7 +76,7 @@ indexingRouter.post('/:id/index', async (c) => {
 
     return c.json({ jobId, status: 'pending', branch }, 201)
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -149,7 +105,7 @@ indexingRouter.get('/:id/index/status', (c) => {
       createdAt: job.created_at,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -175,7 +131,7 @@ indexingRouter.get('/:id/index/history', (c) => {
 
     return c.json({ jobs, total, page, limit, totalPages: Math.ceil(total / limit) })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -201,7 +157,7 @@ indexingRouter.post('/:id/index/cancel', (c) => {
 
     return c.json({ success: true, jobId: activeJob.id })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -244,7 +200,7 @@ indexingRouter.post('/:id/git/test', async (c) => {
       return c.json({ success: false, error: sanitized.slice(0, 500) })
     }
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error).slice(0, 300) })
   }
 })
 
@@ -293,7 +249,7 @@ indexingRouter.get('/:id/branches', async (c) => {
 
     return c.json({ branches })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ branches: [], error: `Failed to list branches: ${String(error).slice(0, 200)}` })
   }
 })
 
@@ -350,7 +306,7 @@ indexingRouter.get('/:id/branches/diff', async (c) => {
 
     return c.json({ branch, base, diff, summary })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ diff: [], error: `Diff failed: ${String(error).slice(0, 200)}` })
   }
 })
 
@@ -392,7 +348,7 @@ indexingRouter.get('/:id/index/branches', (c) => {
 
     return c.json({ branches: jobs })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -445,7 +401,7 @@ indexingRouter.post('/:id/index/mem9', async (c) => {
 
     return c.json({ success: true, jobId, branch, status: 'embedding' }, 201)
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -495,7 +451,7 @@ indexingRouter.get('/:id/index/mem9/status', (c) => {
       },
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -528,6 +484,6 @@ indexingRouter.post('/:id/knowledge/build-from-docs', async (c) => {
       errors: result.errors,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error).slice(0, 300) }, 500)
   }
 })

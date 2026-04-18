@@ -166,16 +166,21 @@ function buildEmbeddingChain(): { config: EmbedderConfig; chain: ModelSlot[] } {
     }
   }
 
-  // Default fallback config (Gemini from env)
-  const geminiKey = process.env.GEMINI_API_KEY ?? ''
-  const defaultModel = process.env.MEM9_EMBEDDING_MODEL || 'gemini-embedding-2-preview'
-  const defaultConfig: EmbedderConfig = {
-    provider: 'gemini',
-    apiKey: geminiKey,
-    model: defaultModel,
-  }
+  // Default fallback config — respect EMBEDDING_PROVIDER env var
+  const embeddingProvider = (process.env.EMBEDDING_PROVIDER || 'local') as 'gemini' | 'local'
+  const defaultConfig: EmbedderConfig = embeddingProvider === 'local'
+    ? {
+        provider: 'local' as const,
+        apiKey: '',
+        model: process.env.LOCAL_EMBEDDING_MODEL || 'Xenova/all-MiniLM-L6-v2',
+      }
+    : {
+        provider: 'gemini' as const,
+        apiKey: process.env.GEMINI_API_KEY ?? '',
+        model: process.env.MEM9_EMBEDDING_MODEL || 'gemini-embedding-001',
+      }
 
-  return { config: defaultConfig, chain: chainSlots }
+  return { config: defaultConfig, chain: embeddingProvider === 'local' ? [] : chainSlots }
 }
 
 // ── Main Embedding Pipeline ──

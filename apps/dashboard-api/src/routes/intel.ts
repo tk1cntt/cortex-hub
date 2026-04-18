@@ -5,7 +5,6 @@ import { createLogger } from '@cortex/shared-utils'
 import { Embedder } from '@cortex/shared-mem9'
 import type { EmbedderConfig } from '@cortex/shared-mem9'
 import { db } from '../db/client.js'
-import { handleApiError } from '../utils/error-handler.js'
 
 const logger = createLogger('intel')
 
@@ -63,12 +62,14 @@ async function callGitNexus(
 }
 
 /**
- * Resolve a projectId to GitNexus-compatible repo name candidates.
+ * Resolve a projectId, slug, or human-readable name to GitNexus-compatible repo name candidates.
  * Returns ordered list of names to try — GitNexus may register repos by:
- *   1. slug (e.g., 'yulgangproject')
- *   2. git URL basename (e.g., 'YulgangProject')
+ *   1. slug (e.g., 'my-backend')
+ *   2. git URL basename (e.g., 'MyBackend')
  *   3. projectId folder name (e.g., 'proj-abc123')
- * All candidates are returned for fallback-based querying.
+ *
+ * Supports case-insensitive matching and search by name column,
+ * so agents can just say repo: "MyBackend" without needing a projectId.
  */
 function resolveRepoNames(projectId: string): string[] {
   const candidates: string[] = []
@@ -79,9 +80,16 @@ function resolveRepoNames(projectId: string): string[] {
   }
 
   try {
+    // Case-insensitive lookup: match by id, slug, OR name
     const project = db.prepare(
-      'SELECT id, slug, git_repo_url FROM projects WHERE id = ? OR slug = ?'
-    ).get(projectId, projectId) as { id?: string; slug?: string; git_repo_url?: string } | undefined
+      `SELECT id, slug, name, git_repo_url FROM projects
+       WHERE id = ?
+          OR slug = ? COLLATE NOCASE
+          OR name = ? COLLATE NOCASE
+          OR name LIKE ? COLLATE NOCASE`
+    ).get(projectId, projectId, projectId, `%${projectId}%`) as {
+      id?: string; slug?: string; name?: string; git_repo_url?: string
+    } | undefined
 
     if (project) {
       // Strategy 1: Use slug
@@ -89,7 +97,7 @@ function resolveRepoNames(projectId: string): string[] {
         candidates.push(project.slug)
       }
 
-      // Strategy 2: Extract repo name from git URL
+      // Strategy 2: Extract repo name from git URL (preserves original casing)
       if (project.git_repo_url) {
         const repoName = project.git_repo_url
           .replace(/\.git$/, '')
@@ -100,7 +108,12 @@ function resolveRepoNames(projectId: string): string[] {
         }
       }
 
-      // Strategy 3: Use project ID (folder name in /app/data/repos/)
+      // Strategy 3: Use project name (human-readable, may differ from slug)
+      if (project.name && !candidates.includes(project.name)) {
+        candidates.push(project.name)
+      }
+
+      // Strategy 4: Use project ID (folder name in /app/data/repos/)
       if (project.id && !candidates.includes(project.id)) {
         candidates.push(project.id)
       }
@@ -288,53 +301,272 @@ intelRouter.post('/search', async (c) => {
       limit: limit ?? 5,
       content: true,
     }
-
-    // Smart repo name resolution with multi-candidate fallback
-    const repoCandidates: string[] = projectId ? resolveRepoNames(projectId) : []
-    if (projectId) {
-      params.repo = repoCandidates[0]
-      logger.info(`Code search: trying candidates ${JSON.stringify(repoCandidates)} from "${projectId}"`)
-    }
-
     if (branch) {
       params.branch = branch
     }
 
+    // ── No projectId: smart fan-out search across ALL indexed repos ──
+    if (!projectId) {
+      logger.info(`Code search: fan-out across all repos for "${query}"`)
+      const allProjects = db.prepare(
+        `SELECT id, slug, name, indexed_symbols FROM projects
+         WHERE indexed_symbols > 0
+         ORDER BY indexed_symbols DESC`
+      ).all() as Array<{ id: string; slug: string; name: string; indexed_symbols: number }>
+
+      if (allProjects.length === 0) {
+        return c.json({
+          success: true,
+          data: {
+            query,
+            limit: limit ?? 5,
+            source: 'gitnexus',
+            formatted: '⚠️ No indexed repositories found. Index a project via Code Indexing in the dashboard.',
+            results: null,
+          },
+        })
+      }
+
+      // Run searches in parallel with concurrency limit
+      const CONCURRENCY = 8
+      type ProjectHit = { project: typeof allProjects[0]; result: unknown; error?: string }
+      const hits: ProjectHit[] = []
+
+      for (let i = 0; i < allProjects.length; i += CONCURRENCY) {
+        const batch = allProjects.slice(i, i + CONCURRENCY)
+        const batchResults = await Promise.allSettled(
+          batch.map(async (p) => {
+            const candidates = resolveRepoNames(p.id)
+            for (const candidate of candidates) {
+              try {
+                const r = await callGitNexus('query', { ...params, repo: candidate, limit: 3 })
+                return { project: p, result: r }
+              } catch { /* try next candidate */ }
+            }
+            return { project: p, result: null, error: 'no candidates worked' }
+          })
+        )
+        for (const r of batchResults) {
+          if (r.status === 'fulfilled' && r.value.result) {
+            hits.push(r.value as ProjectHit)
+          }
+        }
+      }
+
+      // Filter out empty results — count meaningful hits per project
+      type ScoredHit = { project: typeof allProjects[0]; result: unknown; score: number; symbols?: Array<{ name: string; type: string; file: string }>; via: 'flow' | 'symbol' }
+      const scoredHits: ScoredHit[] = hits.map(h => {
+        const r = h.result as Record<string, unknown> | null
+        const raw = (r?.raw as string) ?? ''
+        const isEmpty = raw.includes('No matching execution flows') || raw.includes('No matching results')
+        const procCount = (raw.match(/▸/g) ?? []).length
+        const defCount = (raw.match(/→/g) ?? []).length
+        return {
+          project: h.project,
+          result: h.result,
+          score: isEmpty ? 0 : procCount * 10 + defCount,
+          via: 'flow' as const,
+        }
+      }).filter(s => s.score > 0)
+
+      // ── Fallback: cypher symbol search if flow search found nothing ──
+      if (scoredHits.length === 0) {
+        logger.info(`Code search: 0 flow matches, falling back to cypher symbol search`)
+        // Extract ALL meaningful keywords (3+ chars), preserve order
+        const keywords = query.split(/\s+/).filter(w => w.length >= 3)
+        if (keywords.length === 0) keywords.push(query)
+
+        // Capitalize first letter for camelCase variants (e.g. "dialog" → "Dialog")
+        const expandKeyword = (k: string): string[] => {
+          const variants = new Set<string>([k])
+          variants.add(k.charAt(0).toUpperCase() + k.slice(1))
+          variants.add(k.toLowerCase())
+          return Array.from(variants)
+        }
+
+        // Helper: parse GitNexus cypher response — handles raw text wrapper
+        const parseCypherRows = (r: Record<string, unknown>): Array<{ name: string; type: string; file: string }> => {
+          let payload: Record<string, unknown> = r
+          // GitNexus returns JSON + "---\nNext: ..." footer → callGitNexus wraps as {raw: "..."}
+          if (r?.raw && typeof r.raw === 'string') {
+            const rawText = r.raw as string
+            const jsonEnd = rawText.indexOf('\n---')
+            const jsonStr = jsonEnd > 0 ? rawText.slice(0, jsonEnd).trim() : rawText.trim()
+            try { payload = JSON.parse(jsonStr) as Record<string, unknown> } catch { /* not JSON */ }
+          }
+          const rows = (payload?.rows ?? payload?.results ?? payload?.data) as Array<Record<string, unknown>> | undefined
+          if (Array.isArray(rows) && rows.length > 0) {
+            return rows.map(row => ({
+              name: String(row.name ?? '?'),
+              type: Array.isArray(row.labels) ? row.labels.join(',') : String(row.labels ?? ''),
+              file: String(row.file ?? ''),
+            }))
+          }
+          const md = (payload?.markdown as string) ?? ''
+          if (md && md.includes('|')) {
+            const lines = md.split('\n').filter(l => l.includes('|') && !l.match(/^\|\s*-+/))
+            return lines.slice(1).map(l => {
+              const cells = l.split('|').map(c => c.trim()).filter(c => c.length > 0)
+              return { name: cells[0] ?? '?', type: cells[1] ?? '', file: cells[2] ?? '' }
+            }).filter(x => x.name !== '?')
+          }
+          return []
+        }
+
+        // Score: count how many keywords appear in the symbol name (case-insensitive)
+        const scoreSymbol = (name: string): number => {
+          const lower = name.toLowerCase()
+          return keywords.filter(k => lower.includes(k.toLowerCase())).length
+        }
+
+        // GitNexus has bugs with OR clauses + toLower() → run separate query per keyword variant.
+        // Run sequentially per project to avoid hammering GitNexus.
+        for (let i = 0; i < allProjects.length; i += CONCURRENCY) {
+          const batch = allProjects.slice(i, i + CONCURRENCY)
+          const batchResults = await Promise.allSettled(
+            batch.map(async (p) => {
+              const candidates = resolveRepoNames(p.id)
+              const allSymbols: Array<{ name: string; type: string; file: string }> = []
+              const seen = new Set<string>()
+              let lastErr: unknown = null
+
+              // Try each candidate repo name
+              for (const candidate of candidates) {
+                let candidateWorked = false
+                // For each keyword + its variants, run a simple query
+                for (const keyword of keywords) {
+                  for (const variant of expandKeyword(keyword)) {
+                    try {
+                      const safeVariant = variant.replace(/"/g, '\\"')
+                      const cypherQuery = `MATCH (n) WHERE n.name CONTAINS "${safeVariant}" RETURN n.name as name, labels(n) as labels, n.filePath as file LIMIT 15`
+                      const r = await callGitNexus('cypher', { query: cypherQuery, repo: candidate }) as Record<string, unknown>
+                      const symbols = parseCypherRows(r)
+                      if (symbols.length > 0) {
+                        candidateWorked = true
+                        for (const s of symbols) {
+                          const key = `${s.name}|${s.file}`
+                          if (!seen.has(key)) {
+                            seen.add(key)
+                            allSymbols.push(s)
+                          }
+                        }
+                      }
+                    } catch (e) { lastErr = e }
+                  }
+                }
+                if (candidateWorked) break // stop trying other candidates if one worked
+              }
+
+              if (allSymbols.length > 0) {
+                const scored = allSymbols
+                  .map(s => ({ ...s, relevance: scoreSymbol(s.name) }))
+                  .sort((a, b) => b.relevance - a.relevance)
+                // Quadratic score: multi-keyword matches weigh exponentially more.
+                // 1 kw = 1, 2 kw = 4, 3 kw = 9 — strongly prefers symbols matching ALL keywords.
+                const totalScore = scored.reduce((sum, s) => sum + (s.relevance * s.relevance), 0)
+                return { project: p, symbols: scored.slice(0, 10), count: allSymbols.length, score: totalScore }
+              }
+              if (lastErr) logger.debug(`Cypher search failed for ${p.id}: ${String(lastErr).slice(0, 100)}`)
+              return null
+            })
+          )
+          for (const r of batchResults) {
+            if (r.status === 'fulfilled' && r.value) {
+              scoredHits.push({
+                project: r.value.project,
+                result: { cypher: true, symbols: r.value.symbols },
+                score: r.value.score,
+                symbols: r.value.symbols,
+                via: 'symbol' as const,
+              })
+            }
+          }
+        }
+      }
+
+      // Sort by best match quality first, then total volume.
+      // Projects with at least 1 multi-keyword match always rank above
+      // projects with only single-keyword matches, regardless of volume.
+      scoredHits.sort((a, b) => {
+        const maxA = a.symbols ? Math.max(0, ...a.symbols.map(s => (s as { relevance?: number }).relevance ?? 0)) : 0
+        const maxB = b.symbols ? Math.max(0, ...b.symbols.map(s => (s as { relevance?: number }).relevance ?? 0)) : 0
+        if (maxA !== maxB) return maxB - maxA
+        return b.score - a.score
+      })
+
+      // Build aggregated formatted output
+      const lines: string[] = []
+      lines.push(`🔍 Multi-project search: "${query}"`)
+      const viaLabel = scoredHits.length > 0 && scoredHits[0]?.via === 'symbol' ? ' (via symbol search)' : ''
+      lines.push(`Scanned ${allProjects.length} repos, found matches in ${scoredHits.length}${viaLabel}\n`)
+
+      if (scoredHits.length === 0) {
+        lines.push('⚠️ No matches found in any indexed repository (tried flows + symbols).')
+        lines.push('\n**Hints:**')
+        lines.push('• Try a single keyword instead of a phrase')
+        lines.push('• Use cortex_cypher with custom Cypher query')
+        lines.push('• Check cortex_list_repos to verify your target project is indexed')
+      } else {
+        const topProjects = scoredHits.slice(0, 5)
+        for (const hit of topProjects) {
+          const projName = hit.project.name || hit.project.slug || hit.project.id
+          lines.push(`\n## ${projName} (${hit.project.indexed_symbols} symbols)`)
+
+          if (hit.via === 'symbol' && hit.symbols && hit.symbols.length > 0) {
+            // Filter out File/Folder/Section noise — prefer actual code symbols
+            const codeSyms = hit.symbols.filter(s => !['File', 'Folder', 'Section'].includes(s.type))
+            const showSyms = codeSyms.length > 0 ? codeSyms : hit.symbols
+            for (const sym of showSyms.slice(0, 8)) {
+              lines.push(`  → ${sym.name} (${sym.type}) — ${sym.file}`)
+            }
+          } else {
+            // Flow results
+            const raw = ((hit.result as Record<string, unknown>)?.raw as string) ?? ''
+            const truncated = raw.split('\n').slice(0, 15).join('\n')
+            lines.push(truncated)
+          }
+          lines.push(`💡 Refine: cortex_code_search(query: "${query}", repo: "${hit.project.slug ?? hit.project.name}")`)
+        }
+
+        if (scoredHits.length > 5) {
+          lines.push(`\n_+${scoredHits.length - 5} more projects with matches. Use \`repo:\` to narrow._`)
+        }
+      }
+
+      return c.json({
+        success: true,
+        data: {
+          query,
+          limit: limit ?? 5,
+          source: 'gitnexus',
+          formatted: lines.join('\n'),
+          results: { multiProject: true, hits: scoredHits.length, scanned: allProjects.length },
+        },
+      })
+    }
+
+    // ── projectId provided: original single-repo search with fallback ──
+    const repoCandidates: string[] = resolveRepoNames(projectId)
+    params.repo = repoCandidates[0]
+    logger.info(`Code search: trying candidates ${JSON.stringify(repoCandidates)} from "${projectId}"`)
+
     let results: unknown
     let lastError: unknown = null
 
-    // Try each candidate repo name until one works
-    if (repoCandidates.length > 0) {
-      for (const candidate of repoCandidates) {
-        try {
-          params.repo = candidate
-          results = await callGitNexus('query', params)
-          logger.info(`Code search: success with repo "${candidate}"`)
-          lastError = null
-          break
-        } catch (err) {
-          lastError = err
-          logger.info(`Code search: "${candidate}" failed, trying next...`)
-        }
+    for (const candidate of repoCandidates) {
+      try {
+        params.repo = candidate
+        results = await callGitNexus('query', params)
+        logger.info(`Code search: success with repo "${candidate}"`)
+        lastError = null
+        break
+      } catch (err) {
+        lastError = err
+        logger.info(`Code search: "${candidate}" failed, trying next...`)
       }
-
-      // Final fallback: try without repo filter (search all repos)
-      if (lastError) {
-        logger.info('Code search: all candidates failed, trying without repo filter')
-        delete params.repo
-        try {
-          results = await callGitNexus('query', params)
-          lastError = null
-        } catch (err) {
-          lastError = err
-        }
-      }
-
-      if (lastError) throw lastError
-    } else {
-      // No projectId — search across all repos
-      results = await callGitNexus('query', params)
     }
+
+    if (lastError) throw lastError
 
     // Format results as readable report
     const formatted = formatSearchResults(query, results)
@@ -351,7 +583,19 @@ intelRouter.post('/search', async (c) => {
     })
   } catch (error) {
     logger.error(`Code search failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json(
+      {
+        success: false,
+        error: String(error),
+        hint: 'Make sure GitNexus service is running and the repository has been indexed.',
+        suggestions: [
+          'Try calling cortex_health to check GitNexus status',
+          'Ensure the project has been indexed via Code Indexing in the dashboard',
+          'Try a broader search query',
+        ],
+      },
+      500,
+    )
   }
 })
 
@@ -379,7 +623,14 @@ intelRouter.post('/impact', async (c) => {
     })
   } catch (error) {
     logger.error(`Impact analysis failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json(
+      {
+        success: false,
+        error: String(error),
+        hint: 'Ensure the target symbol exists in an indexed repository.',
+      },
+      500,
+    )
   }
 })
 
@@ -410,7 +661,7 @@ intelRouter.post('/context', async (c) => {
     if (file && results?.raw?.includes('Disambiguate with file path')) {
       const lines = results.raw.split('\n')
       // Find the line matching the provided file path
-      // Pattern: "  undefined HandleAttack → GameServer/Logic/NpcAttackLogic.cs:885  (uid: Method:...)"
+      // Pattern: "  undefined MyFunction → src/services/auth.ts:42  (uid: Method:...)"
       const normalizedFile = file.replace(/\\/g, '/')
       const matchingLine = lines.find((line) => {
         // Match against full path or basename
@@ -423,7 +674,7 @@ intelRouter.post('/context', async (c) => {
       })
 
       if (matchingLine) {
-        // Extract UID: (uid: Method:GameServer/Logic/NpcAttackLogic.cs:HandleAttack)
+        // Extract UID: (uid: Method:src/services/auth.ts:validateToken)
         const uidMatch = matchingLine.match(/\(uid:\s+(\S+)\)/)
         if (uidMatch?.[1]) {
           logger.info(`Context auto-disambiguate: resolved "${name}" + file "${file}" → uid "${uidMatch[1]}"`)
@@ -448,7 +699,14 @@ intelRouter.post('/context', async (c) => {
     })
   } catch (error) {
     logger.error(`Context lookup failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json(
+      {
+        success: false,
+        error: String(error),
+        hint: 'Ensure the symbol exists in an indexed repository.',
+      },
+      500,
+    )
   }
 })
 
@@ -460,8 +718,8 @@ export async function getGitNexusRepos() {
 
   // Enrich with project DB data for project ID mapping
   const projects = db.prepare(
-    'SELECT id, slug, name, git_repo_url, indexed_symbols, indexed_at FROM projects'
-  ).all() as Array<{ id: string; slug: string; name: string; git_repo_url: string | null; indexed_symbols: number | null; indexed_at: string | null }>
+    'SELECT id, slug, name, git_repo_url, indexed_symbols FROM projects'
+  ).all() as Array<{ id: string; slug: string; name: string; git_repo_url: string | null; indexed_symbols: number | null }>
 
   // Build a lookup for matching by slug or repo URL basename
   const projectBySlug = new Map<string, typeof projects[0]>()
@@ -479,105 +737,81 @@ export async function getGitNexusRepos() {
   }
 
   // Parse GitNexus raw response — may be array, object with repos, or raw text
-  let repos: Array<{ name: string; projectId: string; slug: string; symbols: number | string; gitUrl: string; indexStatus: string; indexedAt: string | null }> = []
+  type RepoEntry = { name: string; projectId: string; slug: string; symbols: number | string; relationships: number | string; flows: number | string; gitUrl: string; path: string; indexed: string }
+  let repos: RepoEntry[] = []
 
   const rawData = gitNexusResult as Record<string, unknown>
   if (rawData?.raw && typeof rawData.raw === 'string') {
-    // Raw text from GitNexus — parse structured repo entries
-    // Format:
-    //   Indexed repositories:
+    // GitNexus raw output format (multi-line per repo):
+    //   cortex-hub — 909 symbols, 1656 relationships, 69 flows
+    //   Path: /app/data/repos/cortex-hub
+    //   Indexed: 2026-03-24T02:15:38.013Z
     //
-    //     cortex-hub — 1779 symbols, 3641 relationships, 140 flows
-    //       Path: /app/data/repos/cortex-hub
-    //       Indexed: 2026-04-04T15:24:05.890Z
-    const lines = rawData.raw.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+    // Parse by detecting repo lines (contain " — " with stats)
+    const lines = rawData.raw.split('\n').map(l => l.trim())
 
-    const parsed: Array<{ name: string; symbols: string; path?: string; indexedAt?: string }> = []
-    let current: typeof parsed[0] | null = null
+    let currentRepo: Partial<RepoEntry> | null = null
 
     for (const line of lines) {
-      // Skip header lines
-      if (line.toLowerCase().includes('indexed repositories') || line === '') continue
+      if (!line || line.startsWith('Indexed repositories')) continue
 
-      // Repo line: "cortex-hub — 1779 symbols, 3641 relationships, 140 flows"
-      // Em dash is U+2014 (\u2014) — use explicit unicode match
-      const emDash = '\u2014'
-      const dashIdx = line.indexOf(emDash)
-      if (dashIdx > 0 && !line.startsWith('Path:') && !line.startsWith('Indexed:')) {
-        current = {
-          name: line.slice(0, dashIdx).trim(),
-          symbols: line.slice(dashIdx + emDash.length).trim().split(',')[0] || '',
+      // Repo name line: "cortex-hub — 909 symbols, 1656 relationships, 69 flows"
+      const repoMatch = line.match(/^(.+?)\s+—\s+(\d+)\s+symbols?,\s*(\d+)\s+relationships?,\s*(\d+)\s+flows?/)
+      if (repoMatch) {
+        // Save previous repo
+        if (currentRepo?.name) {
+          repos.push(currentRepo as RepoEntry)
         }
-        parsed.push(current)
-      } else if (current) {
-        // Sub-lines
-        if (line.startsWith('Path:')) current.path = line.replace('Path:', '').trim()
-        if (line.startsWith('Indexed:')) current.indexedAt = line.replace('Indexed:', '').trim()
+        const repoName = repoMatch[1]!.trim()
+        const match = projectBySlug.get(repoName.toLowerCase()) ?? projectById.get(repoName)
+        currentRepo = {
+          name: match?.name ?? repoName,
+          projectId: match?.id ?? '',
+          slug: match?.slug ?? repoName,
+          symbols: match?.indexed_symbols ?? parseInt(repoMatch[2]!, 10),
+          relationships: parseInt(repoMatch[3]!, 10),
+          flows: parseInt(repoMatch[4]!, 10),
+          gitUrl: match?.git_repo_url ?? '',
+          path: '',
+          indexed: '',
+        }
+        continue
+      }
+
+      // Path line: "Path: /app/data/repos/proj-5b9a75cd"
+      if (line.startsWith('Path:') && currentRepo) {
+        currentRepo.path = line.replace('Path:', '').trim()
+        continue
+      }
+
+      // Indexed line: "Indexed: 2026-03-24T02:15:38.013Z"
+      if (line.startsWith('Indexed:') && currentRepo) {
+        currentRepo.indexed = line.replace('Indexed:', '').trim()
+        continue
       }
     }
 
-    // Enrich with project DB metadata
-    repos = parsed.map(r => {
-      // Try matching by slug/name first
-      let match = projectBySlug.get(r.name.toLowerCase()) ?? projectById.get(r.name)
-
-      // If name looks like a projectId (proj-xxx), match directly
-      if (!match && r.name.startsWith('proj-')) {
-        match = projectById.get(r.name)
-      }
-
-      // Fallback: extract projectId from path (e.g., /app/data/repos/proj-f495047b)
-      if (!match && r.path) {
-        const pathParts = r.path.split('/')
-        const folderName = pathParts[pathParts.length - 1]
-        if (folderName?.startsWith('proj-')) {
-          match = projectById.get(folderName)
-        }
-      }
-
-      return {
-        name: match?.slug ?? r.name,
-        projectId: match?.id ?? '',
-        slug: match?.slug ?? r.name,
-        symbols: match?.indexed_symbols ?? r.symbols ?? '?',
-        gitUrl: match?.git_repo_url ?? r.path ?? '',
-        indexStatus: 'indexed' as const,
-        indexedAt: r.indexedAt ?? match?.indexed_at ?? null,
-      }
-    })
+    // Don't forget the last repo
+    if (currentRepo?.name) {
+      repos.push(currentRepo as RepoEntry)
+    }
   } else if (Array.isArray(rawData)) {
     repos = rawData.map((r: unknown) => {
       const name = typeof r === 'string' ? r : ((r as Record<string, string>).name ?? 'unknown')
       const match = projectBySlug.get(name.toLowerCase()) ?? projectById.get(name)
       return {
-        name,
+        name: match?.name ?? name,
         projectId: match?.id ?? '',
         slug: match?.slug ?? name,
         symbols: match?.indexed_symbols ?? '?',
+        relationships: '?',
+        flows: '?',
         gitUrl: match?.git_repo_url ?? '',
-        indexStatus: 'indexed' as const,
-        indexedAt: match?.indexed_at ?? null,
+        path: '',
+        indexed: '',
       }
     })
   }
-
-  // Merge: add projects from DB that are NOT in GitNexus index yet
-  const indexedSlugs = new Set(repos.map(r => r.slug.toLowerCase()))
-  for (const p of projects) {
-    const slugLower = (p.slug ?? '').toLowerCase()
-    if (!indexedSlugs.has(slugLower)) {
-      repos.push({
-        name: p.slug || p.name || p.id,
-        projectId: p.id,
-        slug: p.slug || p.name || p.id,
-        symbols: p.indexed_symbols ?? 0,
-        gitUrl: p.git_repo_url ?? '',
-        indexStatus: p.indexed_at ? 'stale' as const : 'not_indexed' as const,
-        indexedAt: p.indexed_at ?? null,
-      })
-    }
-  }
-
   return repos
 }
 
@@ -588,7 +822,10 @@ intelRouter.get('/repos', async (c) => {
     return c.json({ success: true, data: repos })
   } catch (error) {
     logger.error(`List repos failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json(
+      { success: false, error: String(error) },
+      500,
+    )
   }
 })
 
@@ -609,7 +846,10 @@ intelRouter.post('/detect-changes', async (c) => {
     return c.json({ success: true, data: results })
   } catch (error) {
     logger.error(`Detect changes failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json(
+      { success: false, error: String(error) },
+      500,
+    )
   }
 })
 
@@ -630,7 +870,10 @@ intelRouter.post('/cypher', async (c) => {
     return c.json({ success: true, data: results })
   } catch (error) {
     logger.error(`Cypher query failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json(
+      { success: false, error: String(error) },
+      500,
+    )
   }
 })
 
@@ -691,7 +934,7 @@ intelRouter.post('/register', async (c) => {
     })
   } catch (error) {
     logger.error(`Register failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error) }, 500)
   }
 })
 
@@ -764,7 +1007,7 @@ intelRouter.post('/sync-repos', async (c) => {
     })
   } catch (error) {
     logger.error(`Sync repos failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error) }, 500)
   }
 })
 
@@ -786,12 +1029,19 @@ intelRouter.post('/code-search', async (c) => {
     // Resolve collection name
     const collectionName = `cortex-project-${projectId}`
 
-    // Embed the query
-    const config: EmbedderConfig = {
-      provider: 'gemini' as const,
-      apiKey: resolveGeminiApiKey(),
-      model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-2-preview',
-    }
+    // Embed the query — respects EMBEDDING_PROVIDER env var
+    const provider = (process.env['EMBEDDING_PROVIDER'] || 'local') as 'gemini' | 'local'
+    const config: EmbedderConfig = provider === 'local'
+      ? {
+          provider: 'local' as const,
+          apiKey: '',
+          model: process.env['LOCAL_EMBEDDING_MODEL'] || 'Xenova/all-MiniLM-L6-v2',
+        }
+      : {
+          provider: 'gemini' as const,
+          apiKey: resolveGeminiApiKey(),
+          model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-001',
+        }
     const embedder = new Embedder(config)
     const vector = await embedder.embed(query)
 
@@ -852,7 +1102,7 @@ intelRouter.post('/code-search', async (c) => {
     })
   } catch (error) {
     logger.error(`Code search (Qdrant) failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error) }, 500)
   }
 })
 
@@ -870,9 +1120,22 @@ intelRouter.post('/file-content', async (c) => {
     if (!projectId) return c.json({ error: 'projectId is required' }, 400)
     if (!file) return c.json({ error: 'file path is required' }, 400)
 
+    // Resolve any identifier (project ID, name, slug, URL) → actual directory
+    // Uses the same resolveRepoNames logic as code_search/code_context
+    let resolvedId = projectId
+    if (!existsSync(join(REPOS_DIR, projectId))) {
+      const candidates = resolveRepoNames(projectId)
+      for (const candidate of candidates) {
+        if (existsSync(join(REPOS_DIR, candidate))) {
+          resolvedId = candidate
+          break
+        }
+      }
+    }
+
     // Security: prevent path traversal
     const normalized = file.replace(/\\/g, '/').replace(/\.\.\/|\.\.$/g, '')
-    const repoDir = join(REPOS_DIR, projectId)
+    const repoDir = join(REPOS_DIR, resolvedId)
     const fullPath = join(repoDir, normalized)
 
     // Ensure path stays within repo dir
@@ -936,7 +1199,7 @@ intelRouter.post('/file-content', async (c) => {
     })
   } catch (error) {
     logger.error(`File content read failed: ${String(error)}`)
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error) }, 500)
   }
 })
 
@@ -984,6 +1247,9 @@ intelRouter.get('/health', async (c) => {
     const data = await res.json()
     return c.json({ status: 'healthy', ...data })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json(
+      { status: 'unreachable', error: String(error) },
+      503,
+    )
   }
 })

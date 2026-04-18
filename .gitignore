@@ -9,6 +9,12 @@ out/
 *.d.ts.map
 *.js.map
 *.tsbuildinfo
+*.vsix
+package-lock.json
+
+# Compiled TS in source dirs (output goes to dist/)
+apps/hub-mcp/src/**/*.js
+apps/hub-mcp/src/**/*.d.ts
 
 # Environment
 .env

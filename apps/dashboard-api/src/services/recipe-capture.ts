@@ -18,6 +18,24 @@ import { createLogger } from '@cortex/shared-utils'
 
 const logger = createLogger('recipe-capture')
 
+function logCaptureAttempt(data: {
+  source: 'task' | 'session'
+  sourceId: string | null
+  agentId: string | null
+  projectId: string | null
+  status: 'attempt' | 'captured' | 'derived' | 'skipped' | 'error'
+  title?: string
+  docId?: string
+  errorMessage?: string
+}) {
+  try {
+    db.prepare(
+      `INSERT INTO recipe_capture_log (source, source_id, agent_id, project_id, status, title, doc_id, error_message)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(data.source, data.sourceId, data.agentId, data.projectId, data.status, data.title ?? null, data.docId ?? null, data.errorMessage ?? null)
+  } catch { /* DB not ready */ }
+}
+
 const QDRANT_URL = process.env.QDRANT_URL ?? 'http://qdrant:6333'
 const COLLECTION = 'knowledge'
 const CHUNK_SIZE = 1500
@@ -56,24 +74,9 @@ function chunkText(text: string): string[] {
   return chunks
 }
 
-function resolveGeminiApiKey(): string {
-  const envKey = process.env['GEMINI_API_KEY']
-  if (envKey) return envKey
-  try {
-    const row = db.prepare(
-      "SELECT api_key FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' AND api_key IS NOT NULL LIMIT 1"
-    ).get() as { api_key: string } | undefined
-    if (row?.api_key) return row.api_key
-  } catch { /* DB might not be ready */ }
-  return ''
-}
-
 function getEmbedder(): Embedder {
-  return new Embedder({
-    provider: 'gemini' as const,
-    apiKey: resolveGeminiApiKey(),
-    model: process.env['MEM9_EMBEDDING_MODEL'] || 'gemini-embedding-2-preview',
-  } satisfies EmbedderConfig)
+  const { createEmbedder } = require('../lib/embedder-factory.js') as { createEmbedder: () => Embedder }
+  return createEmbedder()
 }
 
 function getVectorStore(): VectorStore {
@@ -133,7 +136,8 @@ Output valid JSON only:
     })
 
     if (!res.ok) {
-      logger.warn(`LLM call failed: ${res.status}`)
+      const errBody = await res.text().catch(() => 'unknown')
+      logger.warn(`LLM call failed: HTTP ${res.status} ${res.statusText} — ${errBody.slice(0, 200)}`)
       return null
     }
 
@@ -291,25 +295,43 @@ interface TaskRow {
 }
 
 export async function captureFromTask(task: TaskRow): Promise<void> {
+  const agentId = task.completed_by ?? task.created_by_agent
+
   // Guards
   if (!task.result) return
-  if (isRateLimited()) { logger.debug('Rate limited, skipping capture'); return }
+
+  logCaptureAttempt({ source: 'task', sourceId: task.id, agentId, projectId: task.project_id, status: 'attempt' })
+
+  if (isRateLimited()) {
+    logger.debug('Rate limited, skipping capture')
+    logCaptureAttempt({ source: 'task', sourceId: task.id, agentId, projectId: task.project_id, status: 'skipped', errorMessage: 'Rate limited' })
+    return
+  }
 
   // Skip review/synthesis tasks
   const ctx = task.context ? JSON.parse(task.context) as Record<string, unknown> : {}
-  if (ctx.type === 'review' || ctx.type === 'synthesis' || ctx.autoReview === false) return
+  if (ctx.type === 'review' || ctx.type === 'synthesis' || ctx.autoReview === false) {
+    logCaptureAttempt({ source: 'task', sourceId: task.id, agentId, projectId: task.project_id, status: 'skipped', errorMessage: `Guard: ctx.type=${ctx.type as string ?? 'N/A'}, autoReview=${String(ctx.autoReview)}` })
+    return
+  }
 
   // Need enough actions to be meaningful
   const logCount = db.prepare(
     'SELECT COUNT(*) as cnt FROM conductor_task_logs WHERE task_id = ?'
   ).get(task.id) as { cnt: number }
-  if (logCount.cnt < 2) return
+  if (logCount.cnt < 2) {
+    logCaptureAttempt({ source: 'task', sourceId: task.id, agentId, projectId: task.project_id, status: 'skipped', errorMessage: `Guard: only ${logCount.cnt} task log entries (need >= 2)` })
+    return
+  }
 
   // Check for duplicate title
   const existingTitle = db.prepare(
     "SELECT id FROM knowledge_documents WHERE title = ? AND status = 'active'"
   ).get(task.title)
-  if (existingTitle) return
+  if (existingTitle) {
+    logCaptureAttempt({ source: 'task', sourceId: task.id, agentId, projectId: task.project_id, status: 'skipped', errorMessage: `Guard: duplicate title "${task.title}"` })
+    return
+  }
 
   // Gather execution trace
   const logs = db.prepare(
@@ -329,22 +351,33 @@ ${logs.map(l => `- [${l.action}] ${l.message ?? ''}`).join('\n')}
 ${task.result ?? 'N/A'}`
 
   // Analyze
-  const analysis = await analyzeForCapture(executionContext)
+  let analysis: CaptureAnalysis | null
+  try {
+    analysis = await analyzeForCapture(executionContext)
+  } catch (err) {
+    logCaptureAttempt({ source: 'task', sourceId: task.id, agentId, projectId: task.project_id, status: 'error', errorMessage: `analyzeForCapture threw: ${(err as Error).message?.slice(0, 300)}` })
+    throw err
+  }
+
   if (!analysis?.should_capture) {
     logger.debug(`Not capturing task ${task.id}: ${analysis?.reasoning ?? 'analysis failed'}`)
+    logCaptureAttempt({ source: 'task', sourceId: task.id, agentId, projectId: task.project_id, status: 'skipped', errorMessage: `LLM: ${analysis?.reasoning ?? 'analysis returned null'}` })
     return
   }
 
   // Check similarity for derived vs captured
   const similar = await findSimilarDoc(analysis.content, task.project_id)
+  const origin = similar ? 'derived' : 'captured'
 
-  await storeRecipe(analysis, {
+  const docId = await storeRecipe(analysis, {
     projectId: task.project_id,
-    agentId: task.completed_by ?? task.created_by_agent,
+    agentId,
     sourceTaskId: task.id,
-    origin: similar ? 'derived' : 'captured',
+    origin,
     parentDocId: similar?.docId ?? null,
   })
+
+  logCaptureAttempt({ source: 'task', sourceId: task.id, agentId, projectId: task.project_id, status: origin, title: analysis.title, docId })
 }
 
 // ── Public API: Capture from session end ──
@@ -355,8 +388,18 @@ export async function captureFromSession(opts: {
   agentId: string | null
   projectId: string | null
 }): Promise<void> {
-  if (!opts.summary || opts.summary.length < 50) return
-  if (isRateLimited()) { logger.debug('Rate limited, skipping capture'); return }
+  if (!opts.summary || opts.summary.length < 50) {
+    logCaptureAttempt({ source: 'session', sourceId: opts.sessionId, agentId: opts.agentId, projectId: opts.projectId, status: 'skipped', errorMessage: 'Summary too short or empty' })
+    return
+  }
+
+  logCaptureAttempt({ source: 'session', sourceId: opts.sessionId, agentId: opts.agentId, projectId: opts.projectId, status: 'attempt' })
+
+  if (isRateLimited()) {
+    logger.debug('Rate limited, skipping capture')
+    logCaptureAttempt({ source: 'session', sourceId: opts.sessionId, agentId: opts.agentId, projectId: opts.projectId, status: 'skipped', errorMessage: 'Rate limited' })
+    return
+  }
 
   // Get tool usage from query_logs for this session's agent (last hour)
   const toolUsage = db.prepare(`
@@ -373,16 +416,29 @@ ${toolUsage.map(t => `- ${t.tool}: ${t.cnt} calls`).join('\n') || 'N/A'}
 
 ## Project: ${opts.projectId ?? 'unknown'}`
 
-  const analysis = await analyzeForCapture(context)
-  if (!analysis?.should_capture) return
+  let analysis: CaptureAnalysis | null
+  try {
+    analysis = await analyzeForCapture(context)
+  } catch (err) {
+    logCaptureAttempt({ source: 'session', sourceId: opts.sessionId, agentId: opts.agentId, projectId: opts.projectId, status: 'error', errorMessage: `analyzeForCapture threw: ${(err as Error).message?.slice(0, 300)}` })
+    throw err
+  }
+
+  if (!analysis?.should_capture) {
+    logCaptureAttempt({ source: 'session', sourceId: opts.sessionId, agentId: opts.agentId, projectId: opts.projectId, status: 'skipped', errorMessage: `LLM: ${analysis?.reasoning ?? 'analysis returned null'}` })
+    return
+  }
 
   const similar = await findSimilarDoc(analysis.content, opts.projectId)
+  const origin = similar ? 'derived' : 'captured'
 
-  await storeRecipe(analysis, {
+  const docId = await storeRecipe(analysis, {
     projectId: opts.projectId,
     agentId: opts.agentId,
     sourceTaskId: null,
-    origin: similar ? 'derived' : 'captured',
+    origin,
     parentDocId: similar?.docId ?? null,
   })
+
+  logCaptureAttempt({ source: 'session', sourceId: opts.sessionId, agentId: opts.agentId, projectId: opts.projectId, status: origin, title: analysis.title, docId })
 }

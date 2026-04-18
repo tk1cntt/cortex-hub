@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
-import { handleApiError } from '../utils/error-handler.js'
 
 export const statsRouter = new Hono()
 
@@ -54,7 +53,7 @@ statsRouter.get('/overview', async (c) => {
       today: { queries: todayQueries, tokens: todayTokens },
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -310,7 +309,7 @@ statsRouter.get('/overview-v2', async (c) => {
       tokenSavings,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -337,7 +336,7 @@ statsRouter.get('/activity', (c) => {
 
     return c.json({ activity })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -372,7 +371,7 @@ statsRouter.get('/budget', (c) => {
       monthlyAlert: budget.monthly_limit > 0 && monthlyUsed >= budget.monthly_limit * budget.alert_threshold,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -397,7 +396,7 @@ statsRouter.post('/budget', async (c) => {
 
     return c.json({ success: true })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -426,9 +425,10 @@ statsRouter.post('/admin/restart/:service', async (c) => {
 statsRouter.post('/query-log', async (c) => {
   try {
     const { agentId, tool, params, status, latencyMs, error, projectId, inputSize, outputSize, computeTokens, computeModel } = await c.req.json()
+    const resolvedAgent = agentId || 'unknown'
     const stmt = db.prepare('INSERT INTO query_logs (agent_id, tool, params, latency_ms, status, error, project_id, input_size, output_size, compute_tokens, compute_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     stmt.run(
-      agentId || 'unknown', 
+      resolvedAgent,
       tool || 'unknown',
       params ? JSON.stringify(params) : null,
       latencyMs || 0,
@@ -441,6 +441,15 @@ statsRouter.post('/query-log', async (c) => {
       computeModel || null
     )
 
+    // Keep session alive: update last_activity for this agent's active session.
+    // This prevents premature session expiry and enables overnight resume.
+    try {
+      db.prepare(
+        `UPDATE session_handoffs SET last_activity = datetime('now')
+         WHERE from_agent = ? AND status = 'active'`
+      ).run(resolvedAgent)
+    } catch { /* non-critical */ }
+
     // Bridge backend LLM cost to the unified billing table
     if (computeTokens && computeTokens > 0 && computeModel) {
       const usageStmt = db.prepare('INSERT INTO usage_logs (agent_id, model, total_tokens, request_type, project_id) VALUES (?, ?, ?, ?, ?)')
@@ -449,7 +458,7 @@ statsRouter.post('/query-log', async (c) => {
 
     return c.json({ success: true })
   } catch (err) {
-    return handleApiError(c, err)
+    return c.json({ error: String(err) }, 500)
   }
 })
 
@@ -490,7 +499,7 @@ statsRouter.get('/projects/:id/analytics', (c) => {
       trend,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -603,7 +612,7 @@ statsRouter.get('/tool-analytics', (c) => {
       trend,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -687,7 +696,7 @@ statsRouter.get('/session-compliance/:sessionId', (c) => {
       hints,
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 
@@ -767,7 +776,7 @@ statsRouter.get('/hints/:agentId', (c) => {
 
     return c.json({ agentId, hints, toolsUsedCount: used.size })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ error: String(error) }, 500)
   }
 })
 

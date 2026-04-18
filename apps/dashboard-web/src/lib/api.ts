@@ -82,7 +82,7 @@ export async function revokeApiKey(id: string) {
 
 // ── MCP Health ──
 export async function checkMcpHealth() {
-  const res = await fetch(config.mcp.health || '/mcp/health', { signal: AbortSignal.timeout(5000) })
+  const res = await fetch(config.mcp.health, { signal: AbortSignal.timeout(5000) })
   return res.json()
 }
 
@@ -764,6 +764,11 @@ export interface KnowledgeDocument {
   completion_count?: number
   fallback_count?: number
   created_by_agent?: string
+  // MemPalace-inspired memory hierarchy + temporal validity
+  hall_type?: 'fact' | 'event' | 'discovery' | 'preference' | 'advice' | 'general'
+  valid_from?: string | null
+  invalidated_at?: string | null
+  superseded_by?: string | null
 }
 
 export interface KnowledgeStats {
@@ -810,6 +815,42 @@ export async function searchKnowledge(query: string, opts?: { tags?: string[]; p
 
 export async function getKnowledgeTags() {
   return apiFetch<{ tags: string[] }>('/api/knowledge/tags')
+}
+
+// ── Recipe Stats ──
+export interface RecipeStats {
+  capture: {
+    stats: Record<string, number>  // { attempt: N, captured: N, derived: N, skipped: N, error: N }
+    recent: Array<{
+      id: number
+      source: string
+      source_id: string | null
+      agent_id: string | null
+      project_id: string | null
+      status: string
+      title: string | null
+      doc_id: string | null
+      error_message: string | null
+      created_at: string
+    }>
+  }
+  quality: {
+    total: number | null
+    selected: number | null
+    completed: number | null
+    fallbacked: number | null
+    totalSelections: number | null
+    totalCompletions: number | null
+    totalFallbacks: number | null
+    avgEffectiveRate: number | null
+  }
+  origins: Record<string, number>  // { manual: N, agent: N, captured: N, derived: N, fixed: N }
+  lineage: number
+  usage: Record<string, number>  // { suggested: N, applied: N, completed: N, fallback: N }
+}
+
+export async function getRecipeStats() {
+  return apiFetch<RecipeStats>('/api/knowledge/recipe-stats')
 }
 
 // ── Conductor Tasks ──

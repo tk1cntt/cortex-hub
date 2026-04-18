@@ -2,16 +2,16 @@ import type { CortexConfig } from './config.js'
 
 /** Resolve the Dashboard API base URL (not MCP URL) */
 function getApiBaseUrl(config: CortexConfig): string {
-  // hubUrl is wss://cortex-mcp.your-domain.com/ws/conductor
-  // API is at cortex-api.your-domain.com (different service)
+  // hubUrl is wss://cortex-mcp.jackle.dev/ws/conductor
+  // API is at cortex-api.jackle.dev (different service)
   // Derive: replace 'mcp' with 'api' in hostname
   const wsUrl = config.hubUrl
     .replace('wss://', 'https://')
     .replace('ws://', 'http://')
     .replace('/ws/conductor', '')
 
-  // cortex-mcp.* → cortex-api.*
-  return wsUrl.replace('-mcp.', '-api.')
+  // cortex-mcp.jackle.dev → cortex-api.jackle.dev
+  return wsUrl.replace('cortex-mcp.', 'cortex-api.')
 }
 
 /** Fetch JSON from Hub API with auth */

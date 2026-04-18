@@ -64,65 +64,19 @@ for (const sql of knowledgeEvolutionCols) {
   try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
 }
 
-// v1.1: index_jobs — commit tracking, mem9, docs knowledge
-const indexJobsExtraCols = [
-  'ALTER TABLE index_jobs ADD COLUMN commit_hash TEXT',
-  'ALTER TABLE index_jobs ADD COLUMN commit_message TEXT',
-  'ALTER TABLE index_jobs ADD COLUMN triggered_by TEXT',
-  'ALTER TABLE index_jobs ADD COLUMN mem9_status TEXT',
-  'ALTER TABLE index_jobs ADD COLUMN mem9_chunks INTEGER DEFAULT 0',
-  'ALTER TABLE index_jobs ADD COLUMN mem9_progress INTEGER DEFAULT 0',
-  'ALTER TABLE index_jobs ADD COLUMN mem9_total_chunks INTEGER DEFAULT 0',
-  'ALTER TABLE index_jobs ADD COLUMN docs_knowledge_status TEXT',
-  'ALTER TABLE index_jobs ADD COLUMN docs_knowledge_count INTEGER DEFAULT 0',
+// MemPalace-inspired memory hierarchy + temporal validity
+const memoryHierarchyCols = [
+  "ALTER TABLE knowledge_documents ADD COLUMN hall_type TEXT DEFAULT 'general' CHECK(hall_type IN ('fact','event','discovery','preference','advice','general'))",
+  "ALTER TABLE knowledge_documents ADD COLUMN valid_from TEXT",
+  "ALTER TABLE knowledge_documents ADD COLUMN invalidated_at TEXT",
+  "ALTER TABLE knowledge_documents ADD COLUMN superseded_by TEXT",
+  "CREATE INDEX IF NOT EXISTS idx_knowledge_hall_type ON knowledge_documents(hall_type)",
+  "CREATE INDEX IF NOT EXISTS idx_knowledge_valid_from ON knowledge_documents(valid_from)",
+  "CREATE INDEX IF NOT EXISTS idx_knowledge_invalidated_at ON knowledge_documents(invalidated_at)",
 ]
-for (const sql of indexJobsExtraCols) {
-  try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
+for (const sql of memoryHierarchyCols) {
+  try { db.exec(sql) } catch { /* ignore if exists */ }
 }
-
-// ── query_logs: add analytics columns ──
-const queryLogsExtraCols = [
-  'ALTER TABLE query_logs ADD COLUMN input_size INTEGER DEFAULT 0',
-  'ALTER TABLE query_logs ADD COLUMN output_size INTEGER DEFAULT 0',
-  'ALTER TABLE query_logs ADD COLUMN compute_tokens INTEGER DEFAULT 0',
-  'ALTER TABLE query_logs ADD COLUMN compute_model TEXT',
-]
-for (const sql of queryLogsExtraCols) {
-  try { db.exec(sql) } catch (e) { /* ignore if column exists */ }
-}
-
-// ── agent_ack: table for tracking agent change awareness ──
-try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS agent_ack (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      agent_id TEXT NOT NULL,
-      project_id TEXT NOT NULL,
-      last_seen_event_id TEXT,
-      updated_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(agent_id, project_id)
-    )
-  `)
-} catch (e) { /* ignore if table exists */ }
-
-// ── change_events: table for tracking code changes ──
-try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS change_events (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      branch TEXT NOT NULL,
-      agent_id TEXT,
-      commit_sha TEXT,
-      commit_message TEXT,
-      files_changed TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )
-  `)
-} catch (e) { /* ignore if table exists */ }
-
-// Update index_jobs table definition in schema.sql to include new columns
-// (tracked in schema.sql DDL directly — no migration needed for fresh installs)
 
 if (existsSync(schemaPath)) {
   const schema = readFileSync(schemaPath, 'utf8')

@@ -131,7 +131,7 @@ CF_ACCOUNT_ID=<your-account-id>
 CF_API_TOKEN=<your-api-token>
 
 # OpenAI (for mem9 embeddings)
-GEMINI_API_KEY=<your-key>
+OPENAI_API_KEY=<your-key>
 
 # Hub MCP Auth
 HUB_API_KEY_ANTIGRAVITY=<generated-key>

@@ -9,165 +9,249 @@
 Cortex Hub connects AI agents through a unified **MCP (Model Context Protocol)** endpoint. Agents authenticate with **Bearer API keys**, and all LLM calls route through CLIProxy (multi-provider gateway with OAuth support).
 
 ```
-AI Agent → Hub MCP (Bearer token) → Dashboard API → Backend Services
-                                      ├── Qdrant (vectors)
-                                      ├── GitNexus (code intelligence)
-                                      ├── mem9 (agent memory, in-process)
-                                      └── CLIProxy → Gemini/OpenAI/Anthropic
+AI Agent → MCP Server (Bearer token) → Dashboard API → Backend Services
+                                          ├── Qdrant (vectors)
+                                          ├── GitNexus (code intelligence)
+                                          ├── mem9 (agent memory)
+                                          └── CLIProxy → OpenAI/Gemini/Claude
 ```
 
 ---
 
-## Quick Start
+## Quick Start (Recommended)
 
-### 1. Deploy Cortex Hub
+### 1. Global Install (one time per machine)
 
 ```bash
-git clone https://github.com/lktiep/cortex-hub.git
-cd cortex-hub
-cp .env.example .env
-# Edit .env with your domain and API keys
-bash scripts/deploy.sh
+# From cortex-hub repo
+bash scripts/install.sh
+
+# Or via curl (no clone needed)
+curl -fsSL https://raw.githubusercontent.com/lktiep/cortex-hub/master/scripts/install.sh | bash
 ```
 
-### 2. Configure Your IDE's MCP Client
+This installs:
+- `/install` slash command globally (works in any project)
+- MCP config in `~/.claude.json` (reads API key from `HUB_API_KEY` env or `.env` file)
 
-Point your AI coding agent to the MCP endpoint:
+### 2. Per-Project Setup
 
-```
-MCP URL: http://localhost:8317/mcp  (local)
-         https://cortex-mcp.your-domain.com/mcp  (production)
-API Key: Generated from Dashboard → Settings → API Keys
-```
+Navigate to any project and type `/install` inside Claude Code. That's it.
 
-Supported IDEs:
-| IDE | Config Location |
-|-----|----------------|
-| Claude Code | `~/.claude.json` |
-| Cursor | `~/.cursor/mcp.json` |
-| VS Code | `.vscode/mcp.json` |
-| Gemini CLI | `~/.gemini/antigravity/mcp_config.json` |
-
-### 3. Run Onboarding Script (Optional)
-
-For automated IDE setup and project configuration:
-
+Or run directly:
 ```bash
 # macOS / Linux
-bash scripts/onboard.sh
+bash scripts/install.sh
 
 # Windows PowerShell
-.\scripts\onboard.ps1
+.\scripts\install.ps1
+
+# Specific IDEs only
+bash scripts/install.sh --tools claude,gemini,cursor
 ```
 
-The onboarding script:
-- Prompts for MCP URL and API key
-- Configures MCP for detected IDEs
-- Sets up project profile (`.cortex/project-profile.json`)
+The setup script is **idempotent** — safe to run multiple times. It:
+- Auto-detects installed IDEs (Claude, Gemini, Cursor, Windsurf, VS Code, Codex)
+- Configures MCP for each detected IDE
+- Generates `.cortex/project-profile.json` (build/lint/test commands)
+- Installs enforcement hooks (Claude Code + Gemini CLI)
+- Creates instruction files (`.cursorrules`, `.windsurfrules`, etc.)
+- Sets up `lefthook.yml` (git pre-commit/pre-push hooks)
+- Injects cortex integration into `CLAUDE.md`
+
+### 3. Auto-Update
+
+The hooks system is version-tracked (`.cortex/.hooks-version`). When a new version is released, running `/install` or `install.sh` will automatically detect the outdated version and regenerate hooks.
+
+```bash
+# Check current status without making changes
+bash scripts/install.sh --check
+
+# Force regenerate everything
+bash scripts/install.sh --force
+```
 
 ---
 
 ## Setup Scripts Reference
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/onboard.sh` | Interactive onboarding — prompts for MCP URL, API key, IDE selection |
-| `scripts/onboard.ps1` | Windows interactive onboarding |
-| `scripts/install.sh` | Non-interactive installer — reads config from env/.env |
-| `scripts/install.ps1` | Windows non-interactive installer |
-| `scripts/install-hub.sh` | Server-side hub deployment |
-| `scripts/deploy.sh` | Rebuild + force-recreate services after code changes |
-| `scripts/cortex-worker.sh` | Headless worker bot for autonomous tasks |
-| `scripts/cortex-listen.sh` | Task listener (polls for assigned tasks) |
+| Script | Purpose | When to Use |
+|--------|---------|-------------|
+| `install.sh` | **Unified installer** — global skill + MCP + project hooks + IDE setup | Everything. Use this. |
+| `install.ps1` | Windows PowerShell equivalent | Windows users |
+| `onboard.sh` | Full interactive onboarding (legacy) | First-time guided setup with prompts |
+| `onboard.ps1` | Windows interactive onboarding (legacy) | First-time on Windows with prompts |
+
+### Relationship: `install.sh` vs `onboard.sh`
+
+- **`install.sh`** — The unified installer. One script does everything: global `/install` skill, MCP config, project hooks, IDE detection, auto-update. Idempotent and non-interactive (reads API key from env/`.env` file).
+- **`onboard.sh`** — Legacy interactive onboarding. Prompts for API key, MCP URL, tool selection. Use if you prefer a guided step-by-step setup.
 
 ---
 
-## First-Time Admin Setup
+## IDE Enforcement Matrix
 
-### 1. Open Dashboard
+| IDE | Runtime Hooks | Instruction File | MCP Config |
+|-----|:---:|:---:|:---:|
+| Claude Code | 5 hooks (.claude/hooks/) | CLAUDE.md | ~/.claude.json |
+| Gemini CLI | 5 hooks (.gemini/hooks/) | AGENTS.md | ~/.gemini/antigravity/mcp_config.json |
+| Cursor | instruction-only | .cursorrules | ~/.cursor/mcp.json |
+| Windsurf | instruction-only | .windsurfrules | ~/.codeium/windsurf/mcp_config.json |
+| VS Code | instruction-only | .vscode/copilot-instructions.md | .vscode/mcp.json |
+| OpenAI Codex | instruction-only | .codex/instructions.md | ~/.codex/config.toml |
 
-Navigate to your dashboard URL (e.g., `https://hub.your-domain.com` or `http://localhost:4000`).
+**Runtime hooks** = automated enforcement (blocks edits without session, blocks commits without quality gates).
+**Instruction-only** = guidance via markdown files (no automated blocking, relies on agent compliance + server-side scoring).
 
-### 2. Configure LLM Provider
+---
 
-Go to **Settings** and configure your LLM provider:
-- Add API key for Gemini/OpenAI/Anthropic
-- Or use CLIProxy OAuth (no API key needed)
+## Supported Project Types
 
-### 3. Create Organization & Projects
+`install.sh` auto-detects **all** stacks present in the repo and generates smart, glob-filtered pipelines. Each pipeline only runs when files matching its pattern are changed.
+
+### Single-Stack Projects
+
+| Stack | Detected by | Pre-commit | Pre-push | Glob filter |
+|-------|-------------|------------|----------|-------------|
+| **Node.js** (pnpm/npm/yarn) | `package.json` | build, typecheck, lint | + test | `**/*.{ts,tsx,js,jsx,json,css,scss}` |
+| **Go** | `go.mod` | build, vet | + test | `**/*.go` |
+| **Rust** | `Cargo.toml` | build, clippy | + test | `**/*.rs` |
+| **Python** | `requirements.txt`, `pyproject.toml`, `setup.py`, `Pipfile` | py_compile | + pytest | `**/*.py` |
+| **.NET** | `*.csproj`, `*.sln` (root) | dotnet build | + test | `**/*.{cs,csproj,sln}` |
+| **.NET** (subdirectory) | `*.sln` (depth 2) | dotnet build path/to.sln | + test | `path/**/*.{cs,csproj,sln}` |
+| **Godot** | `project.godot` (depth 2) | info message | — | `path/**/*.{gd,tscn,tres}` |
+| **Python scripts** (no manifest) | `*.py` files exist but no `requirements.txt` etc. | py_compile {staged_files} | — | `**/*.py` |
+
+### Mixed / Monorepo Projects
+
+For repos with multiple stacks (e.g., a C# server + Python tools + Godot client), `install.sh` detects **all** stacks and generates a combined `lefthook.yml`:
+
+```yaml
+# Example: multi-lang project (Python + .NET + Godot)
+pre-commit:
+  parallel: true
+  commands:
+    python_check:
+      glob: "**/*.py"                                    # only when .py changes
+      run: python3 -m py_compile {staged_files}
+    dotnet_build:
+      glob: "server/**/*.{cs,csproj,sln}"                # only when .cs changes
+      run: dotnet build ./server/MyProject.sln
+    godot_check:
+      glob: "godot-client/**/*.{gd,tscn,tres}"          # only when .gd changes
+      run: echo 'Godot files changed — verify in editor'
+```
+
+**Key behavior:**
+- Commit a `.md` file → **no pipeline runs** (no matching glob)
+- Commit a `.py` file → only Python check runs
+- Commit `.py` + `.cs` files → both Python and .NET run **in parallel**
+- Each stack is independent — a failing .NET build does not block a Python-only commit
+
+### Custom Quality Gates
+
+For projects not auto-detected, edit `.cortex/project-profile.json` manually:
+
+```json
+{
+  "schema_version": "2.0",
+  "fingerprint": {
+    "stacks": ["custom"],
+    "package_manager": "custom"
+  },
+  "verify": {
+    "pre_commit": ["make lint", "make build"],
+    "full": ["make lint", "make build", "make test"]
+  }
+}
+```
+
+Then run `/install --force` to regenerate `lefthook.yml`.
+
+---
+
+## First-Time Setup (Admin)
+
+### 1. Open Cortex Hub Dashboard
+
+Navigate to **https://hub.jackle.dev**
+
+The **Setup Wizard** launches automatically on first visit — configure your LLM provider (OAuth or API key).
+
+### 2. Create Organization & Projects
 
 ```
-Organization: Personal
-├── Project: cortex-hub (git: https://github.com/lktiep/cortex-hub)
-├── Project: aureus (git: https://github.com/tk1cntt/aureus)
-└── Project: get-shit-done (git: https://github.com/gsd-build/get-shit-done)
+Organization: MyTeam
+├── Project: main-app
+├── Project: api-service
+└── Project: docs
 ```
 
-### 4. Generate API Keys
+### 3. Generate API Keys
 
 Go to **Settings → API Keys → Generate New**:
 
 | Field | Example |
 |-------|---------|
-| Name | `agent-antigravity` |
-| Scope | all |
-| Permissions | JSON object (or leave empty for all) |
+| Name | `agent-claude-prod` |
+| Scope | Organization: MyTeam |
+| Permissions | code.search, memory.store, knowledge.* |
+| Expires | 90 days |
 
 Copy the key — it won't be shown again.
 
 ---
 
-## Manual MCP Configuration
+## Manual Setup (Alternative)
 
-If your IDE supports MCP config files directly:
+If you prefer manual setup over `/install`:
 
-```json
-{
-  "mcpServers": {
-    "cortex-hub": {
-      "url": "http://localhost:8317/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY"
-      }
-    }
-  }
-}
-```
-
----
-
-## Verify Connection
+### 1. Clone & Run Bootstrap
 
 ```bash
-# Test MCP connection
-curl -s http://localhost:8317/health
+git clone https://github.com/lktiep/cortex-hub.git
+cd cortex-hub
+bash scripts/bootstrap.sh
+# Select: "2) Member"
+```
 
-# Test MCP tools
-curl -s -X POST http://localhost:8317/mcp \
+### 2. Full Interactive Onboarding
+
+```bash
+bash scripts/install.sh          # macOS/Linux
+.\scripts\onboard.ps1            # Windows
+```
+
+### 3. Verify Connection
+
+```bash
+curl -s -X POST 'https://cortex-mcp.jackle.dev/mcp' \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer YOUR_API_KEY' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | python3 -m json.tool
+  -H 'Authorization: Bearer YOUR_KEY' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' | head -100
 ```
 
 ---
 
 ## Infrastructure Endpoints
 
-| Service | Local URL | Port |
-|---------|-----------|------|
-| Dashboard API | http://localhost:4000 | 4000 |
-| Hub MCP | http://localhost:8317 | 8317 |
-| Qdrant | http://localhost:6333 | 6333 |
-| GitNexus | http://localhost:4848 | 4848 |
-| CLIProxy | http://localhost:8317 | 8317 |
+| Service | URL | Port |
+|---------|-----|------|
+| Dashboard | https://hub.jackle.dev | 3000 |
+| API | https://cortex-api.jackle.dev | 4000 |
+| MCP Server | https://cortex-mcp.jackle.dev | 8318 |
+| LLM Proxy | https://cortex-llm.jackle.dev | 8317 |
+| GitNexus (internal) | http://gitnexus:4848 | 4848 |
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| `502 Bad Gateway` | Services not started — `docker compose -f infra/docker-compose.yml up -d` |
-| `401 Unauthorized` | API key invalid — regenerate at Dashboard → Settings → API Keys |
+| `502 Bad Gateway` | Services not started — `docker compose up -d` |
+| `401 Unauthorized` | API key invalid or expired — regenerate at Dashboard → API Keys |
 | OAuth login fails | Check CLIProxy logs: `docker logs cortex-llm-proxy` |
-| MCP tools not available | Check `docker logs cortex-mcp` for startup errors |
-| Container won't start | Use `bash scripts/deploy.sh cortex-api` to force rebuild |
-| Indexing stuck | Check `docker logs cortex-api` for GitNexus errors |
+| MCP tools not available | Run `/install` or `bash scripts/install.sh --force` |
+| Hooks not enforcing | Check `.cortex/.hooks-version` — run `/install` to update |
+| Post-push webhook not firing | Set `CORTEX_API_URL` env var, or use default (cortex-api.jackle.dev) |
+| Windows hooks not working | Use `.\scripts\install.ps1` to generate PS1 hooks |
+| `/install` not found | Run `bash scripts/install.sh` from cortex-hub repo first |

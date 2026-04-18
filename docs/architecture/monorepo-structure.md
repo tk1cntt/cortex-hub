@@ -13,116 +13,133 @@ cortex-hub/
 │   │   └── src/
 │   │       ├── api.ts                  # Request/response contracts
 │   │       ├── models.ts              # Domain models (Knowledge, Quality, Session)
+│   │       ├── mcp.ts                 # MCP protocol types
 │   │       └── index.ts
 │   ├── shared-utils/                   # Common utility functions
 │   │   └── src/
-│   │       ├── logger.ts              # Structured logging
-│   │       ├── crypto.ts              # API key hashing
+│   │       ├── crypto.ts              # API key hashing, token generation
+│   │       ├── date.ts                # Date formatting helpers
+│   │       ├── logger.ts              # Structured logging (pino)
+│   │       ├── validation.ts          # Zod schemas (shared)
 │   │       └── index.ts
-│   └── shared-mem9/                    # Memory engine (in-process)
+│   ├── shared-mem9/                    # Memory engine (in-process)
+│   │   └── src/
+│   │       ├── types.ts               # Mem9Config, MemoryItem, etc.
+│   │       ├── embedder.ts            # Gemini/OpenAI embedding client
+│   │       ├── vector-store.ts        # Qdrant REST client
+│   │       ├── prompts.ts             # Fact extraction + dedup prompts
+│   │       ├── llm.ts                 # CLIProxy chat completions
+│   │       ├── memory.ts              # Core Mem9 class
+│   │       ├── history.ts             # SQLite audit trail
+│   │       └── index.ts
+│   └── ui-components/                  # Shared React components
 │       └── src/
-│           ├── types.ts               # Mem9Config, MemoryItem, etc.
-│           ├── embedder.ts            # Gemini/OpenAI embedding client
-│           ├── vector-store.ts        # Qdrant REST client
-│           ├── llm.ts                 # CLIProxy chat completions
-│           ├── memory.ts              # Core Mem9 class
+│           ├── DataTable.tsx           # Sortable, filterable data table
+│           ├── MetricCard.tsx          # KPI display card
+│           ├── ScoreGauge.tsx          # Quality score visualization
+│           ├── SearchBar.tsx           # Universal search input
+│           ├── SidebarNav.tsx          # Navigation sidebar
+│           ├── StatusBadge.tsx         # Service status indicator
+│           ├── TimelineView.tsx        # Chronological event list
 │           └── index.ts
 │
 ├── apps/
-│   ├── hub-mcp/                        # Hub MCP Server (Hono + Streamable HTTP)
+│   ├── hub-mcp/                        # Hub MCP Server (Hono, Docker)
 │   │   └── src/
-│   │       ├── index.ts               # Hono app + MCP transport
-│   │       ├── api-call.ts            # HTTP client + telemetry
+│   │       ├── index.ts               # Worker entry point
+│   │       ├── auth.ts                # API key authentication
+│   │       ├── router.ts             # Tool routing + registration
+│   │       ├── tools/                 # One file per tool group
+│   │       │   ├── base.ts            # Abstract BaseTool class
+│   │       │   ├── code.ts            # GitNexus HTTP API proxy tools
+│   │       │   ├── memory.ts          # mem9 proxy tools
+│   │       │   ├── knowledge.ts       # Qdrant proxy tools
+│   │       │   ├── quality.ts         # Quality gate tools
+│   │       │   └── session.ts         # Session handoff tools
 │   │       ├── middleware/
-│   │       │   └── auth.ts            # API key validation
-│   │       └── tools/                 # One file per tool group
-│   │           ├── code.ts            # code_search, code_impact, code_context, code_read, list_repos, cypher, detect_changes
-│   │           ├── memory.ts          # memory_store, memory_search
-│   │           ├── knowledge.ts       # knowledge_store, knowledge_search
-│   │           ├── indexing.ts        # code_reindex
-│   │           ├── quality.ts         # quality_report
-│   │           ├── session.ts         # session_start, session_end
-│   │           ├── changes.ts         # changes (unseen commits)
-│   │           ├── analytics.ts       # tool_stats
-│   │           ├── health.ts          # health check
-│   │           └── tasks.ts           # task CRUD + strategy
+│   │       │   ├── logger.ts          # Query logging
+│   │       │   ├── policy.ts          # AI policy enforcement
+│   │       │   └── rateLimit.ts       # Per-agent rate limiting
+│   │       └── clients/
+│   │           ├── IServiceClient.ts  # Service client interface
+│   │           ├── GitNexusClient.ts
+│   │           └── QdrantClient.ts
 │   │
 │   ├── dashboard-api/                  # Backend API (Hono + SQLite)
 │   │   └── src/
-│   │       ├── index.ts               # Hono app + routes
+│   │       ├── index.ts
 │   │       ├── routes/                # REST endpoints
 │   │       │   ├── health.ts
-│   │       │   ├── knowledge.ts       # Knowledge CRUD + search + lineage + health-check
-│   │       │   ├── intel.ts           # GitNexus proxy (search, impact, context, etc.)
-│   │       │   ├── indexing.ts        # Index job management
-│   │       │   ├── conductor.ts       # Task orchestration
-│   │       │   ├── llm.ts             # LLM proxy (chat, embeddings)
-│   │       │   ├── organizations.ts   # Org/project management + project lookup
-│   │       │   ├── quality.ts         # Quality reports
-│   │       │   ├── setup.ts           # Setup wizard
-│   │       │   ├── stats.ts           # Usage analytics
-│   │       │   ├── webhooks.ts        # Change events + ack
-│   │       │   └── sessions.ts        # Session management
-│   │       ├── services/              # Business logic
-│   │       │   ├── indexer.ts         # Clone → GitNexus analyze → mem9 embed
-│   │       │   ├── mem9-embedder.ts   # Code embedding pipeline
-│   │       │   ├── docs-knowledge-builder.ts  # Docs → knowledge
-│   │       │   ├── recipe-capture.ts  # Auto-capture recipes
-│   │       │   └── knowledge-evolution.ts     # FIX evolution
+│   │       │   ├── knowledge.ts
+│   │       │   ├── memories.ts
+│   │       │   ├── quality.ts
+│   │       │   ├── queries.ts
+│   │       │   ├── sessions.ts
+│   │       │   └── updates.ts         # Dependency update checker
+│   │       ├── services/              # Business logic layer
+│   │       │   ├── HealthService.ts
+│   │       │   ├── KnowledgeService.ts
+│   │       │   ├── QualityService.ts
+│   │       │   └── UpdateService.ts
 │   │       ├── db/
-│   │       │   ├── schema.sql         # Full DDL (20 tables)
-│   │       │   └── client.ts          # SQLite client + migrations
-│   │       └── utils/
-│   │           └── error-handler.ts
+│   │       │   ├── schema.sql
+│   │       │   └── client.ts
+│   │       └── ws/
+│   │           └── realtime.ts        # WebSocket for live updates
 │   │
-│   ├── dashboard-web/                  # Frontend (Next.js 15)
-│   │   └── src/
-│   │       ├── app/                    # App Router pages
-│   │       │   ├── layout.tsx
-│   │       │   ├── page.tsx           # Overview
-│   │       │   ├── settings/          # Settings + provider config
-│   │       │   └── setup/             # Setup wizard
-│   │       ├── lib/
-│   │       │   ├── api.ts             # API client
-│   │       │   └── config.ts          # URL config
-│   │       └── components/            # UI components (inline)
-│   │
-│   └── cortex-extension/               # VS Code extension
+│   └── dashboard-web/                  # Frontend (Next.js 15)
 │       └── src/
-│           ├── config.ts              # Extension config
-│           └── hub-api.ts             # Hub API client
+│           ├── app/                    # App Router pages
+│           │   ├── layout.tsx
+│           │   ├── page.tsx           # Overview
+│           │   ├── services/
+│           │   ├── knowledge/
+│           │   ├── memory/
+│           │   ├── code-intel/
+│           │   ├── queries/
+│           │   ├── quality/
+│           │   ├── sessions/
+│           │   └── settings/
+│           ├── components/
+│           ├── hooks/
+│           │   ├── useWebSocket.ts
+│           │   ├── useServiceHealth.ts
+│           │   └── usePagination.ts
+│           ├── lib/
+│           │   ├── api.ts
+│           │   └── formatters.ts
+│           └── styles/
+│               └── globals.css
 │
 ├── infra/                              # Infrastructure as Code
 │   ├── docker-compose.yml             # Production stack
+│   ├── docker-compose.dev.yml         # Development overrides
 │   ├── Dockerfile.dashboard-api
 │   ├── Dockerfile.gitnexus
-│   ├── Dockerfile.hub-mcp
-│   └── nginx-dashboard.conf           # Nginx proxy config
-│
-├── scripts/                            # Deployment scripts
-│   ├── install.sh                     # All-in-one installer
-│   ├── install-hub.sh                 # Hub setup
-│   ├── onboard.sh / onboard.ps1       # Agent onboarding
-│   ├── cortex-worker.sh               # Headless worker
-│   ├── cortex-listen.sh               # Task listener
-│   └── deploy.sh                      # Rebuild + force-recreate
+│   ├── scripts/
+│   │   ├── setup.sh                   # One-click server setup
+│   │   ├── install.sh                 # All-in-one installer
+│   │   ├── auto-update.sh            # Cron: git pull + reindex
+│   │   ├── backup.sh                 # Data volume backup
+│   │   └── health-check.sh           # Service health alerting
+│   └── cloudflare/
+│       └── tunnel-config.yml
 │
 ├── docs/                               # Project documentation
 │   ├── architecture/
-│   ├── database/
 │   ├── guides/
 │   ├── api/
 │   └── policies/
 │
 ├── .github/workflows/                  # CI/CD
 │   ├── ci.yml
-│   └── deploy.yml
+│   ├── deploy-mcp.yml
+│   └── deploy-dashboard.yml
 │
 ├── turbo.json                          # Turborepo pipeline config
 ├── pnpm-workspace.yaml
 ├── package.json
-├── tsconfig.json
-├── eslint.config.mjs
+├── .eslintrc.js
 ├── .prettierrc
 └── README.md
 ```
@@ -134,18 +151,17 @@ cortex-hub/
 ```mermaid
 graph LR
     ST["@cortex/shared-types"] --> SU["@cortex/shared-utils"]
+    ST --> UI["@cortex/ui-components"]
     ST --> M9["@cortex/shared-mem9"]
     SU --> M9
-    ST --> HM["@cortex/hub-mcp"]
-    SU --> HM
-    M9 --> HM
-    ST --> DA["@cortex/dashboard-api"]
-    SU --> DA
-    M9 --> DA
-    ST --> DW["@cortex/dashboard-web"]
-    SU --> DW
-    ST --> CE["@cortex/cortex-extension"]
-    SU --> CE
+    SU --> HUB["@cortex/hub-mcp"]
+    ST --> HUB
+    SU --> API["@cortex/dashboard-api"]
+    ST --> API
+    M9 --> API
+    UI --> WEB["@cortex/dashboard-web"]
+    ST --> WEB
+    SU --> WEB
 ```
 
 ---
@@ -153,11 +169,10 @@ graph LR
 ## Import Conventions
 
 ```typescript
-// ✅ Always import from shared packages using path aliases
+// ✅ Always import from shared packages
 import type { KnowledgeItem, QualityReport } from '@cortex/shared-types'
 import { formatDate, hashApiKey } from '@cortex/shared-utils'
-import { Embedder, VectorStore } from '@cortex/shared-mem9'
+import { MetricCard, DataTable } from '@cortex/ui-components'
 
 // ❌ Never duplicate shared logic in app code
-// ❌ Never use relative cross-package imports
 ```

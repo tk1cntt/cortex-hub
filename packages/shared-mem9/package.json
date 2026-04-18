@@ -1,6 +1,6 @@
 {
   "name": "@cortex/shared-mem9",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "@cortex/shared-types": "workspace:*",
-    "@cortex/shared-utils": "workspace:*"
+    "@cortex/shared-utils": "workspace:*",
+    "@huggingface/transformers": "^4.0.1"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

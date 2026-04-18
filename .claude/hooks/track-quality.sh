@@ -45,15 +45,43 @@ if [ -f "$STATE_DIR/gate-build" ] && [ -f "$STATE_DIR/gate-lint" ] && [ ! -f "$S
 fi
 
 # Track MCP tool calls
-[[ "$TOOL_NAME" =~ cortex_session_start ]]  && touch "$STATE_DIR/session-started"
+if [[ "$TOOL_NAME" =~ cortex_session_start ]]; then
+  touch "$STATE_DIR/session-started"
+  # Extract session_id from tool output and save for auto-close on Stop hook
+  SESSION_ID=""
+  if command -v jq >/dev/null 2>&1; then
+    # tool_output contains the MCP response text (JSON string with session_id)
+    TOOL_OUTPUT=$(echo "$INPUT" | jq -r '.tool_output // empty' 2>/dev/null || true)
+    if [ -n "$TOOL_OUTPUT" ]; then
+      SESSION_ID=$(echo "$TOOL_OUTPUT" | jq -r '.session_id // empty' 2>/dev/null || true)
+    fi
+  elif command -v python3 >/dev/null 2>&1; then
+    SESSION_ID=$(echo "$INPUT" | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    output=d.get('tool_output','')
+    if isinstance(output,str):
+        import json as j
+        output=j.loads(output)
+    print(output.get('session_id',''))
+except: print('')
+" 2>/dev/null || true)
+  fi
+  if [ -n "$SESSION_ID" ] && [ "$SESSION_ID" != "null" ]; then
+    echo "$SESSION_ID" > "$STATE_DIR/session-id"
+  fi
+fi
 [[ "$TOOL_NAME" =~ cortex_session_end ]]    && touch "$STATE_DIR/session-ended"
 [[ "$TOOL_NAME" =~ cortex_quality_report ]] && touch "$STATE_DIR/quality-gates-passed"
 
 # Track cortex discovery tool usage
 [[ "$TOOL_NAME" =~ cortex_code_search ]]      && touch "$STATE_DIR/discovery-used"
-[[ "$TOOL_NAME" =~ cortex_knowledge_search ]] && touch "$STATE_DIR/discovery-used"
-[[ "$TOOL_NAME" =~ cortex_memory_search ]]    && touch "$STATE_DIR/discovery-used"
+[[ "$TOOL_NAME" =~ cortex_knowledge_search ]] && touch "$STATE_DIR/discovery-used" && touch "$STATE_DIR/knowledge-recalled"
+[[ "$TOOL_NAME" =~ cortex_memory_search ]]    && touch "$STATE_DIR/discovery-used" && touch "$STATE_DIR/memory-recalled"
 [[ "$TOOL_NAME" =~ cortex_code_context ]]     && touch "$STATE_DIR/discovery-used"
 [[ "$TOOL_NAME" =~ cortex_code_impact ]]      && touch "$STATE_DIR/discovery-used"
 [[ "$TOOL_NAME" =~ cortex_cypher ]]           && touch "$STATE_DIR/discovery-used"
+[[ "$TOOL_NAME" =~ cortex_task_pickup ]]      && touch "$STATE_DIR/tasks-checked"
+[[ "$TOOL_NAME" =~ cortex_detect_changes ]]   && touch "$STATE_DIR/changes-checked"
 exit 0

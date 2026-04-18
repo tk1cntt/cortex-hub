@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { db } from '../db/client.js'
-import { handleApiError } from '../utils/error-handler.js'
 
 export const setupRouter = new Hono()
 
@@ -8,11 +7,11 @@ export const setupRouter = new Hono()
 const CLIPROXY_URL = () =>
   process.env.LLM_PROXY_URL || process.env.CLIPROXY_URL || 'http://localhost:8317'
 const MANAGEMENT_KEY = () =>
-  process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || 'cortex2026'
+  process.env.CLIPROXY_MANAGEMENT_KEY || process.env.MANAGEMENT_PASSWORD || ''
 const QDRANT_URL = () =>
   process.env.QDRANT_URL || 'http://localhost:6333'
 const DASHBOARD_URL = () =>
-  process.env.DASHBOARD_URL || process.env.CORTEX_DASHBOARD_URL || ''
+  process.env.DASHBOARD_URL || 'https://hub.jackle.dev'
 
 function managementHeaders() {
   return {
@@ -67,24 +66,22 @@ setupRouter.post('/complete', async (c) => {
       },
     })
   } catch (error) {
-    return handleApiError(c, error)
+    return c.json({ success: false, error: String(error) }, 500)
   }
 })
 
-// ── Configure mem9 (Gemini API key + model routing) ──
+// ── Configure mem9 (Gemini API key) ──
 setupRouter.post('/configure-mem9', async (c) => {
   try {
     const body = await c.req.json()
-    const { geminiApiKey, model } = body
+    const { geminiApiKey } = body
 
     if (!geminiApiKey) {
       return c.json({ success: false, error: 'geminiApiKey is required' }, 400)
     }
 
-    const embeddingModel = model || 'gemini-embedding-2-preview'
-
     // Test the Gemini embedding endpoint
-    const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${embeddingModel}:embedContent?key=${geminiApiKey}`
+    const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${geminiApiKey}`
     const testRes = await fetch(testUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -97,75 +94,18 @@ setupRouter.post('/configure-mem9', async (c) => {
       return c.json({ success: false, error: `Gemini API key test failed: ${err}` }, 400)
     }
 
-    // Store the key as env var (fallback for legacy resolveGeminiApiKey calls)
+    // Store the key as env var
     process.env.GEMINI_API_KEY = geminiApiKey
-    process.env.MEM9_EMBEDDING_MODEL = embeddingModel
-
-    // Upsert Gemini provider account
-    const existingGemini = db.prepare(
-      "SELECT id FROM provider_accounts WHERE type = 'gemini' AND auth_type = 'api_key'"
-    ).get() as { id: string } | undefined
-
-    if (existingGemini) {
-      db.prepare(
-        `UPDATE provider_accounts 
-         SET api_key = ?, status = 'enabled', 
-             models = ?, capabilities = ?, updated_at = datetime('now')
-         WHERE id = ?`
-      ).run(
-        geminiApiKey,
-        JSON.stringify([embeddingModel]),
-        JSON.stringify(['embedding']),
-        existingGemini.id
-      )
-      console.log(`[Setup] Updated Gemini provider account: ${existingGemini.id}`)
-    } else {
-      const newId = `pa-gemini-${Date.now()}`
-      db.prepare(
-        `INSERT INTO provider_accounts (id, name, type, auth_type, api_base, api_key, status, capabilities, models)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        newId,
-        'Google Gemini (Embedding)',
-        'gemini',
-        'api_key',
-        'https://generativelanguage.googleapis.com/v1beta',
-        geminiApiKey,
-        'enabled',
-        JSON.stringify(['embedding']),
-        JSON.stringify([embeddingModel])
-      )
-      console.log(`[Setup] Created Gemini provider account: ${newId}`)
-    }
-
-    // Configure model_routing for embedding purpose
-    const geminiProvider = db.prepare(
-      "SELECT id FROM provider_accounts WHERE type = 'gemini' AND status = 'enabled' LIMIT 1"
-    ).get() as { id: string } | undefined
-
-    if (geminiProvider) {
-      db.prepare(
-        `INSERT INTO model_routing (purpose, chain, updated_at)
-         VALUES ('embedding', ?, datetime('now'))
-         ON CONFLICT(purpose) DO UPDATE SET chain = ?, updated_at = datetime('now')`
-      ).run(
-        JSON.stringify([{ accountId: geminiProvider.id, model: embeddingModel }]),
-        JSON.stringify([{ accountId: geminiProvider.id, model: embeddingModel }])
-      )
-      console.log(`[Setup] Configured embedding routing → ${geminiProvider.id}:${embeddingModel}`)
-    }
-
-    console.log('[Setup] Gemini embedding configured and routed successfully')
+    console.log('[Setup] Gemini API key configured and tested successfully')
 
     return c.json({
       success: true,
       message: 'Gemini embedding API key configured successfully',
       provider: 'gemini',
-      model: embeddingModel,
-      routing: 'model_routing.embedding',
+      model: 'gemini-embedding-001',
     })
   } catch (err) {
-    console.error('[Setup] Gemini embedding configuration failed:', err)
+    console.error('[Setup] Gemini API key configuration failed:', err)
     return c.json({ success: false, error: String(err) }, 502)
   }
 })
